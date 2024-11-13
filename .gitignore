@@ -5,7 +5,6 @@ __pycache__/
 venv
 # Virtual environment
 venv/
-.env
 
 {{ edit_1 }}
 # Add .evnv to ignore
