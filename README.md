@@ -1,6 +1,6 @@
 # Telegram Gemini Bot
 
-This is a Telegram bot integrated with Gemini API for image generation and analysis.
+This Telegram bot is integrated with Gemini API for image generation and analysis.
 
 ## Installation
 
