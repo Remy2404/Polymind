@@ -6,6 +6,9 @@ __pycache__/
 venv/
 .env
 .venv
+{{ edit_1 }}
+# Add .evnv to ignore
+.evnv
 
 # IDE config files
 .vscode/
