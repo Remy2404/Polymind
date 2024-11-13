@@ -6,7 +6,7 @@ from config import TELEGRAM_TOKEN, LOG_FORMAT, LOG_LEVEL
 from services.gemini_api import GeminiAPI
 from services.user_data_manager import UserDataManager
 from telegram import Update
-
+from utils.telegramlog import TelegramLogger
 logging.basicConfig(
     format=LOG_FORMAT,
     level=LOG_LEVEL
@@ -21,7 +21,11 @@ class GeminiBot:
         self.user_data_manager = UserDataManager()
         self._register_handlers()
         logger.info("Bot initialized successfully")
-
+    #handle text messages
+    async def _handle_text_message(self, update: Update, context):
+        user_id = update.effective_user.id
+        TelegramLogger.log_message(user_id , "Received text message: {update.message.text}")
+        await text_handlers.handle_text_message(update, context, self.gemini_api, self.user_data_manager)
     def _register_handlers(self):
         # Command handlers
         self.application.add_handler(CommandHandler("start", self._start_command))
@@ -46,6 +50,7 @@ class GeminiBot:
         self.application.add_error_handler(self._error_handler)
 
     async def _start_command(self, update, context):
+        logger.info(f"Start command received from user {update.effective_user.id}")
         await command_handlers.start(update, context, self.user_data_manager)
 
     async def _help_command(self, update, context):
@@ -70,7 +75,7 @@ class GeminiBot:
         logger.info("Starting bot...")
         await self.application.initialize()
         await self.application.start()
-        await self.application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        await self.application.updater.start_polling(allowed_updates=Update.ALL_TYPES)   
 
 async def main():
     bot = GeminiBot()
