@@ -16,3 +16,4 @@ venv/
 
 # MacOS Finder settings
 .DS_Store
+logs
