@@ -1,11 +1,12 @@
 # Python cache files
 __pycache__/
 *.pyc
-
+.venv
+venv
 # Virtual environment
 venv/
 .env
-.venv
+
 {{ edit_1 }}
 # Add .evnv to ignore
 .evnv
