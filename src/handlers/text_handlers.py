@@ -7,34 +7,53 @@ from utils.telegramlog import telegram_logger
 
 logger = logging.getLogger(__name__)
 
+
 class TextHandler:
-    def __init__(self, gemini_api: GeminiAPI, user_data_manager: UserDataManager):
+    def __init__(self, gemini_api, user_data_manager):
+        # Initialize logger
+        logging.basicConfig(
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            level=logging.INFO
+        )
+        self.logger = logging.getLogger(__name__)
+        
+        # Initialize components
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
 
-    async def handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle incoming text messages."""
         try:
             user_id = update.effective_user.id
             message_text = update.message.text
             
-            # Get conversation history from user data manager if needed
-            conversation_history = self.user_data_manager.get_user_history(user_id)
-            
             # Generate response using Gemini API
             response = await self.gemini_api.generate_response(
                 prompt=message_text,
-                context=conversation_history
+                context=self.user_data_manager.get_user_context(user_id)
             )
             
-            # Update conversation history
-            
-            # Send response back to user
-            await update.message.reply_text(response)
+            # Send response with markdown parsing
+            try:
+                await update.message.reply_text(
+                    response,
+                    parse_mode='MarkdownV2',
+                    disable_web_page_preview=True
+                )
+            except Exception as telegram_error:
+                # If markdown parsing fails, send as plain text
+                logging.error(f"Markdown parsing error: {telegram_error}")
+                await update.message.reply_text(
+                    response.replace('\\', ''),
+                    parse_mode=None
+                )
             
         except Exception as e:
             error_message = f"Error processing message: {str(e)}"
-            await update.message.reply_text("I apologize, but I encountered an error processing your message. Please try again.")
-            raise
+            logging.error(error_message)
+            await update.message.reply_text(
+                "I apologize, but I encountered an error processing your message\\. Please try again\\."
+            )
 
     async def handle_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id

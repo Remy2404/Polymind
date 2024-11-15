@@ -2,6 +2,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 from datetime import datetime
+from typing import Optional
 
 class TelegramLogger:
     def __init__(self):

@@ -9,7 +9,7 @@ venv/
 {{ edit_1 }}
 # Add .evnv to ignore
 .evnv
-
+.env
 # IDE config files
 .vscode/
 .idea/
