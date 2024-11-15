@@ -1,122 +1,107 @@
 import logging
-import sys
-import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from telegram.ext import CommandHandler, CallbackQueryHandler
 
-# Add project root to Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-
-from src.config import WELCOME_MESSAGE, HELP_MESSAGE
-from src.services.user_data_manager import UserDataManager
-from src.utils.telegramlog import telegram_logger
 
 logger = logging.getLogger(__name__)
 
-class CommandHandler:
-    def __init__(self, user_manager: UserDataManager = None):
-        self.user_manager = user_manager or UserDataManager()
-        telegram_logger.log_message(0, "CommandHandler initialized")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, user_data_manager):
+    """Handle the /start command"""
+    user_id = update.effective_user.id
+    welcome_message = (
+        "👋 Welcome to GemBot! I'm your AI assistant powered by Gemini.\n\n"
+        "I can help you with:\n"
+        "🤖 General conversations\n"
+        "📝 Code assistance\n"
+        "🖼️ Image analysis\n\n"
+        "Feel free to start chatting or use /help to learn more!"
+    )
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("Help 📚", callback_data='help'),
+            InlineKeyboardButton("Settings ⚙️", callback_data='settings')
+        ],
+        [InlineKeyboardButton("Support Channel 📢", url='https://t.me/Gemini_AIAssistBot')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(welcome_message, reply_markup=reply_markup)
+    user_data_manager.initialize_user(user_id)
+    logger.info(f"New user started the bot: {user_id}")
 
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-        telegram_logger.log_command(user_id, "/start")
-        
-        keyboard = [
-            [
-                InlineKeyboardButton("Help 📚", callback_data='help'),
-                InlineKeyboardButton("Settings ⚙️", callback_data='settings')
-            ],
-            [InlineKeyboardButton("Support Channel 📢", url='https://t.me/Gemini_AIAssistBot')]
+async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /help command"""
+    help_text = (
+        "🤖 *Available Commands*\n\n"
+        "/start - Start the bot\n"
+        "/help - Show this help message\n"
+        "/reset - Reset conversation history\n"
+        "/settings - Configure bot settings\n\n"
+        "💡 *Features*\n"
+        "• Send text messages for general conversation\n"
+        "• Send images for analysis\n"
+        "• Use /code for code-related questions\n"
+        "• Supports markdown formatting\n\n"
+        "Need more help? Join our support channel!"
+    )
+    await update.message.reply_text(help_text, parse_mode='Markdown')
+
+async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE, user_data_manager):
+    """Handle the /reset command"""
+    user_id = update.effective_user.id
+    user_data_manager.reset_user_data(user_id)
+    await update.message.reply_text("✨ Conversation history cleared! Let's start fresh.")
+    logger.info(f"User {user_id} reset their conversation history")
+
+async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE, user_data_manager):
+    """Handle the /settings command"""
+    user_id = update.effective_user.id
+    settings = user_data_manager.get_user_settings(user_id)
+    
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                f"{'🔵' if settings.get('markdown_enabled', True) else '⚪'} Markdown Mode",
+                callback_data='toggle_markdown'
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                f"{'🔵' if settings.get('code_suggestions', True) else '⚪'} Code Suggestions",
+                callback_data='toggle_code_suggestions'
+            )
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        "⚙️ *Bot Settings*\nCustomize your interaction preferences:",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
 
-        await update.message.reply_text(
-            WELCOME_MESSAGE,
-            reply_markup=reply_markup,
-            parse_mode='HTML'
-        )
-        telegram_logger.log_message(user_id, "Welcome message sent")
+async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE, user_data_manager):
+    """Handle callback queries from inline keyboards"""
+    query = update.callback_query
+    user_id = update.effective_user.id
+    
+    if query.data == 'help':
+        await help(update, context)
+    elif query.data == 'settings':
+        await settings(update, context, user_data_manager)
+    elif query.data.startswith('toggle_'):
+        setting = query.data.replace('toggle_', '')
+        user_data_manager.toggle_setting(user_id, setting)
+        await settings(update, context, user_data_manager)
+    
+    await query.answer()
 
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-        telegram_logger.log_command(user_id, "/help")
-        
-        await update.message.reply_text(
-            HELP_MESSAGE,
-            parse_mode='HTML'
-        )
-        telegram_logger.log_message(user_id, "Help message sent")
-
-    async def settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-        telegram_logger.log_command(user_id, "/settings")
-
-        user_settings = self.user_manager.get_user_settings(user_id)
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    f"{'🔵' if user_settings.get('markdown_enabled', True) else '⚪'} Markdown Mode",
-                    callback_data='toggle_markdown'
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    f"{'🔵' if user_settings.get('code_suggestions', True) else '⚪'} Code Suggestions",
-                    callback_data='toggle_code_suggestions'
-                )
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(
-            "⚙️ Bot Settings\nCustomize your interaction preferences:",
-            reply_markup=reply_markup
-        )
-        telegram_logger.log_message(user_id, "Settings menu displayed")
-
-    async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-        telegram_logger.log_command(user_id, "/reset")
-        
-        self.user_manager.reset_user_data(user_id)
-        await update.message.reply_text("Your conversation history has been reset.")
-        telegram_logger.log_message(user_id, "User data reset")
-
-    async def feedback_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-        telegram_logger.log_command(user_id, "/feedback")
-
-        await update.message.reply_text(
-            "We value your feedback! Please send your comments or suggestions in the next message.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("Cancel", callback_data='cancel_feedback')
-            ]])
-        )
-        context.user_data['awaiting_feedback'] = True
-        telegram_logger.log_message(user_id, "Feedback prompt sent")
-
-    async def handle_feedback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-        if context.user_data.get('awaiting_feedback'):
-            feedback = update.message.text
-            telegram_logger.log_message(user_id, f"Feedback received: {feedback[:50]}...")
-            await update.message.reply_text("Thank you for your feedback! We appreciate your input.")
-            del context.user_data['awaiting_feedback']
-        else:
-            telegram_logger.log_message(user_id, "Unexpected feedback message")
-
-    def get_handlers(self):
-        """Return all command handlers"""
-        return [
-            ('start', self.start_command),
-            ('help', self.help_command),
-            ('settings', self.settings_command),
-            ('reset', self.reset_command),
-            ('feedback', self.feedback_command)
-        ]
-
-# Create handler instance
-def create_command_handler(user_manager: UserDataManager = None):
-    return CommandHandler(user_manager)
-
+def register_handlers(application, user_data_manager):
+    """Register all command handlers"""
+    application.add_handler(CommandHandler("start", lambda u, c: start(u, c, user_data_manager)))
+    application.add_handler(CommandHandler("help", help))
+    application.add_handler(CommandHandler("reset", lambda u, c: reset(u, c, user_data_manager)))
+    application.add_handler(CommandHandler("settings", lambda u, c: settings(u, c, user_data_manager)))
+    application.add_handler(CallbackQueryHandler(lambda u, c: handle_callback_query(u, c, user_data_manager)))
