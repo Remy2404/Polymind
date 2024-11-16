@@ -13,6 +13,7 @@ from typing import Optional
 
 from services.gemini_api import GeminiAPI
 from services.user_data_manager import UserDataManager
+from services.database import Database
 import handlers.text_handlers as text_handlers
 from utils.telegramlog import telegram_logger
 
@@ -120,9 +121,12 @@ class TelegramBot:
                 "An error occurred while processing your request."
             )
 
-    def run(self) -> None:
+    async def run(self) -> None:
         """Start the bot."""
         try:
+            # Initialize database connection
+            await self.user_data_manager.initialize()
+            
             # Create application
             application = Application.builder().token(self.token).build()
 
@@ -131,19 +135,18 @@ class TelegramBot:
             application.add_handler(CommandHandler("help", self.help_command))
             application.add_handler(CommandHandler("reset", self.reset_command))
             application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text_message))
-            # Add image handler
             application.add_handler(MessageHandler(filters.PHOTO, self._handle_image_message))
-
-            # Add error handler
             application.add_error_handler(self._error_handler)
 
             # Start the bot
             self.logger.info("Starting bot...")
-            application.run_polling(allowed_updates=Update.ALL_TYPES)
+            await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
         except Exception as e:
             self.logger.error(f"Failed to start bot: {str(e)}")
             raise
+        finally:
+            await Database.close()
 
 def main() -> None:
     """Main function to run the bot."""
@@ -155,4 +158,5 @@ def main() -> None:
         raise
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())

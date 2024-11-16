@@ -1,141 +1,132 @@
-import json
-import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Any
+from .database import Database
+import logging
 
 class UserDataManager:
     def __init__(self):
-        self.user_contexts: Dict[int, List[Dict[str, str]]] = {}
-        self.user_settings: Dict[int, Dict[str, bool]] = {}
-        self.user_stats: Dict[int, Dict[str, Any]] = {}
-        self.data_file = "data/user_data.json"
-        self.load_data()
+        self.pool = None
+        self.logger = logging.getLogger(__name__)
 
-    def load_data(self) -> None:
-        """Load user data from persistent storage"""
-        os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
-        if os.path.exists(self.data_file):
-            with open(self.data_file, 'r') as f:
-                data = json.load(f)
-                self.user_contexts = data.get('contexts', {})
-                self.user_settings = data.get('settings', {})
-                self.user_stats = data.get('stats', {})
+    async def initialize(self):
+        """Initialize database connection pool"""
+        self.pool = await Database.get_pool()
 
-    def save_data(self) -> None:
-        """Save user data to persistent storage"""
-        with open(self.data_file, 'w') as f:
-            json.dump({
-                'contexts': self.user_contexts,
-                'settings': self.user_settings,
-                'stats': self.user_stats
-            }, f, indent=4)
+    async def initialize_user(self, user_id: int) -> None:
+        """Initialize or update user data"""
+        self.validate_user_id(user_id)
+        async with self.pool.acquire() as conn:
+            try:
+                now = datetime.now()
+                # Insert user with ON CONFLICT
+                await conn.execute("""
+                    INSERT INTO users (user_id, joined_date, last_active, messages_count)
+                    VALUES ($1, $2, $2, 0)
+                    ON CONFLICT (user_id) DO UPDATE 
+                    SET last_active = $2
+                """, user_id, now)
+
+                # Initialize settings
+                await conn.execute("""
+                    INSERT INTO user_settings (user_id, markdown_enabled, code_suggestions)
+                    VALUES ($1, true, true)
+                    ON CONFLICT DO NOTHING
+                """, user_id)
+
+                # Initialize stats
+                await conn.execute("""
+                    INSERT INTO user_stats (user_id, total_messages, last_interaction)
+                    VALUES ($1, 0, $2)
+                    ON CONFLICT DO NOTHING
+                """, user_id, now)
+
+            except Exception as e:
+                self.logger.error(f"Error initializing user {user_id}: {str(e)}")
+                raise
+
+    async def update_user_context(self, user_id: int, message: str, response: str) -> None:
+        """Update user's conversation context"""
+        self.validate_user_id(user_id)
+        now = datetime.now()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                try:
+                    # Insert message and response
+                    await cur.execute("""
+                        INSERT INTO user_contexts (user_id, role, content, created_at)
+                        VALUES (%s, %s, %s, %s), (%s, %s, %s, %s)
+                    """, (user_id, "user", message, now, user_id, "assistant", response, now))
+
+                    # Update user stats
+                    await cur.execute("""
+                        UPDATE users 
+                        SET messages_count = messages_count + 1,
+                            last_active = %s
+                        WHERE user_id = %s
+                    """, (now, user_id))
+
+                except Exception as e:
+                    self.logger.error(f"Error updating context for user {user_id}: {str(e)}")
+                    raise
+
+    async def get_user_context(self, user_id: int, limit: int = 20) -> List[Dict[str, str]]:
+        """Get user's conversation history"""
+        self.validate_user_id(user_id)
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                    SELECT role, content 
+                    FROM user_contexts 
+                    WHERE user_id = %s 
+                    ORDER BY created_at DESC 
+                    LIMIT %s
+                """, (user_id, limit))
+                results = await cur.fetchall()
+                return [{"role": role, "content": content} for role, content in results]
+
+    async def get_user_settings(self, user_id: int) -> Dict[str, bool]:
+        """Get user's settings"""
+        self.validate_user_id(user_id)
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                    SELECT markdown_enabled, code_suggestions 
+                    FROM user_settings 
+                    WHERE user_id = %s
+                """, (user_id,))
+                result = await cur.fetchone()
+                return {
+                    'markdown_enabled': bool(result[0]) if result else True,
+                    'code_suggestions': bool(result[1]) if result else True
+                }
+
+    async def toggle_setting(self, user_id: int, setting: str) -> None:
+        """Toggle a user setting"""
+        self.validate_user_id(user_id)
+        valid_settings = ['markdown_enabled', 'code_suggestions']
+        if setting not in valid_settings:
+            raise ValueError(f"Invalid setting. Must be one of: {valid_settings}")
+
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(f"""
+                    UPDATE user_settings 
+                    SET {setting} = NOT {setting}
+                    WHERE user_id = %s
+                """, (user_id,))
+
+    async def cleanup_inactive_users(self, days_threshold: int = 30) -> None:
+        """Remove inactive users and their data"""
+        threshold_date = datetime.now() - timedelta(days=days_threshold)
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                    DELETE FROM users 
+                    WHERE last_active < %s
+                """, (threshold_date,))
 
     def validate_user_id(self, user_id: int) -> bool:
         """Validate user ID format"""
-        if not isinstance(user_id, int):
-            raise ValueError("User ID must be an integer")
+        if not isinstance(user_id, int) or user_id <= 0:
+            raise ValueError("User ID must be a positive integer")
         return True
-
-    def initialize_user(self, user_id: int) -> None:
-        """Initialize new user data"""
-        self.validate_user_id(user_id)
-        if user_id not in self.user_contexts:
-            self.user_contexts[user_id] = []
-        if user_id not in self.user_settings:
-            self.user_settings[user_id] = {
-                'markdown_enabled': True,
-                'code_suggestions': True
-            }
-        if user_id not in self.user_stats:
-            self.user_stats[user_id] = {
-                'messages': 0,
-                'last_active': datetime.now().isoformat(),
-                'joined_date': datetime.now().isoformat()
-            }
-        self.save_data()
-
-    def update_user_stats(self, user_id: int, message_count: int = 1) -> None:
-        """Update user activity statistics"""
-        self.validate_user_id(user_id)
-        if user_id not in self.user_stats:
-            self.initialize_user(user_id)
-        
-        self.user_stats[user_id]['messages'] += message_count
-        self.user_stats[user_id]['last_active'] = datetime.now().isoformat()
-        self.save_data()
-
-    def get_user_context(self, user_id: int) -> list:
-        """Get user's conversation context"""
-        self.validate_user_id(user_id)
-        return self.user_contexts.get(user_id, [])
-
-    def update_user_context(self, user_id: int, message: str, response: str) -> None:
-        """Update user's conversation context"""
-        self.validate_user_id(user_id)
-        if user_id not in self.user_contexts:
-            self.initialize_user(user_id)
-        
-        self.user_contexts[user_id].append({"role": "user", "content": message})
-        self.user_contexts[user_id].append({"role": "assistant", "content": response})
-        
-        if len(self.user_contexts[user_id]) > 20:
-            self.user_contexts[user_id] = self.user_contexts[user_id][-20:]
-        
-        self.update_user_stats(user_id)
-        self.save_data()
-
-    def reset_user_data(self, user_id: int) -> None:
-        """Reset user's conversation history"""
-        self.validate_user_id(user_id)
-        self.user_contexts[user_id] = []
-        self.save_data()
-
-    def get_user_settings(self, user_id: int) -> dict:
-        """Get user's settings"""
-        self.validate_user_id(user_id)
-        return self.user_settings.get(user_id, {
-            'markdown_enabled': True,
-            'code_suggestions': True
-        })
-
-    def toggle_setting(self, user_id: int, setting: str) -> None:
-        """Toggle a user setting"""
-        self.validate_user_id(user_id)
-        if user_id not in self.user_settings:
-            self.initialize_user(user_id)
-        
-        current_value = self.user_settings[user_id].get(setting, False)
-        self.user_settings[user_id][setting] = not current_value
-        self.save_data()
-
-    def update_user_settings(self, user_id: int, new_settings: dict) -> None:
-        """Update user settings"""
-        self.validate_user_id(user_id)
-        if user_id not in self.user_settings:
-            self.initialize_user(user_id)
-        
-        self.user_settings[user_id].update(new_settings)
-        self.save_data()
-
-    def cleanup_inactive_users(self, days_threshold: int = 30) -> None:
-        """Remove data for inactive users"""
-        current_time = datetime.now()
-        inactive_users = []
-        
-        for user_id, stats in self.user_stats.items():
-            last_active = datetime.fromisoformat(stats['last_active'])
-            if (current_time - last_active).days > days_threshold:
-                inactive_users.append(user_id)
-        
-        for user_id in inactive_users:
-            self.user_contexts.pop(user_id, None)
-            self.user_settings.pop(user_id, None)
-            self.user_stats.pop(user_id, None)
-        
-        if inactive_users:
-            self.save_data()
-
-    def get_user_statistics(self, user_id: int) -> dict:
-        """Get user statistics"""
-        self.validate_user_id(user_id)
-        return self.user_stats.get(user_id, {})
