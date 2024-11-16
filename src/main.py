@@ -93,6 +93,25 @@ class TelegramBot:
             self.logger.error(f"Error processing text message: {str(e)}")
             await self._error_handler(update, context)
 
+    async def _handle_image_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle incoming image messages."""
+        try:
+            user_id = update.effective_user.id
+            self.telegram_logger.log_message(user_id, "Received image message")
+
+            # Initialize user data if not already initialized
+            self.user_data_manager.initialize_user(user_id)
+            
+            # Create text handler instance (which also handles images)
+            text_handler = text_handlers.TextHandler(self.gemini_api, self.user_data_manager)
+
+            # Process the image
+            await text_handler.handle_image(update, context)
+
+        except Exception as e:
+            self.logger.error(f"Error processing image message: {str(e)}")
+            await self._error_handler(update, context)
+
     async def _error_handler(self, update: Optional[Update], context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle errors occurring in the dispatcher."""
         self.logger.error(f"Update {update} caused error {context.error}")
@@ -112,6 +131,8 @@ class TelegramBot:
             application.add_handler(CommandHandler("help", self.help_command))
             application.add_handler(CommandHandler("reset", self.reset_command))
             application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text_message))
+            # Add image handler
+            application.add_handler(MessageHandler(filters.PHOTO, self._handle_image_message))
 
             # Add error handler
             application.add_error_handler(self._error_handler)

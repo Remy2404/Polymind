@@ -17,3 +17,9 @@ venv/
 # MacOS Finder settings
 .DS_Store
 logs
+
+.env
+*.pyc
+__pycache__/
+logs/
+data/
