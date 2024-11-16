@@ -32,6 +32,7 @@ class TextHandler:
     async def format_telegram_markdown(self, text: str) -> str:
         """ Format text to be compatible with Telegram's MarkdownV2 format using telegramify-markdown. """
         try:
+            # Use telegramify-markdown to convert the text to a Telegram-compatible format.
             formatted_text = convert(text)
             return formatted_text
         except Exception as e:
