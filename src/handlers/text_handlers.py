@@ -148,8 +148,6 @@ class TextHandler:
                         disable_web_page_preview=True
                     )
                 except Exception as html_error:
-                    self.logger.warning(f"HTML formatting failed: {html_error}")
-                    # Fallback to plain text with monospace for code
                     try:
                         # Fallback to MarkdownV2
                         formatted_chunk = await self.format_telegram_markdown(chunk)
