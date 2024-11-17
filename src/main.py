@@ -19,6 +19,11 @@ from utils.telegramlog import telegram_logger
 # Load environment variables from .env file
 load_dotenv()
 
+# Get database URL from environment variable
+DATABASE_URL = os.getenv('DATABASE_URL')
+if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
+    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+
 class TelegramBot:
     def __init__(self):
         # Initialize logger

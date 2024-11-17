@@ -1,141 +1,155 @@
-import json
-import os
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, JSON
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 from datetime import datetime
-from typing import Dict, List, Any
+import os
+
+Base = declarative_base()
+
+class User(Base):
+    __tablename__ = 'users'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, unique=True)
+    contexts = Column(JSON, default=[])
+    settings = Column(JSON, default={
+        'markdown_enabled': True,
+        'code_suggestions': True
+    })
+    stats = Column(JSON, default={
+        'messages': 0,
+        'last_active': None,
+        'joined_date': None
+    })
 
 class UserDataManager:
     def __init__(self):
-        self.user_contexts: Dict[int, List[Dict[str, str]]] = {}
-        self.user_settings: Dict[int, Dict[str, bool]] = {}
-        self.user_stats: Dict[int, Dict[str, Any]] = {}
-        self.data_file = "data/user_data.json"
-        self.load_data()
-
-    def load_data(self) -> None:
-        """Load user data from persistent storage"""
-        os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
-        if os.path.exists(self.data_file):
-            with open(self.data_file, 'r') as f:
-                data = json.load(f)
-                self.user_contexts = data.get('contexts', {})
-                self.user_settings = data.get('settings', {})
-                self.user_stats = data.get('stats', {})
-
-    def save_data(self) -> None:
-        """Save user data to persistent storage"""
-        with open(self.data_file, 'w') as f:
-            json.dump({
-                'contexts': self.user_contexts,
-                'settings': self.user_settings,
-                'stats': self.user_stats
-            }, f, indent=4)
+        database_url = os.getenv('DATABASE_URL')
+        if database_url and database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        
+        # Add SSL configuration for production
+        engine_args = {
+            'echo': False,
+            'pool_pre_ping': True,
+        }
+        
+        # Add SSL requirements for production database
+        if 'render.com' in database_url:
+            engine_args['connect_args'] = {
+                'sslmode': 'require'
+            }
+        
+        self.engine = create_engine(database_url, **engine_args)
+        Base.metadata.create_all(self.engine)
+        Session = sessionmaker(bind=self.engine)
+        self.session = Session()
 
     def validate_user_id(self, user_id: int) -> bool:
-        """Validate user ID format"""
         if not isinstance(user_id, int):
             raise ValueError("User ID must be an integer")
         return True
 
     def initialize_user(self, user_id: int) -> None:
-        """Initialize new user data"""
         self.validate_user_id(user_id)
-        if user_id not in self.user_contexts:
-            self.user_contexts[user_id] = []
-        if user_id not in self.user_settings:
-            self.user_settings[user_id] = {
-                'markdown_enabled': True,
-                'code_suggestions': True
-            }
-        if user_id not in self.user_stats:
-            self.user_stats[user_id] = {
-                'messages': 0,
-                'last_active': datetime.now().isoformat(),
-                'joined_date': datetime.now().isoformat()
-            }
-        self.save_data()
+        user = self.session.query(User).filter_by(user_id=user_id).first()
+        if not user:
+            now = datetime.now().isoformat()
+            new_user = User(
+                user_id=user_id,
+                contexts=[],
+                settings={
+                    'markdown_enabled': True,
+                    'code_suggestions': True
+                },
+                stats={
+                    'messages': 0,
+                    'last_active': now,
+                    'joined_date': now
+                }
+            )
+            self.session.add(new_user)
+            self.session.commit()
 
     def update_user_stats(self, user_id: int, message_count: int = 1) -> None:
-        """Update user activity statistics"""
-        self.validate_user_id(user_id)
-        if user_id not in self.user_stats:
+        user = self.session.query(User).filter_by(user_id=user_id).first()
+        if not user:
             self.initialize_user(user_id)
+            user = self.session.query(User).filter_by(user_id=user_id).first()
         
-        self.user_stats[user_id]['messages'] += message_count
-        self.user_stats[user_id]['last_active'] = datetime.now().isoformat()
-        self.save_data()
+        stats = user.stats
+        stats['messages'] += message_count
+        stats['last_active'] = datetime.now().isoformat()
+        user.stats = stats
+        self.session.commit()
 
     def get_user_context(self, user_id: int) -> list:
-        """Get user's conversation context"""
-        self.validate_user_id(user_id)
-        return self.user_contexts.get(user_id, [])
+        user = self.session.query(User).filter_by(user_id=user_id).first()
+        return user.contexts if user else []
 
     def update_user_context(self, user_id: int, message: str, response: str) -> None:
-        """Update user's conversation context"""
-        self.validate_user_id(user_id)
-        if user_id not in self.user_contexts:
+        user = self.session.query(User).filter_by(user_id=user_id).first()
+        if not user:
             self.initialize_user(user_id)
+            user = self.session.query(User).filter_by(user_id=user_id).first()
+
+        contexts = user.contexts
+        contexts.append({"role": "user", "content": message})
+        contexts.append({"role": "assistant", "content": response})
         
-        self.user_contexts[user_id].append({"role": "user", "content": message})
-        self.user_contexts[user_id].append({"role": "assistant", "content": response})
+        if len(contexts) > 20:
+            contexts = contexts[-20:]
         
-        if len(self.user_contexts[user_id]) > 20:
-            self.user_contexts[user_id] = self.user_contexts[user_id][-20:]
-        
+        user.contexts = contexts
         self.update_user_stats(user_id)
-        self.save_data()
+        self.session.commit()
 
     def reset_user_data(self, user_id: int) -> None:
-        """Reset user's conversation history"""
-        self.validate_user_id(user_id)
-        self.user_contexts[user_id] = []
-        self.save_data()
+        user = self.session.query(User).filter_by(user_id=user_id).first()
+        if user:
+            user.contexts = []
+            self.session.commit()
 
     def get_user_settings(self, user_id: int) -> dict:
-        """Get user's settings"""
-        self.validate_user_id(user_id)
-        return self.user_settings.get(user_id, {
+        user = self.session.query(User).filter_by(user_id=user_id).first()
+        return user.settings if user else {
             'markdown_enabled': True,
             'code_suggestions': True
-        })
+        }
 
     def toggle_setting(self, user_id: int, setting: str) -> None:
-        """Toggle a user setting"""
-        self.validate_user_id(user_id)
-        if user_id not in self.user_settings:
+        user = self.session.query(User).filter_by(user_id=user_id).first()
+        if not user:
             self.initialize_user(user_id)
+            user = self.session.query(User).filter_by(user_id=user_id).first()
         
-        current_value = self.user_settings[user_id].get(setting, False)
-        self.user_settings[user_id][setting] = not current_value
-        self.save_data()
+        settings = user.settings
+        settings[setting] = not settings.get(setting, False)
+        user.settings = settings
+        self.session.commit()
 
     def update_user_settings(self, user_id: int, new_settings: dict) -> None:
-        """Update user settings"""
-        self.validate_user_id(user_id)
-        if user_id not in self.user_settings:
+        user = self.session.query(User).filter_by(user_id=user_id).first()
+        if not user:
             self.initialize_user(user_id)
+            user = self.session.query(User).filter_by(user_id=user_id).first()
         
-        self.user_settings[user_id].update(new_settings)
-        self.save_data()
+        settings = user.settings
+        settings.update(new_settings)
+        user.settings = settings
+        self.session.commit()
 
     def cleanup_inactive_users(self, days_threshold: int = 30) -> None:
-        """Remove data for inactive users"""
         current_time = datetime.now()
-        inactive_users = []
+        users = self.session.query(User).all()
         
-        for user_id, stats in self.user_stats.items():
-            last_active = datetime.fromisoformat(stats['last_active'])
+        for user in users:
+            last_active = datetime.fromisoformat(user.stats['last_active'])
             if (current_time - last_active).days > days_threshold:
-                inactive_users.append(user_id)
+                self.session.delete(user)
         
-        for user_id in inactive_users:
-            self.user_contexts.pop(user_id, None)
-            self.user_settings.pop(user_id, None)
-            self.user_stats.pop(user_id, None)
-        
-        if inactive_users:
-            self.save_data()
+        self.session.commit()
 
     def get_user_statistics(self, user_id: int) -> dict:
-        """Get user statistics"""
-        self.validate_user_id(user_id)
-        return self.user_stats.get(user_id, {})
+        user = self.session.query(User).filter_by(user_id=user_id).first()
+        return user.stats if user else {}
