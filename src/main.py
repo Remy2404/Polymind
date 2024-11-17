@@ -1,6 +1,8 @@
 import logging
 import os
 from dotenv import load_dotenv
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -18,11 +20,7 @@ from utils.telegramlog import telegram_logger
 
 # Load environment variables from .env file
 load_dotenv()
-
-# Get database URL from environment variable
 DATABASE_URL = os.getenv('DATABASE_URL')
-if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
-    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
 
 class TelegramBot:
     def __init__(self):
@@ -42,9 +40,21 @@ class TelegramBot:
         if not os.getenv('GEMINI_API_KEY'):
             raise ValueError("GEMINI_API_KEY not found in .env file")
 
+        # Initialize MongoDB client
+        try:
+            if not DATABASE_URL:
+                raise ValueError("DATABASE_URL not found in .env file")
+            
+            self.client = MongoClient(DATABASE_URL)
+            self.db = self.client.get_database('gembot')
+            self.logger.info("Connected to MongoDB successfully")
+        except ConnectionFailure as e:
+            self.logger.error(f"Failed to connect to MongoDB: {str(e)}")
+            raise
+
         # Initialize components
         self.gemini_api = GeminiAPI()
-        self.user_data_manager = UserDataManager()
+        self.user_data_manager = UserDataManager(self.db)  # Pass the MongoDB database instance to UserDataManager
         self.telegram_logger = telegram_logger
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -132,32 +142,19 @@ class TelegramBot:
             application = Application.builder().token(self.token).build()
 
             # Add handlers
-            application.add_handler(CommandHandler("start", self.start))
-            application.add_handler(CommandHandler("help", self.help_command))
-            application.add_handler(CommandHandler("reset", self.reset_command))
-            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text_message))
-            # Add image handler
+            application.add_handler(CommandHandler('start', self.start))
+            application.add_handler(CommandHandler('help', self.help_command))
+            application.add_handler(CommandHandler('reset', self.reset_command))
+            application.add_handler(MessageHandler(filters.TEXT, self._handle_text_message))
             application.add_handler(MessageHandler(filters.PHOTO, self._handle_image_message))
 
-            # Add error handler
-            application.add_error_handler(self._error_handler)
-
-            # Start the bot
-            self.logger.info("Starting bot...")
-            application.run_polling(allowed_updates=Update.ALL_TYPES)
+            # Run the bot using polling
+            application.run_polling()
 
         except Exception as e:
-            self.logger.error(f"Failed to start bot: {str(e)}")
+            self.logger.error(f"Fatal error: {str(e)}")
             raise
 
-def main() -> None:
-    """Main function to run the bot."""
-    try:
-        bot = TelegramBot()
-        bot.run()
-    except Exception as e:
-        logging.error(f"Fatal error: {str(e)}")
-        raise
-
 if __name__ == '__main__':
-    main()
+    main_bot = TelegramBot()
+    main_bot.run()
