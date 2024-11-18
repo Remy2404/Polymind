@@ -38,10 +38,10 @@ class GeminiAPI:
 
         try:
             self.model = genai.GenerativeModel(
-                model_name="gemini-1.5-pro",
+                model_name="gemini-1.5-flash",
                 generation_config=self.generation_config,
             )
-            self.vision_model = genai.GenerativeModel("gemini-1.5-pro")
+            self.vision_model = genai.GenerativeModel("gemini-1.5-flash")
             self.rate_limiter = RateLimiter(requests_per_minute=20)
             telegram_logger.log_message("Gemini API initialized successfully", 0)
         except Exception as e:

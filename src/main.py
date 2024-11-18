@@ -129,7 +129,7 @@ class TelegramBot:
 
     async def _error_handler(self, update: Optional[Update], context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle errors occurring in the dispatcher."""
-        self.logger.error(f"Update {update} caused error {context.error}")
+        self.logger.error(f"Update {update} caused error: {context.error}")
         if update and update.effective_message:
             await update.effective_message.reply_text(
                 "An error occurred while processing your request."
