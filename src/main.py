@@ -16,13 +16,7 @@ from database.connection import get_database, close_database_connection
 from services.user_data_manager import UserDataManager
 from services.gemini_api import GeminiAPI
 from utils.telegramlog import telegram_logger
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
 import handlers.text_handlers as text_handlers
-=======
->>>>>>> parent of 5ee0165 (ok)
->>>>>>> e79007f (rm)
 
 # Load environment variables
 load_dotenv()
@@ -63,58 +57,8 @@ class TelegramBot:
         self.user_data_manager = UserDataManager(self.db)
         self.telegram_logger = telegram_logger
 
-<<<<<<< HEAD
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Send a message when the command /start is issued."""
-        user = update.effective_user
-        welcome_message = (
-            f"Hi {user.first_name}! 👋\n\n"
-            "I'm your AI assistant powered by Gemini. I can help you with:\n"
-            "• Answering questions\n"
-            "• General conversation\n"
-            "• Analysis and explanations\n\n"
-            "Just send me a message and I'll do my best to help!"
-        )
-        await update.message.reply_text(welcome_message)
-
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Send a message when the command /help is issued."""
-        help_text = (
-            "Here's how to use me:\n\n"
-            "1. Simply send me any message or question\n"
-            "2. I'll process it and respond accordingly\n"
-            "3. For images, send them with a description\n\n"
-            "Commands:\n"
-            "/start - Start the bot\n"
-            "/help - Show this help message\n"
-            "/reset - Reset our conversation"
-        )
-        await update.message.reply_text(help_text)
-
-    async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Reset the conversation history when /reset is issued."""
-        user_id = update.effective_user.id
-        self.user_data_manager.clear_history(user_id)
-        await update.message.reply_text("Conversation history has been reset!")
-
-    async def _handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle incoming text messages."""
-        try:
-            user_id = update.effective_user.id
-            self.telegram_logger.log_message(user_id, f"Received text message: {update.message.text}")
-
-=======
-<<<<<<< HEAD
     def shutdown(self):
         close_database_connection(self.client)
-
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Send a message when the command /start is issued."""
-        user = update.effective_user
-        await update.message.reply_html(
-            f"Hi {user.mention_html()}!\n\nWelcome to the Gemini AI Bot. "
-            "You can send me text messages, voice messages, or images, and I'll process them for you."
-        )
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Send a message when the command /help is issued."""
@@ -288,104 +232,17 @@ class TelegramBot:
         except Exception as e:
             self.logger.error(f"Error during broadcast: {str(e)}")
             await self._error_handler(update, context)
-=======
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Send a message when the command /start is issued."""
-        user = update.effective_user
-        welcome_message = (
-            f"Hi {user.first_name}! 👋\n\n"
-            "I'm your AI assistant powered by Gemini. I can help you with:\n"
-            "• Answering questions\n"
-            "• General conversation\n"
-            "• Analysis and explanations\n\n"
-            "Just send me a message and I'll do my best to help!"
-        )
-        await update.message.reply_text(welcome_message)
-
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Send a message when the command /help is issued."""
-        help_text = (
-            "Here's how to use me:\n\n"
-            "1. Simply send me any message or question\n"
-            "2. I'll process it and respond accordingly\n"
-            "3. For images, send them with a description\n\n"
-            "Commands:\n"
-            "/start - Start the bot\n"
-            "/help - Show this help message\n"
-            "/reset - Reset our conversation"
-        )
-        await update.message.reply_text(help_text)
-
-    async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Reset the conversation history when /reset is issued."""
-        user_id = update.effective_user.id
-        self.user_data_manager.clear_history(user_id)
-        await update.message.reply_text("Conversation history has been reset!")
-
-    async def _handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle incoming text messages."""
-        try:
-            user_id = update.effective_user.id
-            self.telegram_logger.log_message(user_id, f"Received text message: {update.message.text}")
-
->>>>>>> e79007f (rm)
-            # Initialize user data if not already initialized
-            self.user_data_manager.initialize_user(user_id)
-            # Create text handler instance
-            text_handler = text_handlers.TextHandler(self.gemini_api, self.user_data_manager)
-
-            # Process the message
-            await text_handler.handle_text_message(update, context)
-
-        except Exception as e:
-            self.logger.error(f"Error processing text message: {str(e)}")
-            await self._error_handler(update, context)
-
-    async def _handle_image_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle incoming image messages."""
-        try:
-            user_id = update.effective_user.id
-            self.telegram_logger.log_message(user_id, "Received image message")
-
-            # Initialize user data if not already initialized
-            self.user_data_manager.initialize_user(user_id)
-            
-            # Create text handler instance (which also handles images)
-            text_handler = text_handlers.TextHandler(self.gemini_api, self.user_data_manager)
-
-            # Process the image
-            await text_handler.handle_image(update, context)
-
-        except Exception as e:
-            self.logger.error(f"Error processing image message: {str(e)}")
-            await self._error_handler(update, context)
-
-    async def _error_handler(self, update: Optional[Update], context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle errors occurring in the dispatcher."""
-        self.logger.error(f"Update {update} caused error: {context.error}")
-        if update and update.effective_message:
-            await update.effective_message.reply_text(
-                "An error occurred while processing your request."
-            )
-<<<<<<< HEAD
-=======
->>>>>>> parent of 5ee0165 (ok)
->>>>>>> e79007f (rm)
-
     def run(self) -> None:
         """Start the bot."""
         try:
             application = Application.builder().token(self.token).build()
 
-            application.add_handler(CommandHandler('start', self.start))
+            application.add_handler(CommandHandler('start', self.stats_command))
             application.add_handler(CommandHandler('help', self.help_command))
             application.add_handler(CommandHandler('reset', self.reset_command))
             application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text_message))
             application.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
             application.add_handler(MessageHandler(filters.PHOTO, self._handle_image_message))
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
             application.add_handler(CommandHandler('stats', self.stats_command))
             application.add_handler(CommandHandler(
                 'broadcast',
@@ -394,10 +251,6 @@ class TelegramBot:
             ))
 
             application.add_error_handler(self._error_handler)
-=======
->>>>>>> parent of 5ee0165 (ok)
->>>>>>> e79007f (rm)
-
             self.logger.info("Starting bot")
             application.run_polling(allowed_updates=Update.ALL_TYPES)
 
