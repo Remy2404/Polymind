@@ -94,8 +94,11 @@ class GeminiAPI:
                 
             except Exception as e:
                 logging.error(f"Vision model error: {str(e)}")
-                raise
+                return "I'm sorry, there was an error processing your image. Please try again later."
             
+        except UnidentifiedImageError:
+            logging.error("The provided image could not be identified.")
+            return "Sorry, the image format is not supported. Please send a valid image."
         except Exception as e:
             telegram_logger.log_error(f"Image analysis error: {str(e)}", 0)
             return "I'm sorry, I encountered an error processing your image. Please try again with a different image."

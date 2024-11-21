@@ -64,9 +64,9 @@ class TextHandler:
         user_id = update.effective_user.id
         message_text = update.message.text
         
-        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
         try:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
             response = await self.gemini_api.generate_response(
                 prompt=message_text,
                 context=self.user_data_manager.get_user_context(user_id)[-self.max_context_length:]
@@ -82,7 +82,7 @@ class TextHandler:
                     await update.message.reply_text(
                         formatted_chunk,
                         parse_mode='MarkdownV2',
-                        disable_web_page_preview=True
+                        disable_web_page_preview=True,
                     )
                 except Exception as formatting_error:
                     self.logger.error(f"Formatting failed: {str(formatting_error)}")

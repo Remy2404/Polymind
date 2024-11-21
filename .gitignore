@@ -23,3 +23,5 @@ logs
 __pycache__/
 logs/
 data/
+botlog
+your_log_file.log
