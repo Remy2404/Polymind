@@ -7,15 +7,8 @@ asyncpg==0.29.0
 sqlalchemy>=1.4.0
 psycopg2-binary>=2.9.0
 alembic>=1.7.0
-<<<<<<< HEAD
-gunicorn==21.2.0
-=======
-<<<<<<< HEAD
 gunicorn==21.2.0
 pymongo==4.10.1
 dnspython==2.7.0
 ffmpeg-python==0.2.0
-=======
-gunicorn==21.2.0
->>>>>>> parent of 5ee0165 (ok)
->>>>>>> e79007f (rm)
+pdfminer.six==20221105

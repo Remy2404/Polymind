@@ -2,6 +2,7 @@ from pymongo.collection import Collection
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 import logging
+import warnings
 
 class UserDataManager:
     def __init__(self, db):
@@ -74,6 +75,9 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error adding message for user {user_id}: {str(e)}")
             raise
+    def add_to_context(self, user_id: str, message: str) -> None:
+        warnings.warn("add_to_context is deprecated, use add_message instead", DeprecationWarning, stacklevel=2)
+        self.add_message(user_id, message)
 
     def get_user_data(self, user_id: str) -> Dict[str, Any]:
         """
@@ -91,7 +95,13 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error retrieving data for user {user_id}: {str(e)}")
             raise
-
+    def get_user_settings(self, user_id: str) -> Dict[str, bool]:
+        try:
+            user_data = self.get_user_data(user_id)
+            return user_data.get('settings', {})
+        except Exception as e:
+            self.logger.error(f"Error retrieving settings for user {user_id}: {str(e)}")
+            return {}
     def get_user_context(self, user_id: str) -> List[str]:
         """
         Retrieve the context for a specific user.
@@ -194,5 +204,16 @@ class UserDataManager:
         :param user_id: Unique identifier for the user
         :return: Dictionary of user statistics
         """
-        user_data = self.get_user_data(user_id)
-        return user_data.get('stats', {})
+        try:
+            user_data = self.get_user_data(user_id)
+            stats = user_data.get('stats', {})
+            return {
+                "total_messages": stats.get('messages', 0) + stats.get('voice_messages', 0) + stats.get('images', 0),
+                "text_messages": stats.get('messages', 0),
+                "voice_messages": stats.get('voice_messages', 0),
+                "images": stats.get('images', 0),
+                "last_active": stats.get('last_active', None)
+            }
+        except Exception as e:
+            self.logger.error(f"Error retrieving statistics for user {user_id}: {str(e)}")
+            return {}

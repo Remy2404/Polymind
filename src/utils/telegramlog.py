@@ -1,26 +1,18 @@
-import logging
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 import os
-from datetime import datetime
-from typing import Optional
+import logging
 
 class TelegramLogger:
     def __init__(self):
-        # Create logs directory if it doesn't exist
-        self.logs_dir = 'logs'
-        if not os.path.exists(self.logs_dir):
-            os.makedirs(self.logs_dir)
-
-        # Configure logger
-        self.logger = logging.getLogger('TelegramBot')
+        self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
-
-        # Create handlers
+        self.logs_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
+        os.makedirs(self.logs_dir, exist_ok=True)
         self._setup_file_handler()
         self._setup_console_handler()
 
     def _setup_file_handler(self):
-        # Create rotating file handler
         log_file = os.path.join(self.logs_dir, f'telegram_bot_{datetime.now().strftime("%Y%m%d")}.log')
         file_handler = RotatingFileHandler(
             log_file,
@@ -29,7 +21,6 @@ class TelegramLogger:
         )
         file_handler.setLevel(logging.INFO)
         
-        # Create formatter
         formatter = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - User ID: %(user_id)s - %(message)s'
         )
@@ -37,30 +28,27 @@ class TelegramLogger:
         self.logger.addHandler(file_handler)
 
     def _setup_console_handler(self):
-        # Console handler
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(levelname)s: %(message)s')
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - User ID: %(user_id)s - %(message)s')
         console_handler.setFormatter(formatter)
         self.logger.addHandler(console_handler)
 
-    def log_message(self, user_id: int, message: str, level: str = 'info'):
+    def log_message(self, message: str, user_id: int, level: str = 'info'):
         extra = {'user_id': user_id}
-        if level.lower() == 'error':
+        if level == 'error':
             self.logger.error(message, extra=extra)
-        elif level.lower() == 'warning':
-            self.logger.warning(message, extra=extra)
         else:
             self.logger.info(message, extra=extra)
 
-    def log_command(self, user_id: int, command: str):
-        self.log_message(user_id, f"Command received: {command}")
+    def log_command(self, command: str, user_id: int):
+        self.log_message(f"Command received: {command}", user_id)
 
-    def log_error(self, user_id: int, error: Exception):
-        self.log_message(user_id, f"Error occurred: {str(error)}", level='error')
+    def log_error(self, error: Exception, user_id: int):
+        self.log_message(f"Error occurred: {str(error)}", user_id, level='error')
 
-    def log_api_response(self, user_id: int, status: str):
-        self.log_message(user_id, f"API Response Status: {status}")
+    def log_api_response(self, status: str, user_id: int):
+        self.log_message(f"API Response Status: {status}", user_id)
 
-# Usage example:
+# Create an instance of TelegramLogger
 telegram_logger = TelegramLogger()
