@@ -1,3 +1,4 @@
+import os
 import traceback
 from typing import Optional, Dict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -181,19 +182,33 @@ class CommandHandlers:
             self.logger.error(f"Error during broadcast: {str(e)}")
             await update.message.reply_text("An error occurred while broadcasting the message.")
 
+    async def test_api(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Test the Gemini API directly."""
+        await update.message.reply_text("Testing Gemini API. Please wait...")
+        
+        try:
+            response = await self.gemini_api.generate_response("Hello, can you give me a short joke?")
+            if response:
+                await update.message.reply_text(f"API Test Result:\n\n{response}")
+            else:
+                await update.message.reply_text("API test failed. No response received.")
+        except Exception as e:
+            await update.message.reply_text(f"API test failed with error: {str(e)}")
+
+
     def register_handlers(self, application: Application) -> None:
         """Register all command handlers with the application"""
         try:
             # Register command handlers
+            application.add_handler(CommandHandler("test_api", self.test_api))
             application.add_handler(CommandHandler("start", self.start_command))
             application.add_handler(CommandHandler("help", self.help_command))
             application.add_handler(CommandHandler("reset", self.reset_command))
             application.add_handler(CommandHandler("stats", self.stats_command))
             application.add_handler(CommandHandler("settings", self.settings))
             application.add_handler(CommandHandler("broadcast", self.broadcast_command))
-            
-            # Register callback query handler
             application.add_handler(CallbackQueryHandler(self.handle_callback_query))
+            
 
             logger.info("Command handlers registered successfully")
         except Exception as e:

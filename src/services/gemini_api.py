@@ -103,23 +103,20 @@ class GeminiAPI:
             telegram_logger.log_error(f"Image analysis error: {str(e)}", 0)
             return "I'm sorry, I encountered an error processing your image. Please try again with a different image."
 
-    async def generate_response(self, prompt: str, context: Optional[List[Dict]] = None) -> str:
-        """Generate a text response based on a given prompt and optional context."""
-        await self.rate_limiter.acquire()
+    async def generate_response(self, prompt: str, context: list = None):
         try:
+            # Format the context and prompt for Gemini
+            messages = []
             if context:
-                context = context[-5:]
+                for item in context:
+                    messages.append({"role": item['role'], "parts": [{"text": item['content']}]})
+            
+            # Add the current prompt
+            messages.append({"role": "user", "parts": [{"text": prompt}]})
 
-            chat = self.model.start_chat(history=context or [])
-            response = await asyncio.to_thread(
-                chat.send_message,
-                prompt,
-                generation_config=self.generation_config,
-                safety_settings=[
-                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                ],
-            )
-            return await self.format_message(response.text)
+            # Generate the response
+            response = self.model.generate_content(messages)
+            return response.text
         except Exception as e:
-            logging.error(f"Error generating response: {str(e)}")
-            return "I encountered an error generating the response. Please try again."
+            telegram_logger.log_error(f"Error generating response: {str(e)}", 0)
+            return None
