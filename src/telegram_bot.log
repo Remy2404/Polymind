@@ -1,290 +1,91 @@
+
 Successfully connected to MongoDB!
 Connected to MongoDB successfully
 Initializing Gemini API
 Gemini API initialized successfully
 Command handlers registered successfully
-Starting bot in polling mode
 HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/deleteWebhook "HTTP/1.1 200 OK"
-Application started
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendChatAction "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-Text response sent successfully
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-Application is stopping. This might take a moment.
-Application.stop() complete
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 400 Bad Request"
+Unhandled exception: Bad webhook: failed to resolve host: no address associated with hostname
 MongoDB connection closed.
 Successfully connected to MongoDB!
 Connected to MongoDB successfully
 Initializing Gemini API
 Gemini API initialized successfully
 Command handlers registered successfully
-Starting bot in polling mode
 HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/deleteWebhook "HTTP/1.1 200 OK"
-Application started
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-Initialized new user: 806762900
-Update Update(message=Message(channel_chat_created=False, chat=Chat(first_name='RaMee 🍜', id=806762900, type=<ChatType.PRIVATE>, username='Myomeee'), date=datetime.datetime(2024, 11, 24, 14, 1, 40, tzinfo=datetime.timezone.utc), delete_chat_photo=False, entities=(MessageEntity(length=6, offset=0, type=<MessageEntityType.BOT_COMMAND>),), from_user=User(first_name='RaMee 🍜', id=806762900, is_bot=False, language_code='en', username='Myomeee'), group_chat_created=False, message_id=721, supergroup_chat_created=False, text='/start'), update_id=794115825) caused error: object list can't be used in 'await' expression
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-Successfully connected to MongoDB!
-Connected to MongoDB successfully
-Initializing Gemini API
-Gemini API initialized successfully
-Failed to register command handlers: 'CommandHandlers' object has no attribute 'start_command'
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 200 OK"
+Webhook set up at https://telegrambot-1-yle5.onrender.com/webhook/7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs
+Starting bot in webhook mode
 Successfully connected to MongoDB!
 Connected to MongoDB successfully
 Initializing Gemini API
 Gemini API initialized successfully
 Command handlers registered successfully
-Starting bot in polling mode
 HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/deleteWebhook "HTTP/1.1 200 OK"
-Application started
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 400 Bad Request"
+Unhandled exception: Bad webhook: an https url must be provided for webhook
+MongoDB connection closed.
 Successfully connected to MongoDB!
 Connected to MongoDB successfully
 Initializing Gemini API
 Gemini API initialized successfully
 Command handlers registered successfully
-Starting bot in polling mode
 HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/deleteWebhook "HTTP/1.1 200 OK"
-Application started
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 400 Bad Request"
+Unhandled exception: Bad webhook: an https url must be provided for webhook
+MongoDB connection closed.
 Successfully connected to MongoDB!
 Connected to MongoDB successfully
 Initializing Gemini API
 Gemini API initialized successfully
 Command handlers registered successfully
-Starting bot in polling mode
 HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/deleteWebhook "HTTP/1.1 200 OK"
-Application started
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendChatAction "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-Text response sent successfully
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendChatAction "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-Text response sent successfully
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 400 Bad Request"
+Unhandled exception: Bad webhook: an https url must be provided for webhook
+MongoDB connection closed.
 Successfully connected to MongoDB!
 Connected to MongoDB successfully
 Initializing Gemini API
 Gemini API initialized successfully
 Command handlers registered successfully
-Starting bot in polling mode
 HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/deleteWebhook "HTTP/1.1 200 OK"
-Application started
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 409 Conflict"
-Update None caused error: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 409 Conflict"
-Update None caused error: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 200 OK"
+Webhook set up at https://api.render.com/deploy/srv-ct1kiu23esus73d15o40?key=UHYD-TPRKaQ/webhook/7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs
+Starting bot in webhook mode
 Successfully connected to MongoDB!
 Connected to MongoDB successfully
 Initializing Gemini API
 Gemini API initialized successfully
 Command handlers registered successfully
-Starting bot in polling mode
 HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/deleteWebhook "HTTP/1.1 200 OK"
-Application started
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendChatAction "HTTP/1.1 200 OK"
-Error occurred: Error generating response: module 'google.generativeai.types' has no attribute 'content'
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-Text response sent successfully
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendChatAction "HTTP/1.1 200 OK"
-Error occurred: Error generating response: module 'google.generativeai.types' has no attribute 'content'
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-Text response sent successfully
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 200 OK"
+Webhook set up at https://api.render.com/deploy/srv-ct1k1cdumphs738qhiv0?key=zDLkMVSVjGQ/webhook/7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs
+Starting bot in webhook mode
 Successfully connected to MongoDB!
 Connected to MongoDB successfully
 Initializing Gemini API
 Gemini API initialized successfully
 Command handlers registered successfully
-Starting bot in polling mode
 HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/deleteWebhook "HTTP/1.1 200 OK"
-Application started
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-806762900
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getFile "HTTP/1.1 200 OK"
-HTTP Request: GET https://api.telegram.org/file/bot7654566047%3AAAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/voice/file_53.oga "HTTP/1.1 200 OK"
-806762900
-Initialized new user: 806762900
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendChatAction "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/sendMessage "HTTP/1.1 200 OK"
-Text response sent successfully
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
-HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 200 OK"
+Webhook set up at https://api.render.com/deploy/srv-ct1k1cdumphs738qhiv0?key=zDLkMVSVjGQ/webhook/7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs
+Successfully connected to MongoDB!
+Connected to MongoDB successfully
+Initializing Gemini API
+Gemini API initialized successfully
+Command handlers registered successfully
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 200 OK"
+Webhook set up at https://api.render.com/deploy/srv-ct1k1cdumphs738qhiv0?key=zDLkMVSVjGQ/webhook/7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs
+Successfully connected to MongoDB!
+Connected to MongoDB successfully
+Initializing Gemini API
+Gemini API initialized successfully
+Command handlers registered successfully
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 200 OK"
+Webhook set up at https://your-app-name.onrender.com/webhook/your_new_bot_token/webhook/7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/webhook/7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs
 Successfully connected to MongoDB!
 Connected to MongoDB successfully
 Initializing Gemini API
@@ -293,3 +94,28 @@ Command handlers registered successfully
 HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
 HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 200 OK"
 Webhook set up at https://your-app-name.onrender.com/webhook/your_new_bot_token/webhook/7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs
+Successfully connected to MongoDB!
+Connected to MongoDB successfully
+Initializing Gemini API
+Gemini API initialized successfully
+Command handlers registered successfully
+Setting up webhook
+Error setting up webhook: 'Application' object has no attribute 'set_webhook'
+Unhandled exception: 'Application' object has no attribute 'set_webhook'
+MongoDB connection closed.
+Successfully connected to MongoDB!
+Connected to MongoDB successfully
+Initializing Gemini API
+Gemini API initialized successfully
+Command handlers registered successfully
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 200 OK"
+Webhook set up at https://your-app-name.onrender.com/webhook/your_new_bot_token/webhook/7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs
+Successfully connected to MongoDB!
+Connected to MongoDB successfully
+Initializing Gemini API
+Gemini API initialized successfully
+Command handlers registered successfully
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 200 OK"
+Webhook set up at https://api.render.com/deploy/srv-ct1k1cdumphs738qhiv0?key=nN-IYlxQgFI/webhook/7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs

@@ -130,15 +130,8 @@ class TelegramBot:
             @app.get("/")
             async def root():
                 return {"status": "Bot is running"}
-
-            import uvicorn
-            uvicorn.run(
-                app,
-                host="0.0.0.0",
-                port=8000
-            )
         except Exception as e:
-            self.logger.error(f"Fatal error in webhook mode: {str(e)}")
+            self.logger.error(f"Error in webhook mode: {str(e)}")
             raise
 
     def run_polling(self):
@@ -157,14 +150,13 @@ class TelegramBot:
 if __name__ == '__main__':
     main_bot = TelegramBot()
     try:
-        # Determine the mode (webhook or polling) based on environment variable
         mode = os.getenv('BOT_MODE', 'polling').lower()
         
         if mode == 'webhook':
             asyncio.run(main_bot.setup_webhook())
             
-            # Modify this part to use the PORT environment variable
-            port = int(os.environ.get("PORT", 8000))
+            # Use the PORT environment variable provided by Render
+            port = int(os.environ.get("PORT", 10000))
             import uvicorn
             uvicorn.run(
                 app,
