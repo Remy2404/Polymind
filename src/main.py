@@ -162,7 +162,15 @@ if __name__ == '__main__':
         
         if mode == 'webhook':
             asyncio.run(main_bot.setup_webhook())
-            main_bot.run_webhook()
+            
+            # Modify this part to use the PORT environment variable
+            port = int(os.environ.get("PORT", 8000))
+            import uvicorn
+            uvicorn.run(
+                app,
+                host="0.0.0.0",
+                port=port
+            )
         elif mode == 'polling':
             main_bot.run_polling()
         else:
