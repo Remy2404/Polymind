@@ -285,3 +285,11 @@ Text response sent successfully
 HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
 HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
 HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getUpdates "HTTP/1.1 200 OK"
+Successfully connected to MongoDB!
+Connected to MongoDB successfully
+Initializing Gemini API
+Gemini API initialized successfully
+Command handlers registered successfully
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/getMe "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.telegram.org/bot7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs/setWebhook "HTTP/1.1 200 OK"
+Webhook set up at https://your-app-name.onrender.com/webhook/your_new_bot_token/webhook/7654566047:AAF1VBgN8YCGg_-25n_0BObBw6_jfD5xiJs
