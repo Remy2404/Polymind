@@ -47,6 +47,16 @@ class TextHandler:
         message_text = update.message.text
 
         try:
+            # In group chats, process only messages that mention the bot
+            if update.effective_chat.type in ['group', 'supergroup']:
+                bot_username = '@' + context.bot.username
+                if bot_username not in message_text:
+                    # Bot not mentioned, ignore message
+                    return
+                else:
+                    # Remove all mentions of bot_username from the message text
+                    message_text = message_text.replace(bot_username, '').strip()
+
             await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
             
             # Get user context

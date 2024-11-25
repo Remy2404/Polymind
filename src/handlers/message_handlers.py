@@ -8,12 +8,13 @@ from pydub import AudioSegment
 from handlers import text_handlers
 
 class MessageHandlers:
-    def __init__(self, gemini_api, user_data_manager, pdf_handler, telegram_logger):
+    def __init__(self, gemini_api, user_data_manager, telegram_logger, pdf_handler=None):
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
-        self.pdf_handler = pdf_handler
         self.telegram_logger = telegram_logger
+        self.pdf_handler = pdf_handler
         self.logger = logging.getLogger(__name__)
+
 
     async def _handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming text messages."""
@@ -46,8 +47,7 @@ class MessageHandlers:
             text_handler = text_handlers.TextHandler(self.gemini_api, self.user_data_manager)
 
             # Process the image
-            await self.text_handler.handle_image(update, context)
-
+            await text_handler.handle_image(update, context)
         except Exception as e:
             self.logger.error(f"Error processing image message: {str(e)}")
             await self._error_handler(update, context)
