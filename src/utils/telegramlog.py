@@ -7,10 +7,11 @@ class TelegramLogger:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
-        self.logs_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
+        self.logs_dir = os.getenv('LOGS_DIR', os.path.join(os.path.dirname(__file__), '..', '..', 'logs'))
         os.makedirs(self.logs_dir, exist_ok=True)
         self._setup_file_handler()
         self._setup_console_handler()
+        self._setup_httpx_logging()
 
     def _setup_file_handler(self):
         log_file = os.path.join(self.logs_dir, f'telegram_bot_{datetime.now().strftime("%Y%m%d")}.log')
@@ -29,10 +30,14 @@ class TelegramLogger:
 
     def _setup_console_handler(self):
         console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - User ID: %(user_id)s - %(message)s')
+        console_handler.setLevel(logging.WARNING)  # Set to WARNING to remove INFO output
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         console_handler.setFormatter(formatter)
         self.logger.addHandler(console_handler)
+
+    def _setup_httpx_logging(self):
+        httpx_logger = logging.getLogger("httpx")
+        httpx_logger.setLevel(logging.WARNING)
 
     def log_message(self, message: str, user_id: int, level: str = 'info'):
         extra = {'user_id': user_id}

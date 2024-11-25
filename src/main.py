@@ -17,9 +17,13 @@ from services.user_data_manager import UserDataManager
 from services.gemini_api import GeminiAPI
 from utils.telegramlog import telegram_logger
 import handlers.text_handlers as text_handlers
+import logging
+from utils.telegramlog import TelegramLogger
 
 # Load environment variables
 load_dotenv()
+
+logger = TelegramLogger()
 
 # Update logging configuration to handle Unicode
 logging.basicConfig(
@@ -30,6 +34,17 @@ logging.basicConfig(
 
 file_handler = logging.FileHandler('your_log_file.log', encoding='utf-8')
 logging.getLogger().addHandler(file_handler)
+
+# Configure the logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levellevel)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Example usage
+try:
+    # Your code here
+    logger.info("This is an info message")
+except Exception as e:
+    logger.error(f"An error occurred: {str(e)}")
 
 class TelegramBot:
     def __init__(self):
