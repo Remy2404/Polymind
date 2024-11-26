@@ -6,6 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from pydub import AudioSegment
 from handlers import text_handlers
+from services.user_data_manager import UserDataManager
 
 class MessageHandlers:
     def __init__(self, gemini_api, user_data_manager, telegram_logger, pdf_handler=None):
@@ -20,16 +21,24 @@ class MessageHandlers:
         """Handle incoming text messages."""
         try:
             user_id = update.effective_user.id
-            self.telegram_logger.log_message(user_id, f"Received text message: {update.message.text}")
+            message_text = update.message.text
+            self.logger.info(f"Received text message from user {user_id}: {message_text}")
+
+            # Check if the bot is mentioned
+            bot_username = context.bot.username
+            if f"@{bot_username}" in message_text:
+                self.logger.info(f"Bot mentioned by user {user_id}")
+                await update.message.reply_text("Hello! How can I assist you today?")
 
             # Initialize user data if not already initialized
             self.user_data_manager.initialize_user(user_id)
+
             # Create text handler instance
             text_handler = text_handlers.TextHandler(self.gemini_api, self.user_data_manager)
 
             # Process the message
-            await self.text_handler.handle_text_message(update, context)
-
+            await text_handler.handle_text_message(update, context)
+            await self.user_data_manager.update_user_stats(user_id, {'text_messages': 1, 'total_messages': 1})
         except Exception as e:
             self.logger.error(f"Error processing text message: {str(e)}")
             await self._error_handler(update, context)
@@ -48,9 +57,11 @@ class MessageHandlers:
 
             # Process the image
             await text_handler.handle_image(update, context)
+            await self.user_data_manager.update_user_stats(user_id, {'images': 1, 'total_messages': 1})
         except Exception as e:
             self.logger.error(f"Error processing image message: {str(e)}")
             await self._error_handler(update, context)
+            
 
     async def _handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming voice messages."""
@@ -100,6 +111,7 @@ class MessageHandlers:
 
                 # Process the transcribed text as if it were a regular text message
                 await text_handler.handle_text_message(new_update, context)
+                await self.user_data_manager.update_user_stats(user_id, {'voice_messages': 1, 'total_messages': 1})
 
             except sr.UnknownValueError:
                 await update.message.reply_text("Sorry, I couldn't understand the audio. Could you please try again?")
@@ -109,10 +121,6 @@ class MessageHandlers:
             except Exception as e:
                 self.logger.error(f"Error processing voice message: {str(e)}")
                 await update.message.reply_text("An error occurred while processing your voice message. Please try again.")
-
-        # Update user stats
-        self.user_data_manager.update_stats(user_id, voice_message=True)
-
 
     # In the TelegramBot class:
     async def _handle_pdf_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -132,9 +140,6 @@ class MessageHandlers:
         except Exception as e:
             self.logger.error(f"Error handling PDF followup: {str(e)}")
             await update.message.reply_text("An error occurred while processing your question. Please try again.")
-
-
-   
     async def _error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle errors occurring in the dispatcher."""
         self.logger.error(f"Update {update} caused error: {context.error}")

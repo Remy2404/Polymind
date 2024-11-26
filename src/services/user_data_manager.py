@@ -15,33 +15,63 @@ class UserDataManager:
         self.users_collection: Collection = self.db.users
         self.logger = logging.getLogger(__name__)
 
-    def initialize_user(self, user_id: str) -> List[str]:
-        """
-        Initialize a new user in the database.
-        
-        :param user_id: Unique identifier for the user
-        """
+    async def initialize_user(self, user_id: int) -> None:
+        """Initialize a new user in the database."""
         try:
-            self.users_collection.insert_one({
-                "user_id": user_id,
-                "contexts": [],
-                "settings": {
-                    "language": "en",
-                    "notifications": True
-                },
-                "stats": {
-                    "messages": 0,
-                    "voice_messages": 0,
-                    "images": 0,
-                    "last_active": datetime.now().isoformat()
+            user_data = {
+                'user_id': user_id,
+                'conversation_history': [],
+                'settings': {
+                    'markdown_enabled': True,
+                    'code_suggestions': True
                 }
-            })
+            }
+            await self.update_user_data(user_id, user_data)
             self.logger.info(f"Initialized new user: {user_id}")
         except Exception as e:
             self.logger.error(f"Error initializing user {user_id}: {str(e)}")
             raise
-        user_data = self.get_user_data(user_id)
-        return user_data.get("contexts", [])
+    def update_stats(self, user_id: str, text_message: bool = False, voice_message: bool = False, image: bool = False) -> None:
+        """
+        Update user statistics based on their activity.
+        
+        :param user_id: Unique identifier for the user
+        :param text_message: Whether a text message was sent
+        :param voice_message: Whether a voice message was sent
+        :param image: Whether an image was sent
+        """
+        try:
+            user = self.get_user_data(user_id)
+            stats = user['stats']
+            stats['last_active'] = datetime.now().isoformat()
+            
+            if text_message:
+                stats['messages'] += 1
+            if voice_message:
+                stats['voice_messages'] += 1
+            if image:
+                stats['images'] += 1
+            
+            self.users_collection.update_one(
+                {"user_id": user_id}, 
+                {"$set": {"stats": stats}}
+            )
+            self.logger.debug(f"Updated stats for user: {user_id}")
+        except Exception as e:
+            self.logger.error(f"Error updating stats for user {user_id}: {str(e)}")
+            raise
+    async def update_user_data(self, user_id: int, user_data: dict) -> None:
+        """Update user data in the database."""
+        try:
+            self.users_collection.update_one(
+                {"user_id": user_id},
+                {"$set": user_data},
+                upsert=True
+            )
+            self.logger.info(f"Updated data for user: {user_id}")
+        except Exception as e:
+            self.logger.error(f"Error updating data for user {user_id}: {str(e)}")
+            raise
 
     def clear_history(self, user_id: str) -> None:
         """
@@ -95,13 +125,20 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error retrieving data for user {user_id}: {str(e)}")
             raise
-    def get_user_settings(self, user_id: str) -> Dict[str, bool]:
+    def get_user_settings(self, user_id: int) -> dict:
+        """Get user settings from the database."""
         try:
-            user_data = self.get_user_data(user_id)
-            return user_data.get('settings', {})
+            user_data = self.users_collection.find_one({"user_id": user_id})
+            if user_data and 'settings' in user_data:
+                return user_data['settings']
+            else:
+                return {
+                    'markdown_enabled': True,
+                    'code_suggestions': True
+                }
         except Exception as e:
-            self.logger.error(f"Error retrieving settings for user {user_id}: {str(e)}")
-            return {}
+            self.logger.error(f"Error getting settings for user {user_id}: {str(e)}")
+            raise
     def get_user_context(self, user_id: str) -> List[str]:
         """
         Retrieve the context for a specific user.
@@ -122,35 +159,6 @@ class UserDataManager:
         user_data = self.get_user_data(user_id)
         return user_data.get("contexts", [])
 
-    def update_stats(self, user_id: str, text_message: bool = False, voice_message: bool = False, image: bool = False) -> None:
-        """
-        Update user statistics based on their activity.
-        
-        :param user_id: Unique identifier for the user
-        :param text_message: Whether a text message was sent
-        :param voice_message: Whether a voice message was sent
-        :param image: Whether an image was sent
-        """
-        try:
-            user = self.get_user_data(user_id)
-            stats = user['stats']
-            stats['last_active'] = datetime.now().isoformat()
-            
-            if text_message:
-                stats['messages'] += 1
-            if voice_message:
-                stats['voice_messages'] += 1
-            if image:
-                stats['images'] += 1
-            
-            self.users_collection.update_one(
-                {"user_id": user_id}, 
-                {"$set": {"stats": stats}}
-            )
-            self.logger.debug(f"Updated stats for user: {user_id}")
-        except Exception as e:
-            self.logger.error(f"Error updating stats for user {user_id}: {str(e)}")
-            raise
 
     def get_user_settings(self, user_id: str) -> Dict[str, Any]:
         """
@@ -197,23 +205,47 @@ class UserDataManager:
             self.logger.error(f"Error during cleanup of inactive users: {str(e)}")
             raise
 
-    def get_user_statistics(self, user_id: str) -> Dict[str, Any]:
-        """
-        Retrieve user statistics.
-        
-        :param user_id: Unique identifier for the user
-        :return: Dictionary of user statistics
-        """
+    def get_user_stats(self, user_id: int) -> dict:
+        """Get user statistics from the database."""
         try:
-            user_data = self.get_user_data(user_id)
-            stats = user_data.get('stats', {})
-            return {
-                "total_messages": stats.get('messages', 0) + stats.get('voice_messages', 0) + stats.get('images', 0),
-                "text_messages": stats.get('messages', 0),
-                "voice_messages": stats.get('voice_messages', 0),
-                "images": stats.get('images', 0),
-                "last_active": stats.get('last_active', None)
-            }
+            user_data = self.users_collection.find_one({"user_id": user_id})
+            if user_data and 'stats' in user_data:
+                return user_data['stats']
+            else:
+                # Initialize stats if they do not exist
+                stats = {
+                    'messages_sent': 0,
+                    'images_sent': 0,
+                    'voice_messages_sent': 0,
+                    'pdf_documents_sent': 0
+                }
+                self.update_user_stats(user_id, stats)
+                return stats
         except Exception as e:
-            self.logger.error(f"Error retrieving statistics for user {user_id}: {str(e)}")
-            return {}
+            self.logger.error(f"Error getting stats for user {user_id}: {str(e)}")
+            raise
+
+    def update_user_stats(self, user_id: int, stats: dict) -> None:
+        """Update user statistics in the database."""
+        try:
+            self.users_collection.update_one(
+                {"user_id": user_id},
+                {"$set": {"stats": stats}},
+                upsert=True
+            )
+            self.logger.info(f"Updated stats for user: {user_id}")
+        except Exception as e:
+            self.logger.error(f"Error updating stats for user {user_id}: {str(e)}")
+            raise
+
+    def reset_conversation(self, user_id: int) -> None:
+        """Reset the conversation history for a user."""
+        try:
+            self.users_collection.update_one(
+                {"user_id": user_id},
+                {"$set": {"conversation_history": []}}
+            )
+            self.logger.info(f"Reset conversation history for user: {user_id}")
+        except Exception as e:
+            self.logger.error(f"Error resetting conversation history for user {user_id}: {str(e)}")
+            raise
