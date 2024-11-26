@@ -28,7 +28,7 @@ class CommandHandlers:
         self.logger = logging.getLogger(__name__)
         self.telegram_logger = telegram_logger
 
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def start_command(self, update: Update) -> None:
         """Handle the /start command"""
         if not update.effective_user:
             return
@@ -84,7 +84,7 @@ class CommandHandlers:
         self.user_data_manager.clear_history(user_id)
         await update.message.reply_text("Conversation history has been reset!")
 
-    async def settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def settings(self, update: Update) -> None:
         """Handle the /settings command"""
         if not update.effective_user or not update.message:
             return
@@ -137,23 +137,20 @@ class CommandHandlers:
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         try:
             user_id = update.effective_user.id
-            stats = await self.user_data_manager.get_user_statistics(user_id)
+            stats = self.user_data_manager.get_user_statistics(user_id)
             if stats:
                 await update.message.reply_text(
                     f"Here are your stats:\n"
-                    f"• Total Messages Sent: {stats['total_messages']}\n"
-                    f"• Text Messages: {stats['text_messages']}\n"
-                    f"• Voice Messages: {stats['voice_messages']}\n"
-                    f"• Images Sent: {stats['images']}\n"
-                    f"• PDF Documents Sent: {stats.get('pdf_documents', 0)}\n"
-                    f"• Last Active: {stats['last_active']}"
+                    f"• Total Messages Sent: {stats.get('total_messages', 0)}\n"
+                    f"• Text Messages: {stats.get('text_messages', 0)}\n"
+                    f"• Voice Messages: {stats.get('voice_messages', 0)}\n"
+                    f"• Images Sent: {stats.get('images', 0)}"
                 )
             else:
                 await update.message.reply_text("No statistics available yet.")
         except Exception as e:
             self.logger.error(f"Error fetching user stats: {str(e)}")
             await self._error_handler(update, context)
-
 
     async def broadcast_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Broadcast a message to all users (admin only)."""
@@ -180,7 +177,7 @@ class CommandHandlers:
             await update.message.reply_text(f"Broadcast message sent successfully to {successful_sends} users.")
         except Exception as e:
             self.logger.error(f"Error during broadcast: {str(e)}")
-            await update.message.reply_text("An error occurred while broadcasting the message.")
+            await self._error_handler(update, context)
 
     async def test_api(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Test the Gemini API directly."""
