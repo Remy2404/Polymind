@@ -8,7 +8,7 @@ from pydub import AudioSegment
 from handlers import text_handlers
 from services.user_data_manager import UserDataManager
 
-class MessageHandlers:
+class CustomMessageHandler:
     def __init__(self, gemini_api, user_data_manager, telegram_logger, pdf_handler=None):
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
