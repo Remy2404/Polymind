@@ -1,16 +1,18 @@
 {
-    "version": 2,
-    "builds": [
-      {
-        "src": "main.py",
-        "use": "@vercel/python",
-        "config": { "installCommand": "pip install -r requirements.txt" }
+  "version": 2,
+  "builds": [
+    {
+      "src": "main.py",
+      "use": "@vercel/python",
+      "config": {
+        "pip": ["requirements.txt"]
       }
-    ],
-    "routes": [
-      {
-        "src": "/webhook/(.*)",
-        "dest": "main.py"
-      }
-    ]
+    }
+  ],
+  "routes": [
+    {
+      "src": "/webhook/(.*)",
+      "dest": "main.py"
+    }
+  ]
 }
