@@ -15,27 +15,16 @@ logger = logging.getLogger(__name__)
 MONGODB_URI = os.getenv('DATABASE_URL')
 
 def get_database():
-    """
-    Establishes a connection to the MongoDB database.
-
-    Returns:
-        db (Database): The MongoDB database instance.
-        client (MongoClient): The MongoDB client instance.
-    """
     if not MONGODB_URI:
         logger.error("DATABASE_URL environment variable is not set")
         return None, None
 
     try:
-        # Create a new client and connect to the server
         client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
-        
-        # Send a ping to confirm a successful connection
         client.admin.command('ping')
         logger.info("Successfully connected to MongoDB!")
 
-        # Get the database
-        db_name = os.getenv('MONGODB_DB_NAME', 'gembot')  # Use environment variable or default to 'gembot'
+        db_name = os.getenv('MONGODB_DB_NAME', 'gembot')
         db = client[db_name]
         return db, client
     except ConnectionFailure as e:

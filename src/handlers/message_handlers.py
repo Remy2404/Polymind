@@ -8,7 +8,7 @@ from pydub import AudioSegment
 from handlers import text_handlers
 from services.user_data_manager import UserDataManager
 
-class CustomMessageHandler:
+class MessageHandlers:
     def __init__(self, gemini_api, user_data_manager, telegram_logger, pdf_handler=None):
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
@@ -127,8 +127,10 @@ class CustomMessageHandler:
         """Handle PDF documents."""
         user_id = update.effective_user.id
         try:
+            await self.user_data_manager.initialize_user(user_id)
             await self.pdf_handler.handle_pdf(update, context)
             await self.user_data_manager.update_stats(user_id, pdf_document=True)
+            await update.message.reply_text("PDF received and processed.")
         except Exception as e:
             self.logger.error(f"Error handling PDF: {str(e)}")
             await update.message.reply_text("An error occurred while processing your PDF. Please try again.")

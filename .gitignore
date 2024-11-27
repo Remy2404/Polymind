@@ -25,3 +25,4 @@ logs/
 data/
 botlog
 your_log_file.log
+.vercel
