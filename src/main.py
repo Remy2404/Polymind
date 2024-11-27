@@ -111,6 +111,8 @@ class TelegramBot:
 
         # Register message handlers using telegram.ext.MessageHandler
         self.application.add_handler(TeleMessageHandler(filters.VOICE, self.message_handlers._handle_voice_message))
+        #text message handler
+        self.application.add_handler(TeleMessageHandler(filters.TEXT, self.message_handlers._handle_text_message))
         self.application.add_handler(TeleMessageHandler(filters.Document.PDF, self.message_handlers._handle_pdf_document))
         self.application.add_handler(TeleMessageHandler(filters.TEXT & ~filters.COMMAND, self.message_handlers._handle_pdf_followup))
         self.application.add_handler(TeleMessageHandler(filters.PHOTO, self.message_handlers._handle_image_message))

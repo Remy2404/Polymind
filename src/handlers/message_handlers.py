@@ -7,6 +7,8 @@ from telegram.ext import ContextTypes
 from pydub import AudioSegment
 from handlers import text_handlers
 from services.user_data_manager import UserDataManager
+from telegram.constants import ChatMemberStatus
+
 
 class MessageHandlers:
     def __init__(self, gemini_api, user_data_manager, telegram_logger, pdf_handler=None):
@@ -150,3 +152,30 @@ class MessageHandlers:
                 "An error occurred while processing your request. Please try again later."
             )
 
+    async def _check_user_role(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """
+        Check if a user has a specific role in the Telegram group.
+
+        Args:
+            update: The Telegram update object.
+            context: The Telegram context object.
+            role: The role to check for (e.g., "administrator", "creator").
+
+        Returns:
+            True if the user has the specified role, False otherwise.
+        """
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+
+        # Get the chat member object for the user
+        chat_member = await context.bot.get_chat_member(chat_id, user_id)
+
+        # Check if the user has the specified role
+        if chat_member.status == ChatMemberStatus.CREATOR:
+            return True
+        elif chat_member.status == ChatMemberStatus.ADMINISTRATOR:
+            return True
+        elif "role" in chat_member.user.json() and "role" in chat_member.user.json().get("status", ""):
+            return chat_member.user.json()["role"] == "moderator"
+        else:
+            return False
