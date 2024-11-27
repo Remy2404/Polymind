@@ -99,6 +99,8 @@ class TextHandler:
                 "Sorry, I encountered an error\\. Please try again\\.",
                 parse_mode='MarkdownV2'
             )
+        else:
+            self.logger.error("message processing failed")
 
     async def handle_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id

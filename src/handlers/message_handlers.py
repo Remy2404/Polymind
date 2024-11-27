@@ -11,7 +11,7 @@ from telegram.constants import ChatMemberStatus
 
 
 class MessageHandlers:
-    def __init__(self, gemini_api, user_data_manager, telegram_logger, pdf_handler=None):
+    def __init__(self, gemini_api, user_data_manager, telegram_logger, pdf_handler):
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
