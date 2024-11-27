@@ -19,6 +19,5 @@ SpeechRecognition>=3.10.0
 python-multipart>=0.0.6
 aiofiles>=23.2.1
 requests>=2.31.0
-aiogram==2.25.1
 flask==3.1.0
 requests>=2.32.3
