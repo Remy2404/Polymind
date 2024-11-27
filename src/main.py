@@ -211,7 +211,7 @@ if __name__ == '__main__':
 
     def run_flask():
         """Run the Flask app."""
-        port = int(os.environ.get("PORT", 8000))
+        port = int(os.environ.get("PORT", 10000))
         flask_app.run(host="0.0.0.0", port=port)
 
     try:
