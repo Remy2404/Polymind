@@ -27,8 +27,8 @@ class MessageHandlers:
             self.logger.info(f"Received text message from user {user_id}: {message_text}")
 
             # Check if the bot is mentioned
-            bot_username = context.bot.username
-            if f"@{bot_username}" in message_text:
+            bot_username = "@Gemini_AIAssistBot"
+            if bot_username in message_text:
                 self.logger.info(f"Bot mentioned by user {user_id}")
                 await update.message.reply_text("Hello! How can I assist you today?")
 
@@ -52,8 +52,8 @@ class MessageHandlers:
             self.telegram_logger.log_message(user_id, "Received image message")
 
             # Check if the bot is mentioned in the image caption
-            bot_username = context.bot.username
-            if update.message.caption and f"@{bot_username}" in update.message.caption:
+            bot_username = "@Gemini_AIAssistBot"
+            if update.message.caption and bot_username in update.message.caption:
                 self.logger.info(f"Bot mentioned by user {user_id} in image caption")
                 await update.message.reply_text("I see you sent an image mentioning me. How can I assist you?")
 

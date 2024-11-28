@@ -109,11 +109,22 @@ class TextHandler:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
         try:
+            # In group chats, process only images that mention the bot
+            if update.effective_chat.type in ['group', 'supergroup']:
+                bot_username = '@' + context.bot.username
+                caption = update.message.caption or ""
+                if bot_username not in caption:
+                    # Bot not mentioned, ignore message
+                    return
+                else:
+                    # Remove all mentions of bot_username from the caption
+                    caption = caption.replace(bot_username, '').strip()
+            else:
+                caption = update.message.caption or "Please analyze this image and describe it."
+
             photo = update.message.photo[-1]
             image_file = await context.bot.get_file(photo.file_id)
             image_bytes = await image_file.download_as_bytearray()
-
-            caption = update.message.caption or "Please analyze this image and describe it."
             
             response = await self.gemini_api.analyze_image(image_bytes, caption)
 
@@ -138,7 +149,6 @@ class TextHandler:
             await update.message.reply_text(
                 "Sorry, I couldn't process your image. Please try a different one or ensure it's in JPEG/PNG format."
             )
-
     async def show_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
         history = self.user_data_manager.get_user_context(user_id)
