@@ -51,6 +51,12 @@ class MessageHandlers:
             user_id = update.effective_user.id
             self.telegram_logger.log_message(user_id, "Received image message")
 
+            # Check if the bot is mentioned in the image caption
+            bot_username = context.bot.username
+            if update.message.caption and f"@{bot_username}" in update.message.caption:
+                self.logger.info(f"Bot mentioned by user {user_id} in image caption")
+                await update.message.reply_text("I see you sent an image mentioning me. How can I assist you?")
+
             # Initialize user data if not already initialized
             self.user_data_manager.initialize_user(user_id)
             
