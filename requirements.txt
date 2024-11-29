@@ -24,5 +24,6 @@ aiodns==3.0.0,<4.0
 flask>=2.1.0,<3.0
 async-timeout>=4.0.3,<5.0
 PyPDF2==3.0.1
+pytesseract==0.3.13
 # pip install --upgrade PyPDF2:
 
