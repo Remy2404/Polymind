@@ -105,9 +105,9 @@ class TextHandler:
     async def handle_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         telegram_logger.log_message("Processing an image", user_id)
-
+    
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-
+    
         try:
             # In group chats, process only images that mention the bot
             if update.effective_chat.type in ['group', 'supergroup']:
@@ -121,29 +121,33 @@ class TextHandler:
                     caption = caption.replace(bot_username, '').strip()
             else:
                 caption = update.message.caption or "Please analyze this image and describe it."
-
+    
             photo = update.message.photo[-1]
             image_file = await context.bot.get_file(photo.file_id)
             image_bytes = await image_file.download_as_bytearray()
             
             response = await self.gemini_api.analyze_image(image_bytes, caption)
-
-            try:
-                formatted_response = await self.format_telegram_markdown(response)
-                await update.message.reply_text(
-                    formatted_response,
-                    parse_mode='MarkdownV2',
-                    disable_web_page_preview=True
-                )
-            except Exception as markdown_error:
-                self.logger.warning(f"Markdown formatting failed: {markdown_error}")
-                await update.message.reply_text(response.replace('\\', ''), parse_mode=None)
-
-            # Update user stats for image
-            await self.user_data_manager.update_stats(user_id, image=True)
-
-            telegram_logger.log_message(f"Image analysis completed: {response}", user_id)
-
+    
+            if response:
+                try:
+                    formatted_response = await self.format_telegram_markdown(response)
+                    await update.message.reply_text(
+                        formatted_response,
+                        parse_mode='MarkdownV2',
+                        disable_web_page_preview=True
+                    )
+                except Exception as markdown_error:
+                    self.logger.warning(f"Markdown formatting failed: {markdown_error}")
+                    await update.message.reply_text(response, parse_mode=None)
+    
+                # Update user stats for image
+                if self.user_data_manager:
+                    await self.user_data_manager.update_stats(user_id, image=True)
+    
+                telegram_logger.log_message(f"Image analysis completed: {response}", user_id)
+            else:
+                await update.message.reply_text("Sorry, I couldn't analyze the image. Please try again.")
+    
         except Exception as e:
             self.logger.error(f"Error processing image: {e}")
             await update.message.reply_text(

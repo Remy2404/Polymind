@@ -1,4 +1,8 @@
+# utils/pdf_handler.py
+
 import io
+import asyncio
+from typing import List
 from PyPDF2 import PdfReader
 from telegram import (
     Update,
@@ -7,104 +11,119 @@ from telegram import (
 )
 from telegram.ext import (
     ContextTypes,
-    CommandHandler,
     MessageHandler,
     filters,
-    CallbackQueryHandler,
 )
 from utils.telegramlog import telegram_logger
 from services.gemini_api import GeminiAPI
 from handlers.text_handlers import TextHandler
+import pytesseract
+from PIL import Image
+import logging
+import html
+import re
+""" from telegram.utils.helpers import escape_markdown """
+
+
+
+# Configure logging for PDFHandler
+logger = logging.getLogger(__name__)
+
 
 class PDFHandler:
-    def __init__(self, gemini_api: GeminiAPI, text_handler: TextHandler):
-        self.gemini_api = gemini_api
+    def __init__(self, text_handler: TextHandler = None, telegram_logger=None):
+        """
+        Initialize the PDFHandler.
+
+        Args:
+            text_handler (TextHandler, optional): Instance of TextHandler. Defaults to None.
+            telegram_logger (TelegramLogger, optional): Instance of TelegramLogger. Defaults to global telegram_logger.
+        """
+        self.gemini_api = GeminiAPI()
         self.text_handler = text_handler
-        self.pdf_content = {}
+        self.telegram_logger = telegram_logger if telegram_logger else telegram_logger
+        self.pdf_content = {}  # Stores PDF content per user
         self.conversation_history = {}
 
-    def extract_text_from_pdf(self, file_content: io.BytesIO) -> str:
-        pdf_reader = PdfReader(file_content)
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
-        return text
-
-    async def handle_pdf_upload(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def handle_pdf(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
         if update.message.document and update.message.document.mime_type == 'application/pdf':
             try:
                 file = await context.bot.get_file(update.message.document.file_id)
-                file_bytes = await file.download_as_bytearray()
-                file_content = io.BytesIO(file_bytes)
-                extracted_text = self.extract_text_from_pdf(file_content)
+                file_content = io.BytesIO(await file.download_as_bytearray())
+                extracted_text = self.extract_text_from_pdf(file_content, user_id)
+    
                 self.pdf_content[user_id] = extracted_text
                 self.conversation_history[user_id] = []
-
+    
                 keyboard = [
                     [InlineKeyboardButton("Reset Conversation", callback_data="reset_conversation")]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
+                # Use html.escape instead of escape_markdown
+                success_message = html.escape("📄 PDF uploaded successfully! You can now ask questions about it.")
+    
                 await update.message.reply_text(
-                    "📄 PDF uploaded successfully! You can now ask questions about it.",
-                    reply_markup=reply_markup
+                    success_message,
+                    reply_markup=reply_markup,
+                    parse_mode='HTML'
                 )
-                telegram_logger.log_message(f"PDF uploaded and processed for user {user_id}", user_id)
             except Exception as e:
-                await update.message.reply_text("❌ Failed to process the PDF. Please try again.")
-                telegram_logger.error(f"Error processing PDF for user {user_id}: {e}")
+                error_message = f"Error processing PDF: {str(e)}"
+                self.telegram_logger.log_error(f"Error processing PDF for user {user_id}: {error_message}")
+                
+                # Use html.escape instead of escape_markdown
+                safe_error_message = html.escape("Error processing PDF: Please ensure the PDF is not corrupted and try again.")
+                
+                await update.message.reply_text(safe_error_message, parse_mode='HTML')
         else:
-            await update.message.reply_text("⚠️ Please upload a valid PDF file.")
-            telegram_logger.log_message(f"User {user_id} tried to upload an invalid PDF file", user_id)
+            await update.message.reply_text("Please send a valid PDF document.")
 
-    async def handle_pdf_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-
-        if user_id not in self.pdf_content:
-            await update.message.reply_text(
-                "⚠️ You don't have any PDF uploaded. Please upload a PDF first."
-            )
-            return
-
-        content = self.pdf_content[user_id]
-        content_size = len(content)
-        summary = await self.get_pdf_summary(user_id)
-
-        info_message = (
-            f"📄 **PDF Information:**\n"
-            f"- **Content Size:** {content_size} characters\n"
-            f"- **Summary:** {summary[:1000]}..."
-        )
-
-        keyboard = [
-            [InlineKeyboardButton("Reset Conversation", callback_data="reset_conversation")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(
-            info_message,
-            parse_mode='MarkdownV2',
-            reply_markup=reply_markup
-        )
-        telegram_logger.log_message(f"Provided PDF info to user {user_id}", user_id)
-
-    async def get_pdf_summary(self, user_id: int) -> str:
-        content = self.pdf_content.get(user_id, "")
-        if not content:
-            return "No PDF content available."
-
-        prompt = f"Provide a brief summary of the following PDF content:\n\n{content[:4000]}"
-
+    def extract_text_from_pdf(self, file_content: io.BytesIO, user_id: int = None) -> str:
+        """Extract text from a PDF file, using OCR for scanned images."""
         try:
-            summary = await self.gemini_api.generate_response(prompt)
-            return summary
+            reader = PdfReader(file_content)
+            text = ""
+            for page_number, page in enumerate(reader.pages, start=1):
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted
+                else:
+                    # Attempt OCR if no text is found
+                    self.telegram_logger.log_error(f"No text found on page {page_number}. Attempting OCR.", user_id)
+                    # Extract images from the page for OCR
+                    images = page.images
+                    if images:
+                        for image_index, img in enumerate(images, start=1):
+                            try:
+                                image_data = img.data  # Assuming img.data contains image bytes
+                                image = Image.open(io.BytesIO(image_data))
+                                ocr_text = pytesseract.image_to_string(image)
+                                text += ocr_text + "\n"
+                            except Exception as ocr_e:
+                                self.telegram_logger.log_error(f"OCR failed on page {page_number}, image {image_index}: {str(ocr_e)}", user_id)
+                    else:
+                        self.telegram_logger.log_error(f"No images found on page {page_number} for OCR.", user_id)
+            return text
         except Exception as e:
-            error_message = f"Error generating PDF summary: {str(e)}"
-            telegram_logger.error(error_message)
-            return "Unable to generate summary due to an error."
+            self.telegram_logger.log_error(f"Text extraction error: {str(e)}", user_id)
+            return ""
+
+    async def process_caption_with_pdf(self, pdf_text: str, caption: str) -> str:
+        """Process the caption as a question or instruction related to the uploaded PDF."""
+        try:
+            prompt = f"{caption}\n\n{pdf_text[:4000]}"  # Limit the context if necessary
+            response = await self.gemini_api.generate_response(prompt)
+            if not response:
+                raise ValueError("Gemini API returned an empty response.")
+            return response
+        except Exception as e:
+            self.telegram_logger.log_error(f"Error processing caption: {str(e)}", None)
+            return "❌ An error occurred while processing your caption."
 
     async def ask_pdf_question(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle questions related to the uploaded PDF."""
         user_id = update.effective_user.id
         if user_id not in self.pdf_content:
             await update.message.reply_text(
@@ -114,30 +133,31 @@ class PDFHandler:
 
         question = update.message.text
         try:
-            answer = await self.text_handler.answer_question(self.pdf_content[user_id], question)
+            answer = await self.text_handler.answer_question(self.pdf_content[user_id]["content"], question)
             self.conversation_history[user_id].append({"question": question, "answer": answer})
-            await update.message.reply_text(answer)
-            telegram_logger.log_message(f"Answered question for user {user_id}: {question}", user_id)
+            # Escape answer before sending
+            escaped_answer = self.escape_markdown_v2(answer)
+            await update.message.reply_text(escaped_answer, parse_mode="MarkdownV2")
+            self.telegram_logger.log_message(f"Answered question for user {user_id}: {question}", user_id)
         except Exception as e:
             await update.message.reply_text("❌ An error occurred while processing your question.")
-            telegram_logger.error(f"Error answering question for user {user_id}: {e}")
-
-    async def handle_reset_conversation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        user_id = query.from_user.id
-        await query.answer()
-
-        if user_id in self.conversation_history:
-            self.conversation_history[user_id] = []
-            await query.edit_message_text("🧹 Conversation has been reset.")
-            telegram_logger.log_message(f"Conversation reset for user {user_id}", user_id)
-        else:
-            await query.edit_message_text("ℹ️ No active conversation to reset.")
+            self.telegram_logger.log_error(f"Error answering question for user {user_id}: {e}", user_id)
 
     def get_handlers(self):
+        """Register all necessary handlers for PDF processing."""
         return [
-            MessageHandler(filters.Document.PDF, self.handle_pdf_upload),
-            CommandHandler("pdf_info", self.handle_pdf_info),
+            MessageHandler(filters.Document.PDF, self.handle_pdf),
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.ask_pdf_question),
-            CallbackQueryHandler(self.handle_reset_conversation, pattern="^reset_conversation$"),
         ]
+
+    @staticmethod
+    def escape_markdown_v2(text: str) -> str:
+        """Escapes special characters for Telegram MarkdownV2."""
+        escape_chars = r'_*\[\]()~`>#+-=|{}.!'
+        escaped_text = ""
+        for char in text:
+            if char in escape_chars:
+                escaped_text += f'\\{char}'
+            else:
+                escaped_text += char
+        return escaped_text

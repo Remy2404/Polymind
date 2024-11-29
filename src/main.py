@@ -10,6 +10,7 @@ from telegram.ext import (
     Application, 
     CommandHandler, 
     CallbackQueryHandler,
+    ContextTypes,
     MessageHandler as TeleMessageHandler, 
     filters
 )
@@ -22,6 +23,9 @@ from handlers.message_handlers import MessageHandlers  # Ensure this is your cus
 from utils.telegramlog import TelegramLogger, telegram_logger
 from utils.pdf_handler import PDFHandler
 from threading import Thread
+from services.reminder_manager import ReminderManager
+from utils.language_manager import LanguageManager
+
 
 # Load environment variables
 load_dotenv()
@@ -63,6 +67,9 @@ class TelegramBot:
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY not found in .env file")
 
+        # Initialize application
+        self.application = Application.builder().token(self.token).build()
+
         # Initialize Gemini API **before** using it in handlers
         self.gemini_api = GeminiAPI()
 
@@ -82,18 +89,22 @@ class TelegramBot:
         )
 
         # Now initialize PDFHandler with text_handler
-        self.pdf_handler = PDFHandler(self.gemini_api, self.text_handler)
+        self.pdf_handler = PDFHandler(
+            text_handler=self.text_handler,
+            telegram_logger=self.telegram_logger
+        )
 
         # Initialize MessageHandlers after other handlers
         self.message_handlers = MessageHandlers(
-        self.gemini_api,
-        self.user_data_manager,
-        self.telegram_logger,
-        self.pdf_handler
+            self.gemini_api,
+            self.user_data_manager,
+            self.telegram_logger,
+            self.pdf_handler
         )
+        
+        self.reminder_manager = ReminderManager(self.application.bot)
+        self.language_manager = LanguageManager()
 
-        # Initialize application
-        self.application = Application.builder().token(self.token).build()
         self._setup_handlers()
 
     def shutdown(self):
@@ -103,30 +114,42 @@ class TelegramBot:
 
     def _setup_handlers(self):
         """Set up all message handlers."""
-        # Register command handlers
+       # Register command handlers
         self.command_handler.register_handlers(self.application)
-        
-        # Register text handlers
+
+        # Register handlers from TextHandler
         for handler in self.text_handler.get_handlers():
             self.application.add_handler(handler)
 
-        # Register message handlers using telegram.ext.MessageHandler
-        self.application.add_handler(TeleMessageHandler(filters.VOICE, self.message_handlers._handle_voice_message))
-        #text message handler
-        self.application.add_handler(TeleMessageHandler(filters.TEXT, self.message_handlers._handle_text_message))
-        self.application.add_handler(CommandHandler("ask_pdf", self.pdf_handler.ask_pdf_question))
-        self.application.add_handler(CallbackQueryHandler(self.pdf_handler.handle_reset_conversation, pattern="^reset_conversation$"))
-        self.application.add_handler(TeleMessageHandler(filters.PHOTO, self.message_handlers._handle_image_message))
+        # Register handlers from PDFHandler
+        for handler in self.pdf_handler.get_handlers():
+            self.application.add_handler(handler)
 
-        # Register PDF handlers if pdf_handler exists
-        if self.pdf_handler:
-            self.application.add_handler(CommandHandler("pdf_info", self.pdf_handler.handle_pdf_info))
-              # Register history handler
-        self.application.add_handler(CommandHandler("history", self.text_handler.show_history))
+        # Register handlers from MessageHandlers
+        self.message_handlers.register_handlers(self.application)
 
-        # Register error handler
-        self.application.add_error_handler(self.message_handlers._error_handler)
+        # Register specific command handlers
+        self.application.add_handler(CommandHandler("remind", self.reminder_manager.set_reminder))
+        self.application.add_handler(CommandHandler("language", self.language_manager.set_language))
+        
+       
+
+        self.application.add_error_handler(self.handle_error)
         self.application.run_polling()
+    async def handle_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handles errors raised by any handler."""
+        logger = logging.getLogger(__name__)
+        logger.error(msg="Exception while handling an update:", exc_info=context.error)
+
+        # Notify the user
+        try:
+            if isinstance(update, Update) and update.effective_chat:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text="⚠️ An error occurred while processing your request. Please try again later."
+                )
+        except Exception as e:
+            logger.error(f"Failed to send error message to user: {e}")
 
     async def setup_webhook(self):
         """Set up webhook for the bot."""
@@ -170,23 +193,6 @@ class TelegramBot:
         except Exception as e:
             self.logger.error(f"Error in webhook setup: {str(e)}")
 
-    async def run_polling_async(self):
-        """Async method to run the bot in polling mode."""
-        try:
-            self.logger.info("Starting bot in polling mode")
-            await self.application.run_polling(allowed_updates=Update.ALL_TYPES)
-        except Exception as e:
-            self.logger.error(f"Fatal error: {str(e)}")
-            raise
-
-    def run_polling(self):
-        """Start the bot in polling mode."""
-        try:
-            asyncio.create_task(self.run_polling_async())
-        except Exception as e:
-            self.logger.error(f"Fatal error: {str(e)}")
-            raise
-
 async def start_bot(bot: TelegramBot):
     """Initialize and start the Telegram bot."""
     try:
@@ -215,35 +221,26 @@ if __name__ == '__main__':
         flask_app.run(host="0.0.0.0", port=port)
 
     try:
-        mode = os.getenv('BOT_MODE', 'polling').lower()
+        # Ensure 'WEBHOOK_URL' is set correctly in .env
+        if not os.getenv('WEBHOOK_URL'):
+            logger.error("WEBHOOK_URL not set in .env")
+            sys.exit(1)
         
-        if mode == 'webhook':
-            # Ensure 'WEBHOOK_URL' is set correctly in .env
-            if not os.getenv('WEBHOOK_URL'):
-                logger.error("WEBHOOK_URL not set in .env")
-                sys.exit(1)
-            
-            # Initialize the bot's webhook and start bot
-            loop.create_task(main_bot.setup_webhook())
-            loop.create_task(start_bot(main_bot))
-            
-            # Start Flask in a separate thread
-            flask_thread = Thread(target=run_flask)
-            flask_thread.start()
-            
-            # Run the event loop
-            loop.run_forever()
-        elif mode == 'polling':
-            loop.run_until_complete(start_bot(main_bot))
-            main_bot.run_polling()
-            loop.run_forever()
-        else:
-            main_bot.logger.error(f"Invalid BOT_MODE: {mode}. Use 'webhook' or 'polling'.")
+        # Initialize the bot's webhook and start bot
+        loop.create_task(main_bot.setup_webhook())
+        loop.create_task(start_bot(main_bot))
+        
+        # Start Flask in a separate thread
+        flask_thread = Thread(target=run_flask)
+        flask_thread.start()
+        
+        # Run the event loop
+        loop.run_forever()
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
         main_bot.logger.error(f"Unhandled exception: {str(e)}")
     finally:
-        main_bot.shutdown()
+        close_database_connection(main_bot.client)
         loop.stop()
         loop.close()

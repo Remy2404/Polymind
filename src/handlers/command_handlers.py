@@ -1,5 +1,5 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, Application
+from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, Application ,CallbackContext
 from services.gemini_api import GeminiAPI
 from services.user_data_manager import UserDataManager
 from utils.telegramlog import telegram_logger
@@ -29,8 +29,8 @@ class CommandHandlers:
         
         keyboard = [
             [
-                InlineKeyboardButton("Help 📚", callback_data='help_command'),
-                InlineKeyboardButton("Settings ⚙️", callback_data='settings')
+                InlineKeyboardButton("Help 📚", callback_data='/help_command'),
+                InlineKeyboardButton("Settings ⚙️", callback_data='/settings')
             ],
             [InlineKeyboardButton("Support Channel 📢", url='https://t.me/Gemini_AIAssistBot')]
         ]
@@ -87,23 +87,60 @@ class CommandHandlers:
             parse_mode='Markdown'
         )
         self.telegram_logger.log_message(user_id, "Opened settings menu")
-    async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        try:
-            user_id = update.effective_user.id
-            stats = self.user_data_manager.get_user_stats(user_id)
-            if stats:
-                await update.message.reply_text(
-                    f"Here are your stats:\n"
-                    f"• Total Messages Sent: {stats.get('total_messages', 0)}\n"
-                    f"• Text Messages: {stats.get('text_messages', 0)}\n"
-                    f"• Voice Messages: {stats.get('voice_messages', 0)}\n"
-                    f"• Images Sent: {stats.get('images', 0)}"
-                )
-            else:
-                await update.message.reply_text("No statistics available yet.")
-        except Exception as e:
-            self.logger.error(f"Error fetching user stats: {str(e)}")
-            await self._error_handler(update, context)
+    async def handle_stats(self, update: Update, context: CallbackContext) -> None:
+        user_id = update.effective_user.id
+        user_data = self.user_data_manager.get_user_data(user_id)
+        stats = user_data.get('stats', {})
+        
+        stats_message = (
+            "📊 Your Bot Usage Statistics:\n\n"
+            f"📝 Text Messages: {stats.get('messages', 0)}\n"
+            f"🎤 Voice Messages: {stats.get('voice_messages', 0)}\n"
+            f"🖼 Images Processed: {stats.get('images', 0)}\n"
+            f"📑 PDFs Analyzed: {stats.get('pdfs_processed', 0)}\n"
+            f"Last Active: {stats.get('last_active', 'Never')}"
+        )
+        
+        await update.message.reply_text(stats_message)
+#Export Conversation History
+    async def handle_export(self, update: Update, context: CallbackContext) -> None:
+        user_id = update.effective_user.id
+        user_data = self.user_data_manager.get_user_data(user_id)
+        history = user_data.get('conversation_history', [])
+        
+        # Create formatted export
+        export_text = "💬 Conversation History:\n\n"
+        for msg in history:
+            export_text += f"User: {msg['user']}\n"
+            export_text += f"Bot: {msg['bot']}\n\n"
+        
+        # Send as file if too long
+        if len(export_text) > 4000:
+            with open(f'history_{user_id}.txt', 'w') as f:
+                f.write(export_text)
+            await update.message.reply_document(
+                document=open(f'history_{user_id}.txt', 'rb'),
+                filename='conversation_history.txt'
+            )
+        else:
+            await update.message.reply_text(export_text)
+    async def handle_preferences(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle user preferences command"""
+        keyboard = [
+            [InlineKeyboardButton("Language", callback_data="pref_language"),
+            InlineKeyboardButton("Response Format", callback_data="pref_format")],
+            [InlineKeyboardButton("Notifications", callback_data="pref_notifications"),
+            InlineKeyboardButton("AI Model", callback_data="pref_model")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "⚙️ *User Preferences*\n\n"
+            "Select a setting to modify:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+
 
     async def handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
@@ -116,6 +153,31 @@ class CommandHandlers:
         elif query.data in ['toggle_markdown', 'toggle_code_suggestions']:
             # Implement toggle logic here
             await query.edit_message_text("Setting updated!")
+    
+    async def semantic_search_command(self, update: Update, context: CallbackContext) -> None:
+        user_id = update.effective_user.id
+        query = ' '.join(context.args)
+        if not query:
+            await update.message.reply_text("Please provide a search query. Usage: /search <query>")
+            return
+        results = await self.pdf_handler.semantic_search(user_id, query)
+        response = "🔍 *Search Results:*\n" + "\n".join(results)
+        await update.message.reply_text(response, parse_mode='Markdown')
+
+    async def summary_command(self, update: Update, context: CallbackContext) -> None:
+        user_id = update.effective_user.id
+        length = context.args[0] if context.args else 'brief'
+        if length not in ['brief', 'detailed']:
+            await update.message.reply_text("Invalid summary length. Use 'brief' or 'detailed'.")
+            return
+        summary = await self.pdf_handler.generate_summary(user_id, length)
+        await update.message.reply_text(f"📝 *{length.capitalize()} Summary:*\n{summary}", parse_mode='Markdown')
+    
+    async def keypoints_command(self, update: Update, context: CallbackContext) -> None:
+        user_id = update.effective_user.id
+        keypoints = await self.pdf_handler.extract_key_points(user_id)
+        response = "📌 *Key Points:*\n" + "\n".join(keypoints)
+        await update.message.reply_text(response, parse_mode='Markdown')
 
     def register_handlers(self, application: Application) -> None:
         try:
@@ -123,7 +185,12 @@ class CommandHandlers:
             application.add_handler(CommandHandler("help", self.help_command))
             application.add_handler(CommandHandler("reset", self.reset_command))
             application.add_handler(CommandHandler("settings", self.settings))
-            application.add_handler(CommandHandler("stats", self.stats_command))
+            application.add_handler(CommandHandler("stats", self.handle_stats))
+            application.add_handler(CommandHandler("export", self.handle_export))
+            application.add_handler(CommandHandler("summary", self.summary_command))
+            application.add_handler(CommandHandler("keypoints", self.keypoints_command))
+            application.add_handler(CommandHandler("preferences", self.handle_preferences))
+            application.add_handler(CommandHandler("search", self.semantic_search_command))
             application.add_handler(CallbackQueryHandler(self.handle_callback_query))
             
             self.logger.info("Command handlers registered successfully")

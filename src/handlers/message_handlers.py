@@ -6,6 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from pydub import AudioSegment
 from handlers.text_handlers import TextHandler
+from telegram.ext import MessageHandler, filters
 from services.user_data_manager import UserDataManager
 
 
@@ -76,36 +77,36 @@ class MessageHandlers:
         """Handle incoming voice messages."""
         user_id = update.effective_user.id
         self.telegram_logger.log_message(user_id, "Received voice message")
-    
+
         await update.message.reply_text("I'm processing your voice message. Please wait...")
-    
-        try:
-            with tempfile.TemporaryDirectory() as temp_dir:
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            try:
                 # Download the voice file
                 file = await context.bot.get_file(update.message.voice.file_id)
                 ogg_file_path = os.path.join(temp_dir, f"{user_id}_voice.ogg")
                 await file.download_to_drive(ogg_file_path)
-    
+
                 # Convert OGG to WAV
                 wav_file_path = os.path.join(temp_dir, f"{user_id}_voice.wav")
                 audio = AudioSegment.from_ogg(ogg_file_path)
                 audio.export(wav_file_path, format="wav")
-    
+
                 # Convert the voice file to text
                 recognizer = sr.Recognizer()
                 with sr.AudioFile(wav_file_path) as source:
                     audio_data = recognizer.record(source)
                     text = recognizer.recognize_google(audio_data)
-    
+
                 # Log the transcribed text
                 self.telegram_logger.log_message(user_id, f"Transcribed text: {text}")
-    
+
                 # Initialize user data if not already initialized
-                await self.user_data_manager.initialize_user(user_id)
-    
+                self.user_data_manager.initialize_user(user_id)
+
                 # Create text handler instance
-                text_handler = TextHandler(self.gemini_api, self.user_data_manager)
-    
+                text_handler =TextHandler(self.gemini_api, self.user_data_manager)
+
                 # Create a new Update object with the transcribed text
                 new_update = Update.de_json({
                     'update_id': update.update_id,
@@ -117,21 +118,21 @@ class MessageHandlers:
                         'text': text
                     }
                 }, context.bot)
-    
+
                 # Process the transcribed text as if it were a regular text message
                 await text_handler.handle_text_message(new_update, context)
-    
-            # Update user stats
-            self.user_data_manager.update_stats(user_id, voice_message=True)
-    
-        except sr.UnknownValueError:
-            await update.message.reply_text("Sorry, I couldn't understand the audio. Could you please try again?")
-        except sr.RequestError as e:
-            self.logger.error(f"Could not request results from Google Speech Recognition service; {e}")
-            await update.message.reply_text("Sorry, there was an error processing your voice message. Please try again later.")
-        except Exception as e:
-            self.logger.error(f"Error processing voice message: {str(e)}")
-            await self._error_handler(update, context)
+
+            except sr.UnknownValueError:
+                await update.message.reply_text("Sorry, I couldn't understand the audio. Could you please try again?")
+            except sr.RequestError as e:
+                self.logger.error(f"Could not request results from Google Speech Recognition service; {e}")
+                await update.message.reply_text("Sorry, there was an error processing your voice message. Please try again later.")
+            except Exception as e:
+                self.logger.error(f"Error processing voice message: {str(e)}")
+                await update.message.reply_text("An error occurred while processing your voice message. Please try again.")
+
+        # Update user stats
+        self.user_data_manager.update_stats(user_id, voice_message=True)
    
     async def _handle_pdf_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle PDF documents."""
@@ -151,7 +152,7 @@ class MessageHandlers:
             file_content.seek(0)
 
             # Process the PDF using the pdf_handler
-            await self.pdf_handler.handle_pdf_upload(update, context, file_content)
+            await self.pdf_handler.handle_pdf(update, context)
             
             await self.user_data_manager.update_stats(user_id, pdf_document=True)
             await update.message.reply_text("PDF received and processed. You can now ask questions about it.")
@@ -164,5 +165,17 @@ class MessageHandlers:
         self.logger.error(f"Update {update} caused error: {context.error}")
         if update and update.effective_message:
             await update.effective_message.reply_text(
-                "An error occurred while processing your request. Please try again later."
+                "An error occurred while processing your request. Please try again later. 🥹💔"
             )
+    def register_handlers(self, application):
+        """Register message handlers with the application."""
+        try:
+            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text_message))
+            application.add_handler(MessageHandler(filters.PHOTO, self._handle_image_message))
+            application.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
+            application.add_handler(MessageHandler(filters.Document.MimeType('application/pdf'), self._handle_pdf_document))
+            application.add_error_handler(self._error_handler)
+            self.logger.info("Message handlers registered successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to register message handlers: {str(e)}")
+            raise
