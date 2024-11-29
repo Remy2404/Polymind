@@ -52,11 +52,10 @@ class MessageHandlers:
             user_id = update.effective_user.id
             self.telegram_logger.log_message(user_id, "Received image message")
 
-            # Check if the bot is mentioned in the image caption
-            bot_username = "@Gemini_AIAssistBot"
-            if update.message.caption and bot_username in update.message.caption:
+            # Check if the bot is mentioned in the caption
+            if update.message.caption and "@Gemini_AIAssistBot" in update.message.caption:
                 self.logger.info(f"Bot mentioned by user {user_id} in image caption")
-                await update.message.reply_text("I see you sent an image mentioning me. How can I assist you?")
+                await update.message.reply_text("Hello! How can I assist you with this image?")
 
             # Initialize user data if not already initialized
             self.user_data_manager.initialize_user(user_id)
@@ -66,12 +65,10 @@ class MessageHandlers:
 
             # Process the image
             await text_handler.handle_image(update, context)
-            await self.user_data_manager.update_user_stats(user_id, {'images': 1, 'total_messages': 1})
+
         except Exception as e:
             self.logger.error(f"Error processing image message: {str(e)}")
             await self._error_handler(update, context)
-        self.user_data_manager.update_stats(user_id, image=True)
-            
 
     async def _handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming voice messages."""

@@ -38,10 +38,10 @@ class GeminiAPI:
 
         try:
             self.model = genai.GenerativeModel(
-                model_name="gemini-pro",
+                model_name="gemini-1.5-flash",
                 generation_config=self.generation_config,
             )
-            self.vision_model = genai.GenerativeModel("gemini-pro-vision")
+            self.vision_model = genai.GenerativeModel("gemini-1.5-flash")
             self.rate_limiter = RateLimiter(requests_per_minute=20)
             telegram_logger.log_message("Gemini API initialized successfully", 0)
         except Exception as e:
@@ -72,20 +72,18 @@ class GeminiAPI:
             
             # Generate response with proper error handling
             try:
-                response = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: self.vision_model.generate_content(
-                        [
-                            prompt,  # First element is the text prompt
-                            {"mime_type": "image/jpeg", "data": processed_image}  # Second element is the image data
-                        ],
-                        safety_settings=[
-                            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                        ]
-                    )
+                response = await asyncio.to_thread(
+                    self.vision_model.generate_content,
+                    [
+                        prompt,  # First element is the text prompt
+                        {"mime_type": "image/jpeg", "data": processed_image}  # Second element is the image data
+                    ],
+                    safety_settings=[
+                        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                    ],
                 )
                 
                 if response and hasattr(response, 'text'):
@@ -116,11 +114,8 @@ class GeminiAPI:
             # Add the current prompt
             messages.append({"role": "user", "parts": [{"text": prompt}]})
 
-            # Generate the response using run_in_executor
-            response = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: self.model.generate_content(messages)
-            )
+            # Generate the response
+            response = self.model.generate_content(messages)
             return response.text
         except Exception as e:
             telegram_logger.log_error(f"Error generating response: {str(e)}", 0)

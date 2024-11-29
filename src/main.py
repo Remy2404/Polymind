@@ -132,25 +132,9 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("remind", self.reminder_manager.set_reminder))
         self.application.add_handler(CommandHandler("language", self.language_manager.set_language))
         
-       
-
-        self.application.add_error_handler(self.handle_error)
-        self.application.run_polling()
-    async def handle_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handles errors raised by any handler."""
-        logger = logging.getLogger(__name__)
-        logger.error(msg="Exception while handling an update:", exc_info=context.error)
-
-        # Notify the user
-        try:
-            if isinstance(update, Update) and update.effective_chat:
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text="⚠️ An error occurred while processing your request. Please try again later."
-                )
-        except Exception as e:
-            logger.error(f"Failed to send error message to user: {e}")
-
+        self.application.add_error_handler(self.message_handlers._error_handler)
+    
+        self.application.run_webhook = self.run_webhook
     async def setup_webhook(self):
         """Set up webhook for the bot."""
         webhook_path = f"/webhook/{self.token}"

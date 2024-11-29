@@ -20,39 +20,10 @@ class UserDataManager:
         try:
             user_data = {
                 'user_id': user_id,
-                'username': None,
-                'name': None,
-                'email': None,
-                'phone_number': None,
-                'created_at': datetime.now().isoformat(),
-                'last_seen': datetime.now().isoformat(),
-                'status': 'active',
-                'roles': [],
                 'conversation_history': [],
-                'stats': {
-                    'last_active': datetime.now().isoformat(),
-                    'messages': 0,
-                    'voice_messages': 0,
-                    'images': 0,
-                    'last_message_sent': datetime.now().isoformat(),
-                    'last_message_received': datetime.now().isoformat(),
-                },
-                'contexts': [],
-                'last_seen_message_id': None,
-                'last_seen_context_id': None,
-                'last_seen_message_timestamp': datetime.now().isoformat(),
-                'last_seen_context_timestamp': datetime.now().isoformat(),
-                'preferences': {
-                    'language': 'en',
-                    'response_format': 'text',
-                    'model': 'default',
-                    'notifications': True
-                },
                 'settings': {
                     'markdown_enabled': True,
-                    'code_suggestions': True,
-                    'notification_enabled': True
-
+                    'code_suggestions': True
                 }
             }
             await self.update_user_data(user_id, user_data)
@@ -283,56 +254,3 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error resetting conversation history for user {user_id}: {str(e)}")
             raise
-    async def set_user_preferences(self, user_id: int, preferences: dict) -> None:
-        """Set user preferences like language, response format, AI model."""
-        try:
-            user_data = {
-                'preferences': {
-                    'language': preferences.get('language', 'en'),
-                    'response_format': preferences.get('format', 'text'),
-                    'model': preferences.get('model', 'default'),
-                    'notifications': preferences.get('notifications', True)
-                }
-            }
-            await self.update_user_data(user_id, user_data)
-        except Exception as e:
-            self.logger.error(f"Error setting preferences for user {user_id}: {str(e)}")
-            raise
-    async def check_daily_limit(self, user_id: int) -> bool:
-        """Check if user has reached daily usage limits."""
-        user_data = self.get_user_data(user_id)
-        stats = user_data.get('stats', {})
-        today = datetime.now().date().isoformat()
-        
-        if stats.get('last_reset_date') != today:
-            stats['daily_usage'] = 0
-            stats['last_reset_date'] = today
-            
-        return stats.get('daily_usage', 0) < 50  # Configurable limit
-    async def increment_daily_usage(self, user_id: int) -> None:
-        """Increment daily usage count for a user."""
-        user_data = self.get_user_data(user_id)
-        stats = user_data.get('stats', {})
-        stats['daily_usage'] = stats.get('daily_usage', 0) + 1
-        
-        await self.update_user_data(user_id, user_data)
-    async def update_user_data(self, user_id: int, user_data: dict) -> None:
-        """Update user data in the database."""
-        try:
-            self.users_collection.update_one(
-                {"user_id": user_id},
-                {"$set": user_data},
-                upsert=True
-            )
-            self.logger.info(f"Updated user data for user: {user_id}")
-        except Exception as e:
-            self.logger.error(f"Error updating user data for user {user_id}: {str(e)}")
-            raise
-
-    def set_user_language(self, user_id: int, lang: str):
-        """Set the preferred language for a user."""
-        self.db.users.update_one(
-            {"user_id": user_id},
-            {"$set": {"language": lang}},
-            upsert=True
-        )
