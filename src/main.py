@@ -114,7 +114,7 @@ class TelegramBot:
         self.application.add_handler(TeleMessageHandler(filters.VOICE, self.message_handlers._handle_voice_message))
         #text message handler
         self.application.add_handler(TeleMessageHandler(filters.TEXT, self.message_handlers._handle_text_message))
-        self.application.add_handler(TeleMessageHandler(filters.TEXT & ~filters.COMMAND, self.pdf_handler.ask_pdf_question))
+        self.application.add_handler(CommandHandler("ask_pdf", self.pdf_handler.ask_pdf_question))
         self.application.add_handler(CallbackQueryHandler(self.pdf_handler.handle_reset_conversation, pattern="^reset_conversation$"))
         self.application.add_handler(TeleMessageHandler(filters.PHOTO, self.message_handlers._handle_image_message))
 

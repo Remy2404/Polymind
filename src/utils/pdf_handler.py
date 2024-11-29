@@ -1,15 +1,12 @@
 import io
-from pdfminer.high_level import extract_text_to_fp
-from pdfminer.layout import LAParams
+from PyPDF2 import PdfReader
 from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    Message,
 )
 from telegram.ext import (
     ContextTypes,
-    ConversationHandler,
     CommandHandler,
     MessageHandler,
     filters,
@@ -19,8 +16,6 @@ from utils.telegramlog import telegram_logger
 from services.gemini_api import GeminiAPI
 from handlers.text_handlers import TextHandler
 
-PDF_CONVERSATION = range(1)
-
 class PDFHandler:
     def __init__(self, gemini_api: GeminiAPI, text_handler: TextHandler):
         self.gemini_api = gemini_api
@@ -29,9 +24,11 @@ class PDFHandler:
         self.conversation_history = {}
 
     def extract_text_from_pdf(self, file_content: io.BytesIO) -> str:
-        output = io.StringIO()
-        extract_text_to_fp(file_content, output, laparams=LAParams(), output_type='text', codec=None)
-        return output.getvalue()
+        pdf_reader = PdfReader(file_content)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text()
+        return text
 
     async def handle_pdf_upload(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -44,7 +41,6 @@ class PDFHandler:
                 self.pdf_content[user_id] = extracted_text
                 self.conversation_history[user_id] = []
 
-                # Send confirmation with Reset button
                 keyboard = [
                     [InlineKeyboardButton("Reset Conversation", callback_data="reset_conversation")]
                 ]
@@ -62,34 +58,75 @@ class PDFHandler:
             await update.message.reply_text("⚠️ Please upload a valid PDF file.")
             telegram_logger.log_message(f"User {user_id} tried to upload an invalid PDF file", user_id)
 
-    async def ask_pdf_question(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def handle_pdf_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
-        message: Message = update.message
 
         if user_id not in self.pdf_content:
-            await message.reply_text("⚠️ You don't have any PDF uploaded. Please upload a PDF first.")
+            await update.message.reply_text(
+                "⚠️ You don't have any PDF uploaded. Please upload a PDF first."
+            )
             return
 
-        # Optional: Check if the message is a reply to the PDF upload
-        if message.reply_to_message and message.reply_to_message.document:
-            question = message.text
-            await message.reply_text("🔍 Processing your question...")
-            try:
-                answer = await self.text_handler.answer_question(self.pdf_content[user_id], question)
-                await message.reply_text(answer)
-                telegram_logger.log_message(f"Answered question for user {user_id}: {question}", user_id)
-            except Exception as e:
-                await message.reply_text("❌ An error occurred while processing your question.")
-                telegram_logger.error(f"Error answering question for user {user_id}: {e}")
-        else:
-            await message.reply_text("ℹ️ Please reply to the PDF message with your question.")
+        content = self.pdf_content[user_id]
+        content_size = len(content)
+        summary = await self.get_pdf_summary(user_id)
+
+        info_message = (
+            f"📄 **PDF Information:**\n"
+            f"- **Content Size:** {content_size} characters\n"
+            f"- **Summary:** {summary[:1000]}..."
+        )
+
+        keyboard = [
+            [InlineKeyboardButton("Reset Conversation", callback_data="reset_conversation")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(
+            info_message,
+            parse_mode='MarkdownV2',
+            reply_markup=reply_markup
+        )
+        telegram_logger.log_message(f"Provided PDF info to user {user_id}", user_id)
+
+    async def get_pdf_summary(self, user_id: int) -> str:
+        content = self.pdf_content.get(user_id, "")
+        if not content:
+            return "No PDF content available."
+
+        prompt = f"Provide a brief summary of the following PDF content:\n\n{content[:4000]}"
+
+        try:
+            summary = await self.gemini_api.generate_response(prompt)
+            return summary
+        except Exception as e:
+            error_message = f"Error generating PDF summary: {str(e)}"
+            telegram_logger.error(error_message)
+            return "Unable to generate summary due to an error."
+
+    async def ask_pdf_question(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        if user_id not in self.pdf_content:
+            await update.message.reply_text(
+                "⚠️ You don't have any PDF content stored. Please upload a PDF first."
+            )
+            return
+
+        question = update.message.text
+        try:
+            answer = await self.text_handler.answer_question(self.pdf_content[user_id], question)
+            self.conversation_history[user_id].append({"question": question, "answer": answer})
+            await update.message.reply_text(answer)
+            telegram_logger.log_message(f"Answered question for user {user_id}: {question}", user_id)
+        except Exception as e:
+            await update.message.reply_text("❌ An error occurred while processing your question.")
+            telegram_logger.error(f"Error answering question for user {user_id}: {e}")
 
     async def handle_reset_conversation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         user_id = query.from_user.id
         await query.answer()
 
-        # Reset the conversation history
         if user_id in self.conversation_history:
             self.conversation_history[user_id] = []
             await query.edit_message_text("🧹 Conversation has been reset.")
@@ -100,6 +137,7 @@ class PDFHandler:
     def get_handlers(self):
         return [
             MessageHandler(filters.Document.PDF, self.handle_pdf_upload),
+            CommandHandler("pdf_info", self.handle_pdf_info),
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.ask_pdf_question),
             CallbackQueryHandler(self.handle_reset_conversation, pattern="^reset_conversation$"),
         ]

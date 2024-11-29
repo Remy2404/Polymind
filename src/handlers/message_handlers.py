@@ -1,4 +1,4 @@
-import os
+import os , io
 import tempfile
 import logging
 import speech_recognition as sr
@@ -7,7 +7,6 @@ from telegram.ext import ContextTypes
 from pydub import AudioSegment
 from handlers.text_handlers import TextHandler
 from services.user_data_manager import UserDataManager
-from telegram.constants import ChatMemberStatus
 
 
 class MessageHandlers:
@@ -133,26 +132,33 @@ class MessageHandlers:
         except Exception as e:
             self.logger.error(f"Error processing voice message: {str(e)}")
             await self._error_handler(update, context)
-    # In the TelegramBot class:
+   
     async def _handle_pdf_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle PDF documents."""
         user_id = update.effective_user.id
         try:
+            self.logger.info(f"Received PDF document from user {user_id}")
+            
+            if not update.message.document or update.message.document.mime_type != 'application/pdf':
+                await update.message.reply_text("Please send a valid PDF file.")
+                return
+
             await self.user_data_manager.initialize_user(user_id)
-            await self.pdf_handler.handle_pdf(update, context)
+            
+            file = await context.bot.get_file(update.message.document.file_id)
+            file_content = io.BytesIO()
+            await file.download(out=file_content)
+            file_content.seek(0)
+
+            # Process the PDF using the pdf_handler
+            await self.pdf_handler.handle_pdf_upload(update, context, file_content)
+            
             await self.user_data_manager.update_stats(user_id, pdf_document=True)
-            await update.message.reply_text("PDF received and processed.")
+            await update.message.reply_text("PDF received and processed. You can now ask questions about it.")
         except Exception as e:
             self.logger.error(f"Error handling PDF: {str(e)}")
             await update.message.reply_text("An error occurred while processing your PDF. Please try again.")
 
-    async def _handle_pdf_followup(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle follow-up questions about the PDF content."""
-        try:
-            await self.pdf_handler.handle_pdf_followup(update, context)
-        except Exception as e:
-            self.logger.error(f"Error handling PDF followup: {str(e)}")
-            await update.message.reply_text("An error occurred while processing your question. Please try again.")
     async def _error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle errors occurring in the dispatcher."""
         self.logger.error(f"Update {update} caused error: {context.error}")
@@ -160,31 +166,3 @@ class MessageHandlers:
             await update.effective_message.reply_text(
                 "An error occurred while processing your request. Please try again later."
             )
-
-    async def _check_user_role(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-        """
-        Check if a user has a specific role in the Telegram group.
-
-        Args:
-            update: The Telegram update object.
-            context: The Telegram context object.
-            role: The role to check for (e.g., "administrator", "creator").
-
-        Returns:
-            True if the user has the specified role, False otherwise.
-        """
-        user_id = update.effective_user.id
-        chat_id = update.effective_chat.id
-
-        # Get the chat member object for the user
-        chat_member = await context.bot.get_chat_member(chat_id, user_id)
-
-        # Check if the user has the specified role
-        if chat_member.status == ChatMemberStatus.CREATOR:
-            return True
-        elif chat_member.status == ChatMemberStatus.ADMINISTRATOR:
-            return True
-        elif "role" in chat_member.user.json() and "role" in chat_member.user.json().get("status", ""):
-            return chat_member.user.json()["role"] == "moderator"
-        else:
-            return False
