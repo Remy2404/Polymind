@@ -9,6 +9,7 @@ import traceback
 from telegram.ext import (
     Application, 
     CommandHandler, 
+    CallbackQueryHandler,
     MessageHandler as TeleMessageHandler, 
     filters
 )
@@ -85,10 +86,10 @@ class TelegramBot:
 
         # Initialize MessageHandlers after other handlers
         self.message_handlers = MessageHandlers(
-            self.gemini_api,
-            self.user_data_manager,
-            self.pdf_handler,
-            self.telegram_logger
+        self.gemini_api,
+        self.user_data_manager,
+        self.telegram_logger,
+        self.pdf_handler
         )
 
         # Initialize application
@@ -113,20 +114,19 @@ class TelegramBot:
         self.application.add_handler(TeleMessageHandler(filters.VOICE, self.message_handlers._handle_voice_message))
         #text message handler
         self.application.add_handler(TeleMessageHandler(filters.TEXT, self.message_handlers._handle_text_message))
-        self.application.add_handler(TeleMessageHandler(filters.Document.PDF, self.message_handlers._handle_pdf_document))
-        self.application.add_handler(TeleMessageHandler(filters.TEXT & ~filters.COMMAND, self.message_handlers._handle_pdf_followup))
+        self.application.add_handler(TeleMessageHandler(filters.TEXT & ~filters.COMMAND, self.pdf_handler.ask_pdf_question))
+        self.application.add_handler(CallbackQueryHandler(self.pdf_handler.handle_reset_conversation, pattern="^reset_conversation$"))
         self.application.add_handler(TeleMessageHandler(filters.PHOTO, self.message_handlers._handle_image_message))
 
         # Register PDF handlers if pdf_handler exists
         if self.pdf_handler:
             self.application.add_handler(CommandHandler("pdf_info", self.pdf_handler.handle_pdf_info))
-            self.application.add_handler(self.pdf_handler.get_conversation_handler())
-
-        # Register history handler
+              # Register history handler
         self.application.add_handler(CommandHandler("history", self.text_handler.show_history))
 
         # Register error handler
         self.application.add_error_handler(self.message_handlers._error_handler)
+        self.application.run_polling()
 
     async def setup_webhook(self):
         """Set up webhook for the bot."""

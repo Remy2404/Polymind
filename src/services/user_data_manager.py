@@ -42,8 +42,13 @@ class UserDataManager:
         """
         try:
             user = self.get_user_data(user_id)
-            stats = user['stats']
+            stats = user.get('stats', {})
             stats['last_active'] = datetime.now().isoformat()
+            
+            # Initialize stats if they don't exist
+            stats.setdefault('messages', 0)
+            stats.setdefault('voice_messages', 0)
+            stats.setdefault('images', 0)
             
             if text_message:
                 stats['messages'] += 1
@@ -54,12 +59,12 @@ class UserDataManager:
             
             self.users_collection.update_one(
                 {"user_id": user_id}, 
-                {"$set": {"stats": stats}}
+                {"$set": {"stats": stats}},
+                upsert=True
             )
             self.logger.debug(f"Updated stats for user: {user_id}")
         except Exception as e:
             self.logger.error(f"Error updating stats for user {user_id}: {str(e)}")
-            raise
     async def update_user_data(self, user_id: int, user_data: dict) -> None:
         """Update user data in the database."""
         try:
