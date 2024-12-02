@@ -51,6 +51,8 @@ class GeminiAPI:
     async def format_message(self, text: str) -> str:
         """Format text for initial processing before Telegram Markdown formatting."""
         try:
+            # Don't escape special characters here, just clean up the text
+            # Remove any null characters or other problematic characters
             cleaned_text = text.replace('\x00', '').strip()
             return cleaned_text
         except Exception as e:
@@ -61,17 +63,20 @@ class GeminiAPI:
         """Analyze an image and generate a response based on the prompt."""
         await self.rate_limiter.acquire()
         try:
+            # Validate image first
             if not ImageProcessor.validate_image(image_data):
                 return "Sorry, the image format is not supported. Please send a JPEG or PNG image."
 
+            # Process the image
             processed_image = await ImageProcessor.prepare_image(image_data)
             
+            # Generate response with proper error handling
             try:
                 response = await asyncio.to_thread(
                     self.vision_model.generate_content,
                     [
-                        prompt,
-                        {"mime_type": "image/jpeg", "data": processed_image}
+                        prompt,  # First element is the text prompt
+                        {"mime_type": "image/jpeg, image/png", "data": processed_image}  # Second element is the image data
                     ],
                     safety_settings=[
                         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
@@ -100,32 +105,18 @@ class GeminiAPI:
 
     async def generate_response(self, prompt: str, context: list = None):
         try:
+            # Format the context and prompt for Gemini
             messages = []
             if context:
                 for item in context:
                     messages.append({"role": item['role'], "parts": [{"text": item['content']}]})
             
+            # Add the current prompt
             messages.append({"role": "user", "parts": [{"text": prompt}]})
 
-            # Generate the response with grounding enabled
-            response = await asyncio.to_thread(
-                self.model.generate_content,
-                messages,
-                tools='google_search_retrieval'  # Enable Google Search grounding
-            )
-
-            # Check if response contains grounding metadata and handle it accordingly
-            if hasattr(response, 'groundingMetadata'):
-                search_suggestions = response.groundingMetadata.get('webSearchQueries', [])
-                # You can implement logic to display search suggestions here if needed
-
+            # Generate the response
+            response = self.model.generate_content(messages)
             return response.text
-            
         except Exception as e:
             telegram_logger.log_error(f"Error generating response: {str(e)}", 0)
-<<<<<<< HEAD
-            return None 
-=======
             return None
-        
->>>>>>> b048a91bbd21b774483cd4731911c542fbf9e917
