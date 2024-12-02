@@ -107,20 +107,21 @@ class GeminiAPI:
             
             messages.append({"role": "user", "parts": [{"text": prompt}]})
 
-            # Enable Google Search grounding by adding tools parameter
+            # Generate the response with grounding enabled
             response = await asyncio.to_thread(
                 self.model.generate_content,
                 messages,
-                tools='google_search_retrieval'  # Enable grounding with Google Search
+                tools='google_search_retrieval'  # Enable Google Search grounding
             )
 
             # Check if response contains grounding metadata and handle it accordingly
             if hasattr(response, 'groundingMetadata'):
                 search_suggestions = response.groundingMetadata.get('webSearchQueries', [])
-                # Here you could implement logic to display search suggestions if needed
+                # You can implement logic to display search suggestions here if needed
 
             return response.text
             
         except Exception as e:
             telegram_logger.log_error(f"Error generating response: {str(e)}", 0)
             return None
+        
