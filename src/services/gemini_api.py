@@ -119,4 +119,4 @@ class GeminiAPI:
             return response.text
         except Exception as e:
             telegram_logger.log_error(f"Error generating response: {str(e)}", 0)
-            return None
+            return None 

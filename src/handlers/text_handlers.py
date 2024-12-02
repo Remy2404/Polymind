@@ -81,7 +81,7 @@ class TextHandler:
                     await update.message.reply_text(
                         formatted_chunk,
                         parse_mode='MarkdownV2',
-                        disable_web_page_preview=True,
+                        disable_web_page_preview=False,
                     )
                 except Exception as formatting_error:
                     self.logger.error(f"Formatting failed: {str(formatting_error)}")
