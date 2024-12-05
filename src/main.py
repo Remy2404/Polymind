@@ -1,21 +1,15 @@
 import os
 import sys
 import logging
-import asyncio
-import traceback
-from typing import Optional
-
-import google.generativeai as genai
-from flask import Flask, request, jsonify
+import os
+import sys
+import logging
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import (
     Application, 
     CommandHandler, 
-    ContextTypes,
-    MessageHandler,
-    PicklePersistence,
-    filters
+    PicklePersistence
 )
 
 # Import custom modules
@@ -28,8 +22,13 @@ from handlers.command_handlers import CommandHandlers
 from handlers.text_handlers import TextHandler
 from handlers.message_handlers import MessageHandlers
 from utils.language_manager import LanguageManager
-from utils.telegramlog import TelegramLogger, telegram_logger
+from utils.telegramlog import telegram_logger
 from utils.pdf_handler import PDFHandler
+import google.generativeai as genai
+#FastAPI
+from fastapi import FastAPI, Request
+#uvicorn
+import uvicorn
 
 # Configure logging
 def setup_logging():
@@ -60,6 +59,8 @@ def setup_logging():
         logging.getLogger().addHandler(file_handler)
     except ImportError:
         logging.warning("Could not set up rotating file handler")
+
+app = FastAPI()
 
 class TelegramBot:
     """
@@ -285,6 +286,13 @@ class TelegramBot:
         except Exception as e:
             self.logger.error(f"Shutdown error: {e}")
 
+@app.post("/webhook/{token}")
+async def webhook_handler(token: str, request: Request):
+    bot = TelegramBot()
+    update_data = await request.json()
+    await bot.process_update(update_data)
+    return {"status": "ok"}
+
 def main():
     """
     Main entry point for the Telegram bot application.
@@ -298,34 +306,17 @@ def main():
         # Initialize bot
         bot = TelegramBot()
         
-        # Asyncio event loop for webhook and bot management
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Setup webhook
+        webhook_path = f"/webhook/{bot.token}"
+        webhook_url = f"{bot.webhook_url}{webhook_path}"
         
-        try:
-            # Setup webhook
-            loop.run_until_complete(bot.setup_webhook())
-            
-            # Start bot
-            loop.run_until_complete(bot.application.initialize())
-            loop.run_until_complete(bot.application.start())
-            
-            logger.info("Telegram bot started successfully")
-            
-            # Keep the loop running
-            loop.run_forever()
+        if not webhook_url.startswith("https://"):
+            raise ValueError("WEBHOOK_URL must start with 'https://'")
+
+        logger.info(f"Setting webhook to {webhook_url}")
         
-        except KeyboardInterrupt:
-            logger.info("Bot stopped by user")
-        except Exception as e:
-            logger.error(f"Critical bot error: {e}")
-            logger.error(traceback.format_exc())
-        finally:
-            # Cleanup resources
-            bot.shutdown()
-            loop.stop()
-            loop.close()
-    
+        # Run FastAPI server
+        uvicorn.run(app, host="0.0.0.0", port=8000)
     except Exception as e:
         logger.critical(f"Failed to initialize bot: {e}")
         sys.exit(1)
