@@ -47,3 +47,10 @@ def close_database_connection(client):
             logger.info("MongoDB connection closed.")
         except Exception as e:
             logger.error(f"Error closing MongoDB connection: {e}")
+
+def get_image_cache_collection(db):
+    if db is not None:
+        return db.image_cache
+    else:
+        logger.error("Database connection is not established.")
+        return None

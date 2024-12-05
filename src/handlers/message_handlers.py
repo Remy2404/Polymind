@@ -2,12 +2,28 @@ import os , io
 import tempfile
 import logging
 import speech_recognition as sr
-from telegram import Update
-from telegram.ext import ContextTypes
 from pydub import AudioSegment
+from telegram.constants import ChatAction
 from handlers.text_handlers import TextHandler
 from telegram.ext import MessageHandler, filters
 from services.user_data_manager import UserDataManager
+from telegram import Update
+from telegram import (
+    Update, 
+    InputMediaPhoto, 
+    InputMediaVideo, 
+    InputMediaDocument, 
+    InlineKeyboardButton, 
+    InlineKeyboardMarkup,
+)
+from telegram.ext import (
+    ContextTypes,
+    CallbackQueryHandler,
+    ConversationHandler,
+    MessageHandler,
+    CommandHandler,
+    filters
+)
 
 
 class MessageHandlers:
@@ -52,12 +68,18 @@ class MessageHandlers:
             user_id = update.effective_user.id
             self.telegram_logger.log_message(user_id, "Received image message")
 
+            # Show upload photo action
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+
             # Check if the bot is mentioned in the caption
             if update.message.caption and "@Gemini_AIAssistBot" in update.message.caption:
                 self.logger.info(f"Bot mentioned by user {user_id} in image caption")
+                
+                # Show typing action
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
                 await update.message.reply_text("Hello! How can I assist you with this image?")
 
-            # Initialize user data if not already initialized
+            # Initialize user data if not already initialized 
             self.user_data_manager.initialize_user(user_id)
             
             # Create text handler instance (which also handles images)
@@ -157,6 +179,41 @@ class MessageHandlers:
             self.logger.error(f"Error handling PDF: {str(e)}")
             await update.message.reply_text("An error occurred while processing your PDF. Please try again.")
 
+  
+    from telegram import Update
+    from telegram.ext import ContextTypes
+    async def _handle_edited_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle edited messages sent by the bot."""
+        try:
+            edited_message = update.edited_message
+            if not edited_message:
+                return  # Not an edited message
+
+            user_id = edited_message.from_user.id
+            chat_id = edited_message.chat_id
+            message_id = edited_message.message_id
+
+            self.logger.info(f"Received edited message from user {user_id} in chat {chat_id}")
+
+            # Check if the edited message has text or caption
+            if edited_message.text:
+                edited_content = edited_message.text
+            elif edited_message.caption:
+                edited_content = edited_message.caption
+            else:
+                self.logger.warning(f"Edited message {message_id} has no text or caption")
+                return
+
+            # Process the edited content here
+            # For example, you might want to update the conversation history or respond to the edit
+
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"I noticed you edited your message. The new content is: {edited_content}"
+            )
+        except Exception as e:
+            self.logger.error(f"Error handling edited message: {str(e)}")
+            # You might want to send an error message to the user here
     async def _error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle errors occurring in the dispatcher."""
         self.logger.error(f"Update {update} caused error: {context.error}")
@@ -171,6 +228,7 @@ class MessageHandlers:
             application.add_handler(MessageHandler(filters.PHOTO, self._handle_image_message))
             application.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
             application.add_handler(MessageHandler(filters.Document.MimeType('application/pdf'), self._handle_pdf_document))
+            application.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, self._handle_edited_message))
             application.add_error_handler(self._error_handler)
             self.logger.info("Message handlers registered successfully")
         except Exception as e:

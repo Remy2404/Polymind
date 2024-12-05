@@ -57,7 +57,7 @@ class ImageProcessor:
                 # Verify the image
                 img.verify()
                 # Check if format is supported
-                if img.format not in ['JPEG', 'PNG', 'WEBP']:
+                if img.format not in ['JPEG', 'PNG', 'WEBP' ,'GIF' ,]:
                     return False
                 # Check if size is reasonable
                 if img.size[0] * img.size[1] > 25000000:  # Max 25MP

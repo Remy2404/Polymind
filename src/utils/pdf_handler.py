@@ -39,7 +39,7 @@ class PDFHandler:
             text_handler (TextHandler, optional): Instance of TextHandler. Defaults to None.
             telegram_logger (TelegramLogger, optional): Instance of TelegramLogger. Defaults to global telegram_logger.
         """
-        self.gemini_api = GeminiAPI()
+        self.gemini_api = GeminiAPI(vision_model=None, rate_limiter=None)
         self.text_handler = text_handler
         self.telegram_logger = telegram_logger if telegram_logger else telegram_logger
         self.pdf_content = {}  # Stores PDF content per user

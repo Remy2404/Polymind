@@ -12,6 +12,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes,
     MessageHandler as TeleMessageHandler, 
+    PicklePersistence,
     filters
 )
 from database.connection import get_database, close_database_connection
@@ -24,9 +25,9 @@ from utils.telegramlog import TelegramLogger, telegram_logger
 from utils.pdf_handler import PDFHandler
 from threading import Thread
 from services.reminder_manager import ReminderManager
-from utils.language_manager import LanguageManager
-
-
+from utils.language_manager import LanguageManager 
+from services.rate_limiter import RateLimiter
+import google.generativeai as genai
 # Load environment variables
 load_dotenv()
 
@@ -66,12 +67,20 @@ class TelegramBot:
         self.gemini_api_key = os.getenv('GEMINI_API_KEY')
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY not found in .env file")
-
-        # Initialize application
-        self.application = Application.builder().token(self.token).build()
+        # Initialize application with persistence
+        self.application = (
+            Application.builder()
+            .token(self.token)
+            .persistence(PicklePersistence(filepath='conversation_states.pickle'))
+            .build()
+        )
 
         # Initialize Gemini API **before** using it in handlers
-        self.gemini_api = GeminiAPI()
+        vision_model = genai.GenerativeModel("gemini-1.5-flash")
+        rate_limiter = RateLimiter(requests_per_minute=20)
+        self.gemini_api = GeminiAPI(vision_model=vision_model, rate_limiter=rate_limiter)
+
+        
 
         # Initialize User Data Manager
         self.user_data_manager = UserDataManager(self.db)
@@ -80,8 +89,9 @@ class TelegramBot:
         self.telegram_logger = telegram_logger
 
         # Initialize TextHandler **before** PDFHandler
-        self.text_handler = TextHandler(self.gemini_api, self.user_data_manager)
-
+        self.text_handler = TextHandler(self.gemini_api, self.user_data_manager , self.telegram_logger)
+        self.generate_image_handler = CommandHandler(['generate_img', 'generate_image'], self.text_handler.start_generate_image)
+  
         # Initialize CommandHandlers with the initialized Gemini API and User Data Manager
         self.command_handler = CommandHandlers(
             gemini_api=self.gemini_api, 
@@ -131,6 +141,7 @@ class TelegramBot:
         # Register specific command handlers
         self.application.add_handler(CommandHandler("remind", self.reminder_manager.set_reminder))
         self.application.add_handler(CommandHandler("language", self.language_manager.set_language))
+        self.application.add_handler(CommandHandler("history", self.text_handler.show_history))
         
         self.application.add_error_handler(self.message_handlers._error_handler)
     

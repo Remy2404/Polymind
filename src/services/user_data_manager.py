@@ -1,5 +1,6 @@
 from pymongo.collection import Collection
 from datetime import datetime, timedelta
+from services.rate_limiter import UserRateLimiter
 from typing import Dict, List, Any
 import logging
 import warnings
@@ -13,6 +14,7 @@ class UserDataManager:
         """
         self.db = db
         self.users_collection: Collection = self.db.users
+        self.rate_limiter = UserRateLimiter(requests_per_hour=5)# 5  img requests per hour
         self.logger = logging.getLogger(__name__)
 
     async def initialize_user(self, user_id: int) -> None:
@@ -31,14 +33,22 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error initializing user {user_id}: {str(e)}")
             raise
-    def update_stats(self, user_id: str, text_message: bool = False, voice_message: bool = False, image: bool = False) -> None:
+    async def acquire_rate_limit(self, user_id: int):
+        await self.rate_limiter.acquire_user(user_id)
+
+    async def get_user_capacity(self, user_id: int) -> float:
+        return await self.rate_limiter.get_user_capacity(user_id)
+    async def update_stats(self, user_id: str, text_message: bool = False, 
+                          voice_message: bool = False, image: bool = False,
+                          generated_images: bool = False) -> None:
         """
         Update user statistics based on their activity.
         
         :param user_id: Unique identifier for the user
         :param text_message: Whether a text message was sent
-        :param voice_message: Whether a voice message was sent
+        :param voice_message: Whether a voice message was sent 
         :param image: Whether an image was sent
+        :param generated_images: Whether an image was generated
         """
         try:
             user = self.get_user_data(user_id)
@@ -49,6 +59,7 @@ class UserDataManager:
             stats.setdefault('messages', 0)
             stats.setdefault('voice_messages', 0)
             stats.setdefault('images', 0)
+            stats.setdefault('generated_images', 0)
             
             if text_message:
                 stats['messages'] += 1
@@ -56,6 +67,8 @@ class UserDataManager:
                 stats['voice_messages'] += 1
             if image:
                 stats['images'] += 1
+            if generated_images:
+                stats['generated_images'] += 1
             
             self.users_collection.update_one(
                 {"user_id": user_id}, 
