@@ -2,109 +2,197 @@ import os
 import sys
 import logging
 import asyncio
+import traceback
+from typing import Optional
+
+import google.generativeai as genai
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from telegram import Update
-import traceback
 from telegram.ext import (
     Application, 
     CommandHandler, 
-    CallbackQueryHandler,
     ContextTypes,
-    MessageHandler as TeleMessageHandler, 
+    MessageHandler,
     PicklePersistence,
     filters
 )
+
+# Import custom modules
 from database.connection import get_database, close_database_connection
 from services.user_data_manager import UserDataManager
 from services.gemini_api import GeminiAPI
+from services.rate_limiter import RateLimiter
+from services.reminder_manager import ReminderManager
 from handlers.command_handlers import CommandHandlers
 from handlers.text_handlers import TextHandler
-from handlers.message_handlers import MessageHandlers  # Ensure this is your custom handler
+from handlers.message_handlers import MessageHandlers
+from utils.language_manager import LanguageManager
 from utils.telegramlog import TelegramLogger, telegram_logger
 from utils.pdf_handler import PDFHandler
-from threading import Thread
-from services.reminder_manager import ReminderManager
-from utils.language_manager import LanguageManager 
-from services.rate_limiter import RateLimiter
-import google.generativeai as genai
-# Load environment variables
-load_dotenv()
 
 # Configure logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('bot.log', encoding='utf-8')
-    ]
-)
-logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
+def setup_logging():
+    """
+    Set up comprehensive logging configuration.
+    Logs to both console and file with rotating file handler.
+    """
+    logging.basicConfig(
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=logging.INFO,
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler('bot.log', encoding='utf-8', mode='a')
+        ]
+    )
+    
+    # Optional: Add file rotation to prevent log file from growing too large
+    try:
+        import logging.handlers as log_handlers
+        file_handler = log_handlers.RotatingFileHandler(
+            'bot.log', 
+            maxBytes=10*1024*1024,  # 10 MB
+            backupCount=5
+        )
+        file_handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        ))
+        logging.getLogger().addHandler(file_handler)
+    except ImportError:
+        logging.warning("Could not set up rotating file handler")
 
 class TelegramBot:
-    """Main class for the Telegram Bot."""
-
+    """
+    Main Telegram Bot class managing bot initialization, 
+    webhook setup, and core functionality.
+    """
+    
     def __init__(self):
-        """Initialize the TelegramBot instance."""
+        """
+        Initialize the Telegram Bot with all necessary components.
+        Sets up database, API connections, handlers, and persistence.
+        """
+        # Setup logging
         self.logger = logging.getLogger(__name__)
         
-        # Establish database connection
-        self.db, self.client = get_database()
-        if self.db is None:
-            self.logger.error("Failed to connect to the database")
-            raise ConnectionError("Failed to connect to the database")
-        self.logger.info("Connected to MongoDB successfully")
-
-        # Get tokens from .env file
-        self.token = os.getenv('TELEGRAM_BOT_TOKEN')
-        if not self.token:
-            raise ValueError("TELEGRAM_BOT_TOKEN not found in .env file")
-
-        # Verify Gemini API key is present
-        self.gemini_api_key = os.getenv('GEMINI_API_KEY')
-        if not self.gemini_api_key:
-            raise ValueError("GEMINI_API_KEY not found in .env file")
-        # Initialize application with persistence
-        self.application = (
-            Application.builder()
-            .token(self.token)
-            .persistence(PicklePersistence(filepath='conversation_states.pickle'))
-            .build()
-        )
-
-        # Initialize Gemini API **before** using it in handlers
-        vision_model = genai.GenerativeModel("gemini-1.5-flash")
-        rate_limiter = RateLimiter(requests_per_minute=20)
-        self.gemini_api = GeminiAPI(vision_model=vision_model, rate_limiter=rate_limiter)
-
+        # Load environment variables
+        load_dotenv()
         
+        # Validate required environment variables
+        self._validate_env_variables()
+        
+        # Establish database connection
+        self._setup_database()
+        
+        # Initialize Gemini API
+        self._setup_gemini_api()
+        
+        # Create bot application with persistence
+        self._create_bot_application()
+        
+        # Initialize supporting services and handlers
+        self._initialize_services()
+        
+        # Setup message handlers
+        self._setup_message_handlers()
 
-        # Initialize User Data Manager
+    def _validate_env_variables(self):
+        """
+        Validate and extract essential environment variables.
+        Raise exceptions for missing critical configurations.
+        """
+        self.token = os.getenv('TELEGRAM_BOT_TOKEN')
+        self.gemini_api_key = os.getenv('GEMINI_API_KEY')
+        self.webhook_url = os.getenv('WEBHOOK_URL')
+        
+        if not self.token:
+            raise ValueError("TELEGRAM_BOT_TOKEN not found in .env")
+        
+        if not self.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY not found in .env")
+        
+        if not self.webhook_url:
+            raise ValueError("WEBHOOK_URL not found in .env")
+
+    def _setup_database(self):
+        """
+        Establish connection to the database.
+        Handle potential connection errors.
+        """
+        try:
+            self.db, self.client = get_database()
+            if self.db is None:
+                raise ConnectionError("Failed to connect to MongoDB")
+            self.logger.info("Connected to MongoDB successfully")
+        except Exception as e:
+            self.logger.error(f"Database connection error: {e}")
+            raise
+
+    def _setup_gemini_api(self):
+        """
+        Configure Gemini API with rate limiting and model initialization.
+        """
+        try:
+            # Configure Gemini API key
+            genai.configure(api_key=self.gemini_api_key)
+            
+            # Initialize vision model with rate limiting
+            vision_model = genai.GenerativeModel("gemini-1.5-flash")
+            rate_limiter = RateLimiter(requests_per_minute=20)
+            
+            self.gemini_api = GeminiAPI(
+                vision_model=vision_model, 
+                rate_limiter=rate_limiter
+            )
+        except Exception as e:
+            self.logger.error(f"Gemini API setup failed: {e}")
+            raise
+
+    def _create_bot_application(self):
+        """
+        Create Telegram bot application with persistence.
+        """
+        try:
+            self.application = (
+                Application.builder()
+                .token(self.token)
+                .persistence(PicklePersistence(filepath='conversation_states.pickle'))
+                .build()
+            )
+        except Exception as e:
+            self.logger.error(f"Bot application creation failed: {e}")
+            raise
+
+    def _initialize_services(self):
+        """
+        Initialize supporting services and managers.
+        """
+        # User Data Manager
         self.user_data_manager = UserDataManager(self.db)
-
-        # Initialize Telegram Logger
+        
+        # Telegram Logger
         self.telegram_logger = telegram_logger
-
-        # Initialize TextHandler **before** PDFHandler
-        self.text_handler = TextHandler(self.gemini_api, self.user_data_manager , self.telegram_logger)
-        self.generate_image_handler = CommandHandler(['generate_img', 'generate_image'], self.text_handler.start_generate_image)
-  
-        # Initialize CommandHandlers with the initialized Gemini API and User Data Manager
-        self.command_handler = CommandHandlers(
-            gemini_api=self.gemini_api, 
-            user_data_manager=self.user_data_manager
+        
+        # Text Handler
+        self.text_handler = TextHandler(
+            self.gemini_api, 
+            self.user_data_manager, 
+            self.telegram_logger
         )
-
-        # Now initialize PDFHandler with text_handler
+        
+        # PDF Handler
         self.pdf_handler = PDFHandler(
             text_handler=self.text_handler,
             telegram_logger=self.telegram_logger
         )
-
-        # Initialize MessageHandlers after other handlers
+        
+        # Command Handlers
+        self.command_handler = CommandHandlers(
+            gemini_api=self.gemini_api, 
+            user_data_manager=self.user_data_manager
+        )
+        
+        # Message Handlers
         self.message_handlers = MessageHandlers(
             self.gemini_api,
             self.user_data_manager,
@@ -112,130 +200,135 @@ class TelegramBot:
             self.pdf_handler
         )
         
+        # Additional Services
         self.reminder_manager = ReminderManager(self.application.bot)
         self.language_manager = LanguageManager()
 
-        self._setup_handlers()
-
-    def shutdown(self):
-        """Clean up resources."""
-        close_database_connection(self.client)
-        logger.info("Shutdown complete. Database connection closed.")
-
-    def _setup_handlers(self):
-        """Set up all message handlers."""
-       # Register command handlers
+    def _setup_message_handlers(self):
+        """
+        Register all message and command handlers.
+        """
+        # Register command handlers
         self.command_handler.register_handlers(self.application)
 
-        # Register handlers from TextHandler
+        # Register text handlers
         for handler in self.text_handler.get_handlers():
             self.application.add_handler(handler)
 
-        # Register handlers from PDFHandler
+        # Register PDF handlers
         for handler in self.pdf_handler.get_handlers():
             self.application.add_handler(handler)
 
-        # Register handlers from MessageHandlers
+        # Register message handlers
         self.message_handlers.register_handlers(self.application)
 
-        # Register specific command handlers
-        self.application.add_handler(CommandHandler("remind", self.reminder_manager.set_reminder))
-        self.application.add_handler(CommandHandler("language", self.language_manager.set_language))
-        self.application.add_handler(CommandHandler("history", self.text_handler.show_history))
-        
-        self.application.add_error_handler(self.message_handlers._error_handler)
-    
-        self.application.run_webhook = self.run_webhook
-    async def setup_webhook(self):
-        """Set up webhook for the bot."""
-        webhook_path = f"/webhook/{self.token}"
-        webhook_url = f"{os.getenv('WEBHOOK_URL')}{webhook_path}"
-        
-        if not webhook_url.startswith("https://"):
-            self.logger.error("WEBHOOK_URL must start with 'https://'")
-            raise ValueError("Invalid WEBHOOK_URL format.")
+        # Additional specific command handlers
+        self.application.add_handler(
+            CommandHandler("remind", self.reminder_manager.set_reminder)
+        )
+        self.application.add_handler(
+            CommandHandler("language", self.language_manager.set_language)
+        )
+        self.application.add_handler(
+            CommandHandler("history", self.text_handler.show_history)
+        )
 
-        self.logger.info(f"Setting webhook to {webhook_url}")
-        await self.application.initialize()
-        await self.application.bot.set_webhook(url=webhook_url)
-        self.logger.info(f"Webhook set up at {webhook_url}")
+        # Error handler
+        self.application.add_error_handler(
+            self.message_handlers._error_handler
+        )
+
+    async def setup_webhook(self):
+        """
+        Configure webhook for Telegram bot.
+        Ensures secure HTTPS webhook URL.
+        """
+        try:
+            webhook_path = f"/webhook/{self.token}"
+            webhook_url = f"{self.webhook_url}{webhook_path}"
+            
+            if not webhook_url.startswith("https://"):
+                raise ValueError("WEBHOOK_URL must start with 'https://'")
+
+            self.logger.info(f"Setting webhook to {webhook_url}")
+            await self.application.initialize()
+            await self.application.bot.set_webhook(url=webhook_url)
+            
+            self.logger.info(f"Webhook successfully set up at {webhook_url}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Webhook setup failed: {e}")
+            return False
 
     async def process_update(self, update_data: dict):
-        """Process updates received from webhook."""
+        """
+        Process incoming webhook updates.
+        
+        Args:
+            update_data (dict): Incoming update from Telegram webhook
+        """
         try:
             update = Update.de_json(update_data, self.application.bot)
-            self.logger.debug(f"Processed Update object: {update}")
             await self.application.process_update(update)
-            self.logger.debug("Awaited process_update successfully.")
         except Exception as e:
-            self.logger.error(f"Error in process_update: {e}")
+            self.logger.error(f"Update processing error: {e}")
             raise
 
-    def run_webhook(self, loop):
-        """Start the bot in webhook mode."""
+    def shutdown(self):
+        """
+        Graceful shutdown of bot resources.
+        Close database connections and stop bot.
+        """
         try:
-            self.logger.info("Starting bot in webhook mode")
-
-            @app.route(f"/webhook/{self.token}", methods=['POST'])
-            def webhook_handler():
-                try:
-                    update_data = request.get_json(force=True)
-                    asyncio.run_coroutine_threadsafe(self.process_update(update_data), loop)
-                    return jsonify({"status": "ok"}), 200
-                except Exception as e:
-                    self.logger.error(f"Webhook handler error: {e}")
-                    return jsonify({"status": "error", "message": str(e)}), 500
+            close_database_connection(self.client)
+            self.logger.info("Resources cleaned up successfully")
         except Exception as e:
-            self.logger.error(f"Error in webhook setup: {str(e)}")
+            self.logger.error(f"Shutdown error: {e}")
 
-async def start_bot(bot: TelegramBot):
-    """Initialize and start the Telegram bot."""
+def main():
+    """
+    Main entry point for the Telegram bot application.
+    Handles bot initialization, webhook setup, and error management.
+    """
+    # Setup logging
+    setup_logging()
+    logger = logging.getLogger(__name__)
+    
     try:
-        await bot.application.initialize()
-        await bot.application.start()
-        logger.info("Bot started successfully.")
+        # Initialize bot
+        bot = TelegramBot()
+        
+        # Asyncio event loop for webhook and bot management
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            # Setup webhook
+            loop.run_until_complete(bot.setup_webhook())
+            
+            # Start bot
+            loop.run_until_complete(bot.application.initialize())
+            loop.run_until_complete(bot.application.start())
+            
+            logger.info("Telegram bot started successfully")
+            
+            # Keep the loop running
+            loop.run_forever()
+        
+        except KeyboardInterrupt:
+            logger.info("Bot stopped by user")
+        except Exception as e:
+            logger.error(f"Critical bot error: {e}")
+            logger.error(traceback.format_exc())
+        finally:
+            # Cleanup resources
+            bot.shutdown()
+            loop.stop()
+            loop.close()
+    
     except Exception as e:
-        logger.error(f"Error: {e}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise
-
-def create_app(bot: TelegramBot, loop):
-    """Create and configure the Flask app."""
-    bot.run_webhook(loop)
-    return app
+        logger.critical(f"Failed to initialize bot: {e}")
+        sys.exit(1)
 
 if __name__ == '__main__':
-    main_bot = TelegramBot()
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    flask_app = create_app(main_bot, loop)
-
-    def run_flask():
-        """Run the Flask app."""
-        port = int(os.environ.get("PORT", 10000))
-        flask_app.run(host="0.0.0.0", port=port)
-
-    try:
-        # Ensure 'WEBHOOK_URL' is set correctly in .env
-        if not os.getenv('WEBHOOK_URL'):
-            logger.error("WEBHOOK_URL not set in .env")
-            sys.exit(1)
-        
-        # Initialize the bot's webhook and start bot
-        loop.create_task(main_bot.setup_webhook())
-        loop.create_task(start_bot(main_bot))
-        
-        # Start Flask in a separate thread
-        flask_thread = Thread(target=run_flask)
-        flask_thread.start()
-        
-        # Run the event loop
-        loop.run_forever()
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        main_bot.logger.error(f"Unhandled exception: {str(e)}")
-    finally:
-        close_database_connection(main_bot.client)
-        loop.stop()
-        loop.close()
+    main()
