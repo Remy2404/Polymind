@@ -24,6 +24,6 @@ jobs:
         pip install -r requirements.txt
         pip install pytest
     
-    - name: Run src
+    - name: Run tests
       run: |
-        pytest src/
+        pytest tests/
