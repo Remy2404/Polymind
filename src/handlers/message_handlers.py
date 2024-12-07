@@ -8,26 +8,20 @@ from handlers.text_handlers import TextHandler
 from telegram.ext import MessageHandler, filters
 from services.user_data_manager import UserDataManager
 from telegram import Update
+from services.gemini_api import GeminiAPI
 from telegram import (
     Update, 
-    InputMediaPhoto, 
-    InputMediaVideo, 
-    InputMediaDocument, 
-    InlineKeyboardButton, 
-    InlineKeyboardMarkup,
 )
 from telegram.ext import (
     ContextTypes,
-    CallbackQueryHandler,
-    ConversationHandler,
     MessageHandler,
-    CommandHandler,
     filters
 )
+from utils.telegramlog import TelegramLogger as telegram_logger
 
 
 class MessageHandlers:
-    def __init__(self, gemini_api, user_data_manager, telegram_logger, pdf_handler):
+    def __init__(self, gemini_api : GeminiAPI, user_data_manager : UserDataManager, telegram_logger : telegram_logger, pdf_handler):
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
@@ -91,6 +85,7 @@ class MessageHandlers:
         except Exception as e:
             self.logger.error(f"Error processing image message: {str(e)}")
             await self._error_handler(update, context)
+            self.user_data_manager.update_stats(user_id, image_message=True)
 
     async def _handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming voice messages."""
@@ -180,8 +175,6 @@ class MessageHandlers:
             await update.message.reply_text("An error occurred while processing your PDF. Please try again.")
 
   
-    from telegram import Update
-    from telegram.ext import ContextTypes
     async def _handle_edited_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle edited messages sent by the bot."""
         try:
@@ -204,23 +197,32 @@ class MessageHandlers:
                 self.logger.warning(f"Edited message {message_id} has no text or caption")
                 return
 
-            # Process the edited content here
-            # For example, you might want to update the conversation history or respond to the edit
+            # Delete the previous message if it was sent by the bot
+            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
 
+            # Send a new response with the updated content
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=f"I noticed you edited your message. The new content is: {edited_content}"
             )
         except Exception as e:
             self.logger.error(f"Error handling edited message: {str(e)}")
-            # You might want to send an error message to the user here
+            await self._error_handler(update, context)
+                # You might want to send an error message to the user here
     async def _error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle errors occurring in the dispatcher."""
-        self.logger.error(f"Update {update} caused error: {context.error}")
-        if update and update.effective_message:
-            await update.effective_message.reply_text(
-                "An error occurred while processing your request. Please try again later. 🥹💔"
-            )
+            """Handle errors occurring in the dispatcher."""
+            self.logger.error(f"Update {update} caused error: {context.error}")
+            if update and update.effective_message:
+                await update.effective_message.reply_text(
+                    "An error occurred while processing your request. Please try again later. 🥹💔"
+
+                )
+    async def some_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle the /some_command command."""
+        user_id = update.effective_user.id
+        self.logger.info(f"Received /some_command from user {user_id}")
+        await update.message.reply_text("You triggered /some_command! 🚀")
+        await self.user_data_manager.update_user_data(user_id, {'some_command': 1})
     def register_handlers(self, application):
         """Register message handlers with the application."""
         try:

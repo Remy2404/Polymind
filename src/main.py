@@ -77,7 +77,7 @@ class TelegramBot:
 
         # Initialize Gemini API **before** using it in handlers
         vision_model = genai.GenerativeModel("gemini-1.5-flash")
-        rate_limiter = RateLimiter(requests_per_minute=20)
+        rate_limiter = RateLimiter(requests_per_minute=10)
         self.gemini_api = GeminiAPI(vision_model=vision_model, rate_limiter=rate_limiter)
 
         
@@ -90,7 +90,6 @@ class TelegramBot:
 
         # Initialize TextHandler **before** PDFHandler
         self.text_handler = TextHandler(self.gemini_api, self.user_data_manager , self.telegram_logger)
-        self.generate_image_handler = CommandHandler(['generate_img', 'generate_image'], self.text_handler.start_generate_image)
   
         # Initialize CommandHandlers with the initialized Gemini API and User Data Manager
         self.command_handler = CommandHandlers(
