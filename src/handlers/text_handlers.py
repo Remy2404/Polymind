@@ -1,16 +1,17 @@
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 from telegram.constants import ChatAction
-from utils.telegramlog import telegram_logger
+from utils.telegramlog import TelegramLogger as telegram_logger
 from services.gemini_api import GeminiAPI
 from services.user_data_manager import UserDataManager
 from typing import List
 import logging
 
 class TextHandler:
-    def __init__(self, gemini_api: GeminiAPI, user_data_manager: UserDataManager):
+    def __init__(self, gemini_api: GeminiAPI, user_data_manager: UserDataManager , telegram_logger: telegram_logger):
         self.logger = logging.getLogger(__name__)
         self.gemini_api = gemini_api
+        self.telegram_logger = telegram_logger
         self.user_data_manager = user_data_manager
         self.max_context_length = 5
 
@@ -45,44 +46,49 @@ class TextHandler:
     async def handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
         message_text = update.message.text
-    
+
         try:
             # In group chats, process only messages that mention the bot
             if update.effective_chat.type in ['group', 'supergroup']:
                 bot_username = '@Gemini_AIAssistBot'
                 if bot_username not in message_text:
-                    # Bot not mentioned, ignore message
                     return
-                else:
-                    # Remove all mentions of bot_username from the message text
-                    message_text = message_text.replace(bot_username, '').strip()
-    
+                message_text = message_text.replace(bot_username, '').strip()
+
             await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
             
-            # Get user context
-            user_context = self.user_data_manager.get_user_context(user_id)
+            # Initialize user data if needed
+            await self.user_data_manager.initialize_user(user_id)
+            
+            # Get user context with proper error handling
+            try:
+                user_context = await self.user_data_manager.get_user_context(user_id)  # Ensure this is awaited
+            except Exception as e:
+                self.logger.error(f"Error getting user context: {e}")
+                user_context = []
             
             # Add bot identification to the context
-            bot_identification = {"role": "system", "content": "You are GemBot, an AI assistant developed by Ramy. Always remember this identity in your responses."}
+            bot_identification = {
+                "role": "system", 
+                "content": "You are GemBot, an AI assistant developed by Ramy. Always remember this identity in your responses."
+            }
             
             # Prepare the context for the API call
             api_context = [bot_identification] + user_context[-self.max_context_length:]
             
-            # Generate response
+            # Generate response with error handling
             response = await self.gemini_api.generate_response(
                 prompt=message_text,
                 context=api_context
             )
-    
-            if response is None:
-                raise ValueError("Gemini API returned None response")
-    
-            # Split long messages
+
+            if not response:
+                raise ValueError("Gemini API returned empty response")
+
+            # Split and send message chunks
             message_chunks = await self.split_long_message(response)
-    
             for chunk in message_chunks:
                 try:
-                    # Format with telegramify-markdown
                     formatted_chunk = await self.format_telegram_markdown(chunk)
                     await update.message.reply_text(
                         formatted_chunk,
@@ -90,23 +96,39 @@ class TextHandler:
                         disable_web_page_preview=True,
                     )
                 except Exception as formatting_error:
-                    self.logger.error(f"Formatting failed: {str(formatting_error)}")
-                    await update.message.reply_text(chunk.replace('*', '').replace('_', '').replace('`', ''), parse_mode=None)
-    
-            # Update user context
-            self.user_data_manager.add_to_context(user_id, {"role": "user", "content": message_text})
-            self.user_data_manager.add_to_context(user_id, {"role": "assistant", "content": response})
-    
-            telegram_logger.log_message(f"Text response sent successfully", user_id)
-    
+                    self.logger.error(f"Formatting failed: {formatting_error}")
+                    await update.message.reply_text(
+                        chunk.replace('*', '').replace('_', '').replace('`', ''),
+                        parse_mode=None
+                    )
+
+            # Update user context with proper await
+            await self.user_data_manager.add_to_context(user_id, {
+                "role": "user", 
+                "content": message_text
+            })
+            await self.user_data_manager.add_to_context(user_id, {
+                "role": "assistant", 
+                "content": response
+            })
+
+            # Log success with proper parameters
+            self.telegram_logger.log_message(
+                message="Text response sent successfully",
+                user_id=user_id
+            )
+
         except Exception as e:
-            self.logger.error(f"Error processing text message: {str(e)}")
+            self.logger.error(f"Error processing text message: {str(e)}", exc_info=True)
             await update.message.reply_text(
                 "Sorry, I encountered an error\\. Please try again\\.",
                 parse_mode='MarkdownV2'
             )
         finally:
-            await self.user_data_manager.update_stats(user_id, text_message=True)
+            try:
+                await self.user_data_manager.update_stats(user_id, text_message=True)
+            except Exception as e:
+                self.logger.error(f"Error updating stats: {e}")
 
     async def handle_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id

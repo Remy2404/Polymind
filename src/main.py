@@ -51,7 +51,7 @@ class TelegramBot:
     def __init__(self):
         """Initialize the TelegramBot instance."""
         self.logger = logging.getLogger(__name__)
-        
+
         # Establish database connection
         self.db, self.client = get_database()
         if self.db is None:
@@ -81,7 +81,7 @@ class TelegramBot:
         rate_limiter = RateLimiter(requests_per_minute=10)
         self.gemini_api = GeminiAPI(vision_model=vision_model, rate_limiter=rate_limiter)
 
-        
+
 
         # Initialize User Data Manager
         self.user_data_manager = UserDataManager(self.db)
@@ -89,8 +89,8 @@ class TelegramBot:
         self.telegram_logger = telegram_logger
 
         # Initialize TextHandler **before** PDFHandler
-        self.text_handler = TextHandler(self.gemini_api, self.user_data_manager)
-  
+        self.text_handler = TextHandler(self.gemini_api, self.user_data_manager , telegram_logger)
+
         # Initialize CommandHandlers with the initialized Gemini API and User Data Manager
         self.command_handler = CommandHandlers(
             gemini_api=self.gemini_api, 
@@ -112,7 +112,7 @@ class TelegramBot:
             self.telegram_logger,
             self.pdf_handler
         )
-        
+
         self.reminder_manager = ReminderManager(self.application.bot)
         self.language_manager = LanguageManager()
 
@@ -143,15 +143,15 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("remind", self.reminder_manager.set_reminder))
         self.application.add_handler(CommandHandler("language", self.language_manager.set_language))
         self.application.add_handler(CommandHandler("history", self.text_handler.show_history))
-        
+
         self.application.add_error_handler(self.message_handlers._error_handler)
-    
+
         self.application.run_webhook = self.run_webhook
     async def setup_webhook(self):
         """Set up webhook for the bot."""
         webhook_path = f"/webhook/{self.token}"
         webhook_url = f"{os.getenv('WEBHOOK_URL')}{webhook_path}"
-        
+
         if not webhook_url.startswith("https://"):
             self.logger.error("WEBHOOK_URL must start with 'https://'")
             raise ValueError("Invalid WEBHOOK_URL format.")
@@ -210,7 +210,7 @@ if __name__ == '__main__':
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     app = create_app(main_bot, loop)  # Rename flask_app to app
-    
+
     # For development server
     if os.environ.get('DEV_SERVER') == 'uvicorn':
         # Let uvicorn handle the event loop
@@ -221,14 +221,14 @@ if __name__ == '__main__':
             if not os.getenv('WEBHOOK_URL'):
                 logger.error("WEBHOOK_URL not set in .env")
                 sys.exit(1)
-            
+
             loop.create_task(main_bot.setup_webhook())
             loop.create_task(start_bot(main_bot))
-            
+
             def run_flask():
                 port = int(os.environ.get("PORT", 8000))
                 serve(app, host="0.0.0.0", port=port)
-            
+
             flask_thread = Thread(target=run_flask)
             flask_thread.start()
             loop.run_forever()
