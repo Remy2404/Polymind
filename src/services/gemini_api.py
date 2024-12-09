@@ -172,25 +172,47 @@ class GeminiAPI:
         """
         # Acquire rate limiter
         await self.rate_limiter.acquire()
-
+    
         try:
-            # Configure the model for image generation
+            # Prepare the conversation history
+            conversation = []
+            
+            # Add bot identification at the start of the conversation as a user message
+            conversation.append(genai.types.ContentDict(
+                role="user",
+                parts=["You are Gembot, an AI assistant developed by Ramy. Please introduce yourself as such when appropriate."]
+            ))
+            
+            if context:
+                for message in context:
+                    conversation.append(genai.types.ContentDict(
+                        role="user" if message['role'] == "user" else "model",
+                        parts=[message['content']]
+                    ))
+            
+            # Add the current prompt to the conversation
+            conversation.append(genai.types.ContentDict(
+                role="user",
+                parts=[prompt]
+            ))
+    
+            # Generate the response using the conversation history
             response = await asyncio.to_thread(
                 self.vision_model.generate_content,
-                prompt,
+                conversation,
                 generation_config=self.generation_config,
                 safety_settings=[
                     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
                     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
                     {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
                     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                ],
+                ]
             )
-
-            if response and response.candidates:
+    
+            if response.text:
                 return response.text
-
-            return None
+        
         except Exception as e:
             self.logger.error(f"Error generating response: {str(e)}")
-            return None   
+        
+        return None

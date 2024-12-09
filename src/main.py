@@ -9,9 +9,6 @@ import traceback
 from telegram.ext import (
     Application, 
     CommandHandler, 
-    CallbackQueryHandler,
-    ContextTypes,
-    MessageHandler as TeleMessageHandler, 
     PicklePersistence,
     filters
 )
@@ -28,6 +25,10 @@ from services.reminder_manager import ReminderManager
 from utils.language_manager import LanguageManager 
 from services.rate_limiter import RateLimiter
 import google.generativeai as genai
+from services.flux_lora_img import flux_lora_image_generator
+# Add these imports
+from waitress import serve  # or gunicorn for Linux
+
 # Load environment variables
 load_dotenv()
 
@@ -84,17 +85,18 @@ class TelegramBot:
 
         # Initialize User Data Manager
         self.user_data_manager = UserDataManager(self.db)
-
         # Initialize Telegram Logger
         self.telegram_logger = telegram_logger
 
         # Initialize TextHandler **before** PDFHandler
-        self.text_handler = TextHandler(self.gemini_api, self.user_data_manager , self.telegram_logger)
+        self.text_handler = TextHandler(self.gemini_api, self.user_data_manager)
   
         # Initialize CommandHandlers with the initialized Gemini API and User Data Manager
         self.command_handler = CommandHandlers(
             gemini_api=self.gemini_api, 
-            user_data_manager=self.user_data_manager
+            user_data_manager=self.user_data_manager,
+            telegram_logger=self.telegram_logger,
+            flux_lora_image_generator=flux_lora_image_generator,
         )
 
         # Now initialize PDFHandler with text_handler
@@ -207,34 +209,34 @@ if __name__ == '__main__':
     main_bot = TelegramBot()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    flask_app = create_app(main_bot, loop)
-
-    def run_flask():
-        """Run the Flask app."""
-        port = int(os.environ.get("PORT", 8000))
-        flask_app.run(host="0.0.0.0", port=port)
-
-    try:
-        # Ensure 'WEBHOOK_URL' is set correctly in .env
-        if not os.getenv('WEBHOOK_URL'):
-            logger.error("WEBHOOK_URL not set in .env")
-            sys.exit(1)
-        
-        # Initialize the bot's webhook and start bot
-        loop.create_task(main_bot.setup_webhook())
-        loop.create_task(start_bot(main_bot))
-        
-        # Start Flask in a separate thread
-        flask_thread = Thread(target=run_flask)
-        flask_thread.start()
-        
-        # Run the event loop
-        loop.run_forever()
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        main_bot.logger.error(f"Unhandled exception: {str(e)}")
-    finally:
-        close_database_connection(main_bot.client)
-        loop.stop()
-        loop.close()
+    app = create_app(main_bot, loop)  # Rename flask_app to app
+    
+    # For development server
+    if os.environ.get('DEV_SERVER') == 'uvicorn':
+        # Let uvicorn handle the event loop
+        app.run(host="0.0.0.0", port=8000)
+    else:
+        try:
+            # Original production code
+            if not os.getenv('WEBHOOK_URL'):
+                logger.error("WEBHOOK_URL not set in .env")
+                sys.exit(1)
+            
+            loop.create_task(main_bot.setup_webhook())
+            loop.create_task(start_bot(main_bot))
+            
+            def run_flask():
+                port = int(os.environ.get("PORT", 8000))
+                serve(app, host="0.0.0.0", port=port)
+            
+            flask_thread = Thread(target=run_flask)
+            flask_thread.start()
+            loop.run_forever()
+        except KeyboardInterrupt:
+            logger.info("Bot stopped by user")
+        except Exception as e:
+            main_bot.logger.error(f"Unhandled exception: {str(e)}")
+        finally:
+            close_database_connection(main_bot.client)
+            loop.stop()
+            loop.close()

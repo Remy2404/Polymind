@@ -1,5 +1,3 @@
-# src/services/flux_lora_img.py
-
 import os
 import aiohttp
 import asyncio
@@ -191,7 +189,7 @@ class FluxLoraImageGenerator:
 
 # Initialize the FluxLoraImageGenerator instance
 flux_lora_image_generator = FluxLoraImageGenerator(
-    model_name="ginipick/flux-lora-eric-cat",
+    model_name="black-forest-labs/FLUX.1-schnell",
     api_key=os.getenv("TEXT_TO_IMAGE_API_KEY"),
     api_endpoint="https://api-inference.huggingface.co",  # Corrected endpoint
     max_concurrent_requests=5,  # Adjust based on your requirements
