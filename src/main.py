@@ -45,20 +45,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
 
-@app.route('/')
-def index():
-    return jsonify({"status": "ok", "message": "Service is running"}), 200
-
-@app.route('/webhook/<token>', methods=['POST'])
-def webhook(token):
-    if token != os.getenv('TELEGRAM_BOT_TOKEN'):
-        return jsonify({"status": "error", "message": "Invalid token"}), 403
-
-    update = request.get_json()
-    # Process the update here
-    return jsonify({"status": "success"}), 200
 
 class TelegramBot:
     """Main class for the Telegram Bot."""
@@ -215,10 +202,33 @@ async def start_bot(bot: TelegramBot):
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise
 
-def create_app(bot: TelegramBot, loop):
+def create_app():
     """Create and configure the Flask app."""
-    bot.run_webhook(loop)
+    app = Flask(__name__)
+    main_bot = TelegramBot()
+    
+    @app.route('/')
+    def index():
+        return jsonify({"status": "ok", "message": "Service is running"}), 200
+
+    @app.route(f"/webhook/{main_bot.token}", methods=['POST'])
+    def webhook_handler():
+        try:
+            update_data = request.get_json(force=True)
+            asyncio.run(main_bot.process_update(update_data))
+            return jsonify({"status": "ok"}), 200
+        except Exception as e:
+            main_bot.logger.error(f"Webhook handler error: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+    @app.before_first_request
+    def setup_webhook():
+        asyncio.run(main_bot.setup_webhook())
+        asyncio.run(start_bot(main_bot))
+
     return app
+
+app = create_app()
 
 if __name__ == '__main__':
     main_bot = TelegramBot()
