@@ -45,6 +45,16 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+@app.route('/webhook/<token>', methods=['POST'])
+def webhook_handler(token):
+    try:
+        update_data = request.get_json(force=True)
+        asyncio.run(main_bot.process_update(update_data))
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        logger.error(f"Webhook handler error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 class TelegramBot:
     """Main class for the Telegram Bot."""
 
