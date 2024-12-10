@@ -28,6 +28,8 @@ import google.generativeai as genai
 from services.flux_lora_img import flux_lora_image_generator
 # Add these imports
 from waitress import serve  # or gunicorn for Linux
+from gevent import monkey 
+monkey.patch_all() # or eventlet for Linux
 
 # Load environment variables
 load_dotenv()
@@ -46,14 +48,13 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 @app.route('/webhook/<token>', methods=['POST'])
-def webhook_handler(token):
-    try:
-        update_data = request.get_json(force=True)
-        asyncio.run(main_bot.process_update(update_data))
-        return jsonify({"status": "ok"}), 200
-    except Exception as e:
-        logger.error(f"Webhook handler error: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+def webhook(token):
+    if token != os.getenv('TELEGRAM_BOT_TOKEN'):
+        return jsonify({"status": "error", "message": "Invalid token"}), 403
+
+    update = request.get_json()
+    # Process the update here
+    return jsonify({"status": "success"}), 200
 
 class TelegramBot:
     """Main class for the Telegram Bot."""
