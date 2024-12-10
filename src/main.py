@@ -47,6 +47,10 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+@app.route('/')
+def index():
+    return jsonify({"status": "ok", "message": "Service is running"}), 200
+
 @app.route('/webhook/<token>', methods=['POST'])
 def webhook(token):
     if token != os.getenv('TELEGRAM_BOT_TOKEN'):
