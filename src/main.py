@@ -1,5 +1,3 @@
-from gevent import monkey 
-monkey.patch_all() # or eventlet for Linux
 import os
 import sys
 import logging
@@ -45,7 +43,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
+app = Flask(__name__)
 
 class TelegramBot:
     """Main class for the Telegram Bot."""
@@ -202,32 +200,10 @@ async def start_bot(bot: TelegramBot):
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise
 
-def create_app(main_bot, loop):
+def create_app(bot: TelegramBot, loop):
     """Create and configure the Flask app."""
-    app = Flask(__name__)
-    
-    @app.route('/')
-    def index():
-        return jsonify({"status": "ok", "message": "Service is running"}), 200
-
-    @app.route(f"/webhook/{main_bot.token}", methods=['POST'])
-    def webhook_handler():
-        try:
-            update_data = request.get_json(force=True)
-            asyncio.run(main_bot.process_update(update_data))
-            return jsonify({"status": "ok"}), 200
-        except Exception as e:
-            main_bot.logger.error(f"Webhook handler error: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
-
-    @app.before_request
-    def setup_webhook():
-        asyncio.run(main_bot.setup_webhook())
-        asyncio.run(start_bot(main_bot))
-
+    bot.run_webhook(loop)
     return app
-
-app = create_app(TelegramBot(), asyncio.new_event_loop())
 
 if __name__ == '__main__':
     main_bot = TelegramBot()
