@@ -1,3 +1,5 @@
+from gevent import monkey 
+monkey.patch_all() # or eventlet for Linux
 import os
 import sys
 import logging
@@ -28,8 +30,6 @@ import google.generativeai as genai
 from services.flux_lora_img import flux_lora_image_generator
 # Add these imports
 from waitress import serve  # or gunicorn for Linux
-from gevent import monkey 
-monkey.patch_all() # or eventlet for Linux
 
 # Load environment variables
 load_dotenv()
@@ -202,10 +202,9 @@ async def start_bot(bot: TelegramBot):
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise
 
-def create_app():
+def create_app(main_bot, loop):
     """Create and configure the Flask app."""
     app = Flask(__name__)
-    main_bot = TelegramBot()
     
     @app.route('/')
     def index():
@@ -221,14 +220,14 @@ def create_app():
             main_bot.logger.error(f"Webhook handler error: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
 
-    @app.before_first_request
+    @app.before_request
     def setup_webhook():
         asyncio.run(main_bot.setup_webhook())
         asyncio.run(start_bot(main_bot))
 
     return app
 
-app = create_app()
+app = create_app(TelegramBot(), asyncio.new_event_loop())
 
 if __name__ == '__main__':
     main_bot = TelegramBot()
