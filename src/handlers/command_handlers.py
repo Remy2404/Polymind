@@ -89,7 +89,7 @@ class CommandHandlers:
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         help_text = (
-            "🤖 *Available Commands*\n\n"
+            "🤖 Available Commands\n\n"
             "/start - Start the bot\n"
             "/help - Show this help message\n"
             "/reset - Reset conversation history\n"
@@ -97,14 +97,13 @@ class CommandHandlers:
             "/stats - Show bot statistics\n\n"
             "/generate_image <prompt> - Generate an image from text\n"
             "/export - Export conversation history\n"
-            "💡 *Features*\n"
+            "💡 Features\n"
             "• Send text messages for general conversation\n"
             "• Send images for analysis\n"
             "• Supports markdown formatting\n\n"
             "Need more help? Join our support channel!"
         )
-        await update.message.reply_text(help_text, parse_mode='Markdown')
-
+        await update.message.reply_text(help_text)
     async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
         self.user_data_manager.reset_conversation(user_id)

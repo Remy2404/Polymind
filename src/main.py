@@ -89,7 +89,7 @@ class TelegramBot:
         self.telegram_logger = telegram_logger
 
         # Initialize TextHandler **before** PDFHandler
-        self.text_handler = TextHandler(self.gemini_api, self.user_data_manager , telegram_logger)
+        self.text_handler = TextHandler(self.gemini_api, self.user_data_manager)
 
         # Initialize CommandHandlers with the initialized Gemini API and User Data Manager
         self.command_handler = CommandHandlers(
