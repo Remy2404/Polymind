@@ -20,32 +20,44 @@ class MessageHandlers:
 
 
     async def _handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle incoming text messages."""
-        try:
-            user_id = update.effective_user.id
-            message_text = update.message.text
-            self.logger.info(f"Received text message from user {user_id}: {message_text}")
+                """Handle incoming text messages."""
+                try:
+                    if update.message is None and update.callback_query is None:
+                        self.logger.error("Received update with no message or callback query")
+                        return
 
-            # Check if the bot is mentioned
-            bot_username = "@Gemini_AIAssistBot"
-            if bot_username in message_text:
-                self.logger.info(f"Bot mentioned by user {user_id}")
-                await update.message.reply_text("Hello! How can I assist you today?")
+                    if update.callback_query:
+                        user_id = update.callback_query.from_user.id
+                        message_text = update.callback_query.data
+                        await update.callback_query.answer()
+                    else:
+                        user_id = update.effective_user.id
+                        message_text = update.message.text
 
-            # Initialize user data if not already initialized
-            self.user_data_manager.initialize_user(user_id)
+                    self.logger.info(f"Received text message from user {user_id}: {message_text}")
 
-            # Create text handler instance
-            text_handler = TextHandler(self.gemini_api, self.user_data_manager)
+                    # Check if the bot is mentioned
+                    bot_username = "@Gemini_AIAssistBot"
+                    if bot_username in message_text:
+                        self.logger.info(f"Bot mentioned by user {user_id}")
+                        if update.callback_query:
+                            await update.callback_query.edit_message_text("Hello! How can I assist you today?")
+                        else:
+                            await update.message.reply_text("Hello! How can I assist you today?")
 
-            # Process the message
-            await text_handler.handle_text_message(update, context)
-            await self.user_data_manager.update_user_stats(user_id, {'text_messages': 1, 'total_messages': 1})
-        except Exception as e:
-            self.logger.error(f"Error processing text message: {str(e)}")
-            await self._error_handler(update, context)
-        self.user_data_manager.update_stats(user_id, text_message=True)
+                    # Initialize user data if not already initialized
+                    self.user_data_manager.initialize_user(user_id)
 
+                    # Create text handler instance
+                    text_handler = TextHandler(self.gemini_api, self.user_data_manager)
+
+                    # Process the message
+                    await text_handler.handle_text_message(update, context)
+                    await self.user_data_manager.update_user_stats(user_id, {'text_messages': 1, 'total_messages': 1})
+                except Exception as e:
+                    self.logger.error(f"Error processing text message: {str(e)}")
+                    await self._error_handler(update, context)
+                self.user_data_manager.update_stats(user_id, text_message=True)
     async def _handle_image_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming image messages."""
         try:

@@ -180,7 +180,7 @@ class GeminiAPI:
             # Add bot identification at the start of the conversation as a user message
             conversation.append(genai.types.ContentDict(
                 role="user",
-                parts=["You are Gembot, an AI assistant developed by Ramy. Please introduce yourself as such when appropriate."]
+                parts=["You are Gembot, an AI assistant that can help you with various tasks."]
             ))
             
             if context:
