@@ -43,6 +43,8 @@ class TextHandler:
         return chunks
 
     async def handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.text:
+            return
         user_id = update.effective_user.id
         message_text = update.message.text
 
