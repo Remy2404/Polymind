@@ -57,6 +57,8 @@ class TextHandler:
                     # Remove all mentions of bot_username from the message text
                     message_text = message_text.replace(bot_username, '').strip()
 
+            # Send initial "thinking" message
+            thinking_message = await update.message.reply_text("Thinking...")
             await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
             
             # Get user context
@@ -74,18 +76,42 @@ class TextHandler:
             # Split long messages
             message_chunks = await self.split_long_message(response)
 
-            for chunk in message_chunks:
+            # Delete thinking message
+            await thinking_message.delete()
+
+            last_message = None
+            for i, chunk in enumerate(message_chunks):
                 try:
                     # Format with telegramify-markdown
                     formatted_chunk = await self.format_telegram_markdown(chunk)
-                    await update.message.reply_text(
-                        formatted_chunk,
-                        parse_mode='MarkdownV2',
-                        disable_web_page_preview=True,
-                    )
+                    if i == 0:
+                        last_message = await update.message.reply_text(
+                            formatted_chunk,
+                            parse_mode='MarkdownV2',
+                            disable_web_page_preview=True,
+                        )
+                    else:
+                        last_message = await context.bot.edit_message_text(
+                            chat_id=update.effective_chat.id,
+                            message_id=last_message.message_id,
+                            text=formatted_chunk,
+                            parse_mode='MarkdownV2',
+                            disable_web_page_preview=True,
+                        )
                 except Exception as formatting_error:
                     self.logger.error(f"Formatting failed: {str(formatting_error)}")
-                    await update.message.reply_text(chunk.replace('*', '').replace('_', '').replace('`', ''), parse_mode=None)
+                    if i == 0:
+                        last_message = await update.message.reply_text(
+                            chunk.replace('*', '').replace('_', '').replace('`', ''),
+                            parse_mode=None
+                        )
+                    else:
+                        last_message = await context.bot.edit_message_text(
+                            chat_id=update.effective_chat.id,
+                            message_id=last_message.message_id,
+                            text=chunk.replace('*', '').replace('_', '').replace('`', ''),
+                            parse_mode=None
+                        )
 
             # Update user context
             self.user_data_manager.add_to_context(user_id, {"role": "user", "content": message_text})
@@ -101,7 +127,6 @@ class TextHandler:
             )
         else:
             self.logger.error("message processing failed")
-
     async def handle_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         telegram_logger.log_message("Processing an image", user_id)
