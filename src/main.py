@@ -45,6 +45,10 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+@app.route('/health')
+def health_check():
+    return jsonify({"status": "ok"}), 200
+
 class TelegramBot:
     """Main class for the Telegram Bot."""
 

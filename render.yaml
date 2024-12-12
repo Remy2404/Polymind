@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: telegram-gemini-bot
+    env: python
+    buildCommand: docker build -t telegram-gemini-bot .
+    startCommand: docker run -p $PORT:8000 telegram-gemini-bot
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+    healthCheckPath: /health
+    autoDeploy: true    git add .
+    git commit -m "Prepare for Render deployment"
+    git push origin main
