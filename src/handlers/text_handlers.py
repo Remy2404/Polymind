@@ -73,7 +73,12 @@ class TextHandler:
             )
 
             if response is None:
-                raise ValueError("Gemini API returned None response")
+                await thinking_message.delete()
+                await update.message.reply_text(
+                    "Sorry, I couldn't generate a response\\. Please try rephrasing your message\\.",
+                    parse_mode='MarkdownV2'
+                )
+                return
 
             # Split long messages
             message_chunks = await self.split_long_message(response)
@@ -93,9 +98,8 @@ class TextHandler:
                             disable_web_page_preview=True,
                         )
                     else:
-                        last_message = await context.bot.edit_message_text(
+                        last_message = await context.bot.send_message(
                             chat_id=update.effective_chat.id,
-                            message_id=last_message.message_id,
                             text=formatted_chunk,
                             parse_mode='MarkdownV2',
                             disable_web_page_preview=True,
@@ -108,27 +112,27 @@ class TextHandler:
                             parse_mode=None
                         )
                     else:
-                        last_message = await context.bot.edit_message_text(
+                        last_message = await context.bot.send_message(
                             chat_id=update.effective_chat.id,
-                            message_id=last_message.message_id,
                             text=chunk.replace('*', '').replace('_', '').replace('`', ''),
                             parse_mode=None
                         )
 
-            # Update user context
-            self.user_data_manager.add_to_context(user_id, {"role": "user", "content": message_text})
-            self.user_data_manager.add_to_context(user_id, {"role": "assistant", "content": response})
+            # Update user context only if response was successful
+            if response:
+                self.user_data_manager.add_to_context(user_id, {"role": "user", "content": message_text})
+                self.user_data_manager.add_to_context(user_id, {"role": "assistant", "content": response})
 
             telegram_logger.log_message(f"Text response sent successfully", user_id)
 
         except Exception as e:
             self.logger.error(f"Error processing text message: {str(e)}")
+            if 'thinking_message' in locals():
+                await thinking_message.delete()
             await update.message.reply_text(
-                "Sorry, I encountered an error\\. Please try again\\.",
+                "Sorry, I encountered an error\\. Please try again later\\.",
                 parse_mode='MarkdownV2'
-            )
-        else:
-            self.logger.error("message processing failed")
+            )    
     async def handle_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         telegram_logger.log_message("Processing an image", user_id)
