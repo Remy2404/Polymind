@@ -1,12 +1,4 @@
-Collecting workspace information
 
-Here's a detailed 
-
-README.md
-
- for your Telegram Gemini Bot project:
-
-```markdown
 # Telegram Gemini Bot
 
 A sophisticated Telegram bot powered by Google's Gemini AI that offers advanced image processing, text analysis, PDF handling, and multilingual support.
