@@ -43,12 +43,28 @@ class TextHandler:
         return chunks
 
     async def handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not update.message or not update.message.text:
+        if not update.message and not update.edited_message:
             return
+            
         user_id = update.effective_user.id
-        message_text = update.message.text
+        message = update.message or update.edited_message
+        message_text = message.text
 
         try:
+            # Delete old message if this is an edited message
+            if update.edited_message and 'bot_messages' in context.user_data:
+                original_message_id = update.edited_message.message_id
+                if original_message_id in context.user_data['bot_messages']:
+                    for msg_id in context.user_data['bot_messages'][original_message_id]:
+                        try:
+                            await context.bot.delete_message(
+                                chat_id=update.effective_chat.id,
+                                message_id=msg_id
+                            )
+                        except Exception as e:
+                            self.logger.error(f"Error deleting old message: {str(e)}")
+                    del context.user_data['bot_messages'][original_message_id]
+
             # In group chats, process only messages that mention the bot
             if update.effective_chat.type in ['group', 'supergroup']:
                 bot_username = '@' + context.bot.username
@@ -60,7 +76,7 @@ class TextHandler:
                     message_text = message_text.replace(bot_username, '').strip()
 
             # Send initial "thinking" message
-            thinking_message = await update.message.reply_text("Thinking...")
+            thinking_message = await message.reply_text("Thinking...🧠")
             await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
             
             # Get user context
@@ -74,7 +90,7 @@ class TextHandler:
 
             if response is None:
                 await thinking_message.delete()
-                await update.message.reply_text(
+                await message.reply_text(
                     "Sorry, I couldn't generate a response\\. Please try rephrasing your message\\.",
                     parse_mode='MarkdownV2'
                 )
@@ -86,13 +102,16 @@ class TextHandler:
             # Delete thinking message
             await thinking_message.delete()
 
+            # Store the message IDs for potential editing
+            sent_messages = []
+            
             last_message = None
             for i, chunk in enumerate(message_chunks):
                 try:
                     # Format with telegramify-markdown
                     formatted_chunk = await self.format_telegram_markdown(chunk)
                     if i == 0:
-                        last_message = await update.message.reply_text(
+                        last_message = await message.reply_text(
                             formatted_chunk,
                             parse_mode='MarkdownV2',
                             disable_web_page_preview=True,
@@ -104,10 +123,11 @@ class TextHandler:
                             parse_mode='MarkdownV2',
                             disable_web_page_preview=True,
                         )
+                    sent_messages.append(last_message)
                 except Exception as formatting_error:
                     self.logger.error(f"Formatting failed: {str(formatting_error)}")
                     if i == 0:
-                        last_message = await update.message.reply_text(
+                        last_message = await message.reply_text(
                             chunk.replace('*', '').replace('_', '').replace('`', ''),
                             parse_mode=None
                         )
@@ -117,14 +137,19 @@ class TextHandler:
                             text=chunk.replace('*', '').replace('_', '').replace('`', ''),
                             parse_mode=None
                         )
+                    sent_messages.append(last_message)
 
             # Update user context only if response was successful
             if response:
                 self.user_data_manager.add_to_context(user_id, {"role": "user", "content": message_text})
                 self.user_data_manager.add_to_context(user_id, {"role": "assistant", "content": response})
 
-            telegram_logger.log_message(f"Text response sent successfully", user_id)
+                # Store the message IDs in context for future editing
+                if 'bot_messages' not in context.user_data:
+                    context.user_data['bot_messages'] = {}
+                context.user_data['bot_messages'][message.message_id] = [msg.message_id for msg in sent_messages]
 
+            telegram_logger.log_message(f"Text response sent successfully", user_id)
         except Exception as e:
             self.logger.error(f"Error processing text message: {str(e)}")
             if 'thinking_message' in locals():
@@ -132,7 +157,7 @@ class TextHandler:
             await update.message.reply_text(
                 "Sorry, I encountered an error\\. Please try again later\\.",
                 parse_mode='MarkdownV2'
-            )    
+            )
     async def handle_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         telegram_logger.log_message("Processing an image", user_id)
