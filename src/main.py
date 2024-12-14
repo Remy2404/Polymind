@@ -118,7 +118,7 @@ class TelegramBot:
 
     async def setup_webhook(self):
         """Set up webhook with proper update processing."""
-        webhook_path = f"/bot{self.token}"
+        webhook_path = f"/webhook/{self.token}"
         webhook_url = f"{os.getenv('WEBHOOK_URL')}{webhook_path}"
 
         # First, delete existing webhook and get pending updates
@@ -160,7 +160,7 @@ class TelegramBot:
             self.logger.error(traceback.format_exc())
 
     def run_webhook(self, loop):
-        @app.post(f"/bot{self.token}")
+        @app.post(f"/webhook/{self.token}")     
         async def webhook_handler(request: Request):
             try:
                 update_data = await request.json()
