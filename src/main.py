@@ -118,35 +118,28 @@ class TelegramBot:
 
     async def setup_webhook(self):
         """Set up webhook with proper update processing."""
-        webhook_path = f"/webhook/{self.token}"
-        webhook_url = f"{os.getenv('WEBHOOK_URL')}{webhook_path}"
+        try:
+            webhook_path = f"/webhook/{self.token}"
+            webhook_url = f"{os.getenv('WEBHOOK_URL').rstrip('/')}{webhook_path}"
 
-        # First, delete existing webhook and get pending updates
-        await self.application.bot.delete_webhook(drop_pending_updates=True)
+            # Delete existing webhook
+            await self.application.bot.delete_webhook(drop_pending_updates=True)
 
-        webhook_config = {
-            "url": webhook_url,
-            "allowed_updates": ["message", "edited_message", "callback_query", "inline_query"],
-            "max_connections": 1000
-        }
+            webhook_config = {
+                "url": webhook_url,
+                "allowed_updates": ["message", "edited_message", "callback_query", "inline_query"],
+                "max_connections": 100
+            }
 
-        self.logger.info(f"Setting webhook to: {webhook_url}")
+            self.logger.info(f"Setting webhook to: {webhook_url}")
+            await self.application.bot.set_webhook(**webhook_config)
 
-        if not self.application.running:
-            await self.application.initialize()
+            webhook_info = await self.application.bot.get_webhook_info()
+            self.logger.info(f"Webhook status: {webhook_info}")
 
-        # Set up webhook with new configuration
-        await self.application.bot.set_webhook(**webhook_config)
-
-        # Log webhook info for verification
-        webhook_info = await self.application.bot.get_webhook_info()
-        self.logger.info(f"Webhook status: {webhook_info}")
-
-        # Only start the application if it's not already running
-        if not self.application.running:
-            await self.application.start()
-        else:
-            self.logger.info("Application is already running. Skipping start.")
+        except Exception as e:
+            self.logger.error(f"Webhook setup failed: {e}")
+            raise
 
     async def process_update(self, update_data: dict):
         """Process updates received from webhook."""
@@ -196,12 +189,12 @@ if __name__ == '__main__':
             logger.error("WEBHOOK_URL not set in .env")
             sys.exit(1)
 
-        port = int(os.environ.get("PORT", 8443))
+        port = int(os.environ.get("PORT", 8000))
         
-        # Setup the webhook before starting uvicorn
+        # Initialize and start application once
+        loop.run_until_complete(main_bot.application.initialize())
         loop.run_until_complete(main_bot.setup_webhook())
-        loop.run_until_complete(start_bot(main_bot))
-
+        
         # Run the FastAPI app with uvicorn
         uvicorn.run(
             app,
@@ -213,8 +206,11 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
-        main_bot.logger.error(f"Unhandled exception: {str(e)}")
+        logger.error(f"Unhandled exception: {str(e)}")
     finally:
         close_database_connection(main_bot.client)
+        tasks = asyncio.all_tasks(loop)
+        for task in tasks:
+            task.cancel()
         loop.stop()
         loop.close()
