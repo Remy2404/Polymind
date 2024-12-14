@@ -192,10 +192,12 @@ if __name__ == '__main__':
     app = create_app(main_bot, loop)
 
     if os.environ.get('DEV_SERVER') == 'uvicorn':
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+        port = int(os.environ.get("PORT", 8000))  # Add this line
+        uvicorn.run(app, host="0.0.0.0", port=port)  # Modified line
     else:
         try:
-            if not os.getenv('WEBHOOK_URL'):
+            webhook_url = os.getenv('WEBHOOK_URL')
+            if not webhook_url:
                 logger.error("WEBHOOK_URL not set in .env")
                 sys.exit(1)
 
