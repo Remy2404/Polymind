@@ -116,42 +116,37 @@ class TelegramBot:
         self.application.add_error_handler(self.message_handlers._error_handler)
         self.application.run_webhook = self.run_webhook
 
-    import os
-    import traceback
-    
     async def setup_webhook(self):
-        try:
-            port = int(os.getenv('PORT', 8443))
-            webhook_base = os.getenv('WEBHOOK_URL')
-            if not webhook_base:
-                raise ValueError("WEBHOOK_URL environment variable not set")
-            
-            # Remove any trailing slashes and ensure proper URL format
-            webhook_base = webhook_base.rstrip('/')
-            webhook_path = f"/webhook/{self.token}"
-            webhook_url = f"{webhook_base}{webhook_path}"
-    
-            webhook_config = {
-                "url": webhook_url,
-                "allowed_updates": ["message", "edited_message", "callback_query", "inline_query"],
-                "max_connections": 100,
-                "drop_pending_updates": True
-            }
-    
-            self.logger.info(f"Setting up webhook with URL: {webhook_url}")
-            await self.application.bot.delete_webhook(drop_pending_updates=True)
-            await self.application.bot.set_webhook(**webhook_config)
-            self.logger.info(f"Webhook setup completed successfully on port {port}")
-            
-            # Set up the FastAPI app to listen on the correct port
-            app.port = port
-        except ValueError as ve:
-            self.logger.error(f"Configuration error: {ve}")
-            raise
-        except Exception as e:
-            self.logger.error(f"Error setting up webhook: {e}")
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
-            raise
+        """Set up webhook with proper update processing."""
+        webhook_path = f"/webhook/{self.token}"
+        webhook_url = f"{os.getenv('WEBHOOK_URL')}{webhook_path}"
+
+        # First, delete existing webhook and get pending updates
+        await self.application.bot.delete_webhook(drop_pending_updates=True)
+
+        webhook_config = {
+            "url": webhook_url,
+            "allowed_updates": ["message", "edited_message", "callback_query", "inline_query"],
+            "max_connections": 1000
+        }
+
+        self.logger.info(f"Setting webhook to: {webhook_url}")
+
+        if not self.application.running:
+            await self.application.initialize()
+
+        # Set up webhook with new configuration
+        await self.application.bot.set_webhook(**webhook_config)
+
+        # Log webhook info for verification
+        webhook_info = await self.application.bot.get_webhook_info()
+        self.logger.info(f"Webhook status: {webhook_info}")
+
+        # Only start the application if it's not already running
+        if not self.application.running:
+            await self.application.start()
+        else:
+            self.logger.info("Application is already running. Skipping start.")
 
     async def process_update(self, update_data: dict):
         """Process updates received from webhook."""
@@ -165,7 +160,7 @@ class TelegramBot:
             self.logger.error(traceback.format_exc())
 
     def run_webhook(self, loop):
-        @app.post(f"/webhook/{self.token}")     
+        @app.post(f"/webhook/{self.token}")
         async def webhook_handler(request: Request):
             try:
                 update_data = await request.json()
@@ -187,7 +182,8 @@ async def start_bot(bot: TelegramBot):
         raise
 
 def create_app(bot: TelegramBot, loop):
-    return loop.run_until_complete(bot.run_webhook(loop))
+    bot.run_webhook(loop)
+    return app
 
 if __name__ == '__main__':
     main_bot = TelegramBot()
@@ -196,12 +192,10 @@ if __name__ == '__main__':
     app = create_app(main_bot, loop)
 
     if os.environ.get('DEV_SERVER') == 'uvicorn':
-        port = int(os.environ.get("PORT", 8443))  # Add this line
-        uvicorn.run(app, host="0.0.0.0", port=port)  # Modified line
+        uvicorn.run(app, host="0.0.0.0", port=8443)
     else:
         try:
-            webhook_url = os.getenv('WEBHOOK_URL')
-            if not webhook_url:
+            if not os.getenv('WEBHOOK_URL'):
                 logger.error("WEBHOOK_URL not set in .env")
                 sys.exit(1)
 
