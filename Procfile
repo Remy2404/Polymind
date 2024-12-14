@@ -1,1 +1,1 @@
-web: apt-get update && apt-get install -y ffmpeg && python src/main.py
+web: python src/main.py
