@@ -43,7 +43,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-main_bot =  None
+global main_bot
+main_bot = None
+
 @app.on_event("startup")
 async def startup_event():
     global main_bot
@@ -53,11 +55,11 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    global main_bot
     if main_bot:
         await main_bot.application.stop()
         main_bot.shutdown()
         logger.info("Telegram bot stopped and database connection closed.")
-        global main_bot
         main_bot = None
 
 @app.post("/webhook/{token}")
@@ -218,8 +220,6 @@ async def start_bot(bot: TelegramBot):
 def create_app(bot: TelegramBot, loop):
     bot.run_webhook(loop)
     return app
-
-# ... (keep all imports and initial setup)
 
 if __name__ == '__main__':
     main_bot = TelegramBot()
