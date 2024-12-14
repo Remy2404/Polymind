@@ -117,66 +117,29 @@ class TelegramBot:
         self.application.run_webhook = self.run_webhook
 
     async def setup_webhook(self):
-        """Set up webhook with proper update processing."""
         try:
-            # Validate environment variables
             webhook_base = os.getenv('WEBHOOK_URL')
             if not webhook_base:
                 raise ValueError("WEBHOOK_URL environment variable not set")
-            if not self.token:
-                raise ValueError("Bot token not initialized")
-    
-            # Build webhook URL
+                
+            # Remove any trailing slashes and ensure proper URL format
+            webhook_base = webhook_base.rstrip('/')
             webhook_path = f"/webhook/{self.token}"
-            webhook_url = webhook_base.rstrip('/') + webhook_path
+            webhook_url = f"{webhook_base}{webhook_path}"
     
-            # Configure webhook settings
             webhook_config = {
                 "url": webhook_url,
                 "allowed_updates": ["message", "edited_message", "callback_query", "inline_query"],
-                "max_connections": 100,  # Reduced from 1000 to prevent overload
+                "max_connections": 100,
                 "drop_pending_updates": True
             }
     
-            # Delete existing webhook with retry mechanism
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    await self.application.bot.delete_webhook(drop_pending_updates=True)
-                    break
-                except Exception as e:
-                    if attempt == max_retries - 1:
-                        raise
-                    self.logger.warning(f"Webhook deletion attempt {attempt + 1} failed: {e}")
-                    await asyncio.sleep(1)
-    
-            # Initialize application if needed
-            if not self.application.running:
-                self.logger.info("Initializing application...")
-                await self.application.initialize()
-    
-            # Set up webhook with validation
-            self.logger.info(f"Setting webhook to: {webhook_url}")
+            await self.application.bot.delete_webhook(drop_pending_updates=True)
             await self.application.bot.set_webhook(**webhook_config)
-    
-            # Verify webhook configuration
-            webhook_info = await self.application.bot.get_webhook_info()
-            if not webhook_info.url:
-                raise ValueError("Webhook setup failed - URL not set")
-            
-            self.logger.info(f"Webhook successfully configured: {webhook_info}")
-    
-            # Start application if needed
-            if not self.application.running:
-                self.logger.info("Starting application...")
-                await self.application.start()
-                self.logger.info("Application started successfully")
-            else:
-                self.logger.info("Application already running")
-    
         except Exception as e:
-            self.logger.error(f"Webhook setup failed: {str(e)}")
-            raise RuntimeError(f"Failed to setup webhook: {str(e)}") from e
+            self.logger.error(f"Error setting up webhook: {e}")
+            raise
+    
 
     async def process_update(self, update_data: dict):
         """Process updates received from webhook."""
