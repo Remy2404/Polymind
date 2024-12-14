@@ -43,6 +43,35 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+main_bot =  None
+@app.on_event("startup")
+async def startup_event():
+    global main_bot
+    main_bot = TelegramBot()
+    await start_bot(main_bot)
+    logger.info("Telegram bot started.")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    if main_bot:
+        await main_bot.application.stop()
+        main_bot.shutdown()
+        logger.info("Telegram bot stopped and database connection closed.")
+        global main_bot
+        main_bot = None
+
+@app.post("/webhook/{token}")
+async def telegram_update(token: str, request: Request):
+    if token != os.getenv('TELEGRAM_BOT_TOKEN'):
+        return JSONResponse(status_code=403, content={"error": "Invalid token"})
+    try:
+        update_data = await request.json()
+        update = Update.de_json(update_data, main_bot.application.bot)
+        await main_bot.application.process_update(update)
+        return JSONResponse(status_code=200, content={"status": "ok"})
+    except Exception as e:
+        logger.error(f"An error occurred while processing a Telegram update: {traceback.format_exc()}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.get('/health')
 async def health_check():
@@ -115,6 +144,18 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("history", self.text_handler.show_history))
         self.application.add_error_handler(self.message_handlers._error_handler)
         self.application.run_webhook = self.run_webhook
+
+    def _setup_webhook_route(self):
+        @self.router.post(f"/webhook/{self.token}")
+        async def webhook_handler(request: Request):
+            try:
+                update_data = await request.json()
+                update = Update.de_json(update_data, self.application.bot)
+                await self.application.process_update(update)
+                return JSONResponse(content={"status": "ok"}, status_code=200)
+            except Exception as e:
+                logger.error(f"Error processing update: {e}")
+                return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
 
     async def setup_webhook(self):
         """Set up webhook with proper update processing."""
