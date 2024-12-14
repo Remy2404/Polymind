@@ -18,7 +18,7 @@ from services.user_data_manager import UserDataManager
 from services.gemini_api import GeminiAPI
 from handlers.command_handlers import CommandHandlers
 from handlers.text_handlers import TextHandler
-from handlers.message_handlers import MessageHandlers  # Ensure this is your custom handler
+from handlers.message_handlers import MessageHandlers
 from utils.telegramlog import TelegramLogger, telegram_logger
 from utils.pdf_handler import PDFHandler
 from threading import Thread
@@ -58,6 +58,7 @@ async def shutdown_event():
     global main_bot
     if main_bot:
         await main_bot.application.stop()
+        await flux_lora_image_generator.close()
         main_bot.shutdown()
         logger.info("Telegram bot stopped and database connection closed.")
         main_bot = None
@@ -160,12 +161,10 @@ class TelegramBot:
                 return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
 
     async def setup_webhook(self):
-        """Set up webhook with proper update processing."""
         try:
             webhook_path = f"/webhook/{self.token}"
             webhook_url = f"{os.getenv('WEBHOOK_URL').rstrip('/')}{webhook_path}"
 
-            # Delete existing webhook
             await self.application.bot.delete_webhook(drop_pending_updates=True)
 
             webhook_config = {
@@ -185,7 +184,6 @@ class TelegramBot:
             raise
 
     async def process_update(self, update_data: dict):
-        """Process updates received from webhook."""
         try:
             update = Update.de_json(update_data, self.application.bot)
             self.logger.debug(f"Received update: {update}")
@@ -234,20 +232,18 @@ if __name__ == '__main__':
 
         port = int(os.environ.get("PORT", 8000))
         
-        # Initialize and start application once
         loop.run_until_complete(main_bot.application.initialize())
         loop.run_until_complete(main_bot.setup_webhook())
         
-        if os.environ.get('DYNO'):  # Check if running on Heroku
-            # Use uvicorn server directly
+        if os.environ.get('DYNO'):
             uvicorn.run(
-                app,
+                "main:app",
                 host="0.0.0.0",
                 port=port,
-                log_level="info"
+                log_level="info",
+                reload=True
             )
         else:
-            # For local development, use asyncio
             loop.run_forever()
 
     except KeyboardInterrupt:
@@ -257,6 +253,7 @@ if __name__ == '__main__':
         logger.error(traceback.format_exc())
     finally:
         loop.run_until_complete(main_bot.application.shutdown())
+        loop.run_until_complete(flux_lora_image_generator.close())
         close_database_connection(main_bot.client)
         tasks = asyncio.all_tasks(loop)
         for task in tasks:
