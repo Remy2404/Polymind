@@ -191,29 +191,30 @@ if __name__ == '__main__':
     asyncio.set_event_loop(loop)
     app = create_app(main_bot, loop)
 
-    if os.environ.get('DEV_SERVER') == 'uvicorn':
-        uvicorn.run(app, host="0.0.0.0", port=8443)
-    else:
-        try:
-            if not os.getenv('WEBHOOK_URL'):
-                logger.error("WEBHOOK_URL not set in .env")
-                sys.exit(1)
+    try:
+        if not os.getenv('WEBHOOK_URL'):
+            logger.error("WEBHOOK_URL not set in .env")
+            sys.exit(1)
 
-            loop.create_task(main_bot.setup_webhook())
-            loop.create_task(start_bot(main_bot))
+        port = int(os.environ.get("PORT", 8443))
+        
+        # Setup the webhook before starting uvicorn
+        loop.run_until_complete(main_bot.setup_webhook())
+        loop.run_until_complete(start_bot(main_bot))
 
-            def run_fastapi():
-                port = int(os.environ.get("PORT", 8443))
-                uvicorn.run(app, host="0.0.0.0", port=port)
+        # Run the FastAPI app with uvicorn
+        uvicorn.run(
+            app,
+            host="0.0.0.0",
+            port=port,
+            log_level="info"
+        )
 
-            fastapi_thread = Thread(target=run_fastapi)
-            fastapi_thread.start()
-            loop.run_forever()
-        except KeyboardInterrupt:
-            logger.info("Bot stopped by user")
-        except Exception as e:
-            main_bot.logger.error(f"Unhandled exception: {str(e)}")
-        finally:
-            close_database_connection(main_bot.client)
-            loop.stop()
-            loop.close()
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        main_bot.logger.error(f"Unhandled exception: {str(e)}")
+    finally:
+        close_database_connection(main_bot.client)
+        loop.stop()
+        loop.close()
