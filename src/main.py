@@ -178,6 +178,8 @@ def create_app(bot: TelegramBot, loop):
     bot.run_webhook(loop)
     return app
 
+# ... (keep all imports and initial setup)
+
 if __name__ == '__main__':
     main_bot = TelegramBot()
     loop = asyncio.new_event_loop()
@@ -195,22 +197,29 @@ if __name__ == '__main__':
         loop.run_until_complete(main_bot.application.initialize())
         loop.run_until_complete(main_bot.setup_webhook())
         
-        # Run the FastAPI app with uvicorn
-        uvicorn.run(
-            app,
-            host="0.0.0.0",
-            port=port,
-            log_level="info"
-        )
+        if os.environ.get('DYNO'):  # Check if running on Heroku
+            # Use uvicorn server directly
+            uvicorn.run(
+                app,
+                host="0.0.0.0",
+                port=port,
+                log_level="info"
+            )
+        else:
+            # For local development, use asyncio
+            loop.run_forever()
 
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Unhandled exception: {str(e)}")
+        logger.error(traceback.format_exc())
     finally:
+        loop.run_until_complete(main_bot.application.shutdown())
         close_database_connection(main_bot.client)
         tasks = asyncio.all_tasks(loop)
         for task in tasks:
             task.cancel()
-        loop.stop()
+        loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+        loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()
