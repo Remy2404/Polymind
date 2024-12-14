@@ -116,12 +116,16 @@ class TelegramBot:
         self.application.add_error_handler(self.message_handlers._error_handler)
         self.application.run_webhook = self.run_webhook
 
+    import os
+    import traceback
+    
     async def setup_webhook(self):
         try:
+            port = int(os.getenv('PORT', 8443))
             webhook_base = os.getenv('WEBHOOK_URL')
             if not webhook_base:
                 raise ValueError("WEBHOOK_URL environment variable not set")
-                
+            
             # Remove any trailing slashes and ensure proper URL format
             webhook_base = webhook_base.rstrip('/')
             webhook_path = f"/webhook/{self.token}"
@@ -134,12 +138,20 @@ class TelegramBot:
                 "drop_pending_updates": True
             }
     
+            self.logger.info(f"Setting up webhook with URL: {webhook_url}")
             await self.application.bot.delete_webhook(drop_pending_updates=True)
             await self.application.bot.set_webhook(**webhook_config)
+            self.logger.info(f"Webhook setup completed successfully on port {port}")
+            
+            # Set up the FastAPI app to listen on the correct port
+            app.port = port
+        except ValueError as ve:
+            self.logger.error(f"Configuration error: {ve}")
+            raise
         except Exception as e:
             self.logger.error(f"Error setting up webhook: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             raise
-    
 
     async def process_update(self, update_data: dict):
         """Process updates received from webhook."""
@@ -184,7 +196,7 @@ if __name__ == '__main__':
     app = create_app(main_bot, loop)
 
     if os.environ.get('DEV_SERVER') == 'uvicorn':
-        port = int(os.environ.get("PORT", 8000))  # Add this line
+        port = int(os.environ.get("PORT", 8443))  # Add this line
         uvicorn.run(app, host="0.0.0.0", port=port)  # Modified line
     else:
         try:
@@ -197,7 +209,7 @@ if __name__ == '__main__':
             loop.create_task(start_bot(main_bot))
 
             def run_fastapi():
-                port = int(os.environ.get("PORT", 8000))
+                port = int(os.environ.get("PORT", 8443))
                 uvicorn.run(app, host="0.0.0.0", port=port)
 
             fastapi_thread = Thread(target=run_fastapi)
