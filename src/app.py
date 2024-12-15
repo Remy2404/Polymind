@@ -160,7 +160,7 @@ class TelegramBot:
             self.logger.error(traceback.format_exc())
 
     def run_webhook(self, loop):
-        @app.post(f"/webhook{self.token}")
+        @app.post(f"/webhook/{self.token}")
         async def webhook_handler(request: Request):
             try:
                 update_data = await request.json()
