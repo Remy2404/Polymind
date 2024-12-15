@@ -43,7 +43,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-""" global main_bot
+global main_bot
 main_bot = None
 
 @app.on_event("startup")
@@ -74,7 +74,7 @@ async def telegram_update(token: str, request: Request):
         return JSONResponse(status_code=200, content={"status": "ok"})
     except Exception as e:
         logger.error(f"An error occurred while processing a Telegram update: {traceback.format_exc()}")
-        return JSONResponse(status_code=500, content={"error": str(e)}) """
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.get('/health')
 async def health_check():

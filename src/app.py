@@ -118,7 +118,7 @@ class TelegramBot:
 
     async def setup_webhook(self):
         """Set up webhook with proper update processing."""
-        webhook_path = f"/bot{self.token}"
+        webhook_path = f"/webhook/{self.token}"
         webhook_url = f"{os.getenv('WEBHOOK_URL')}{webhook_path}"
 
         # First, delete existing webhook and get pending updates
@@ -160,7 +160,7 @@ class TelegramBot:
             self.logger.error(traceback.format_exc())
 
     def run_webhook(self, loop):
-        @app.post(f"/bot{self.token}")
+        @app.post(f"/webhook{self.token}")
         async def webhook_handler(request: Request):
             try:
                 update_data = await request.json()
@@ -171,18 +171,18 @@ class TelegramBot:
                 self.logger.error(traceback.format_exc())
                 return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
 
-async def start_bot(bot: TelegramBot):
+async def start_bot(webhook: TelegramBot):
     try:
-        await bot.application.initialize()
-        await bot.application.start()
+        await webhook.application.initialize()
+        await webhook.application.start()
         logger.info("Bot started successfully.")
     except Exception as e:
         logger.error(f"Error: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise
 
-def create_app(bot: TelegramBot, loop):
-    bot.run_webhook(loop)
+def create_app(webhook: TelegramBot, loop):
+    webhook.run_webhook(loop)
     return app
 
 if __name__ == '__main__':
@@ -209,11 +209,16 @@ if __name__ == '__main__':
             fastapi_thread = Thread(target=run_fastapi)
             fastapi_thread.start()
             loop.run_forever()
-        except KeyboardInterrupt:
-            logger.info("Bot stopped by user")
         except Exception as e:
-            main_bot.logger.error(f"Unhandled exception: {str(e)}")
+            logger.error(f"Unhandled exception: {str(e)}")
+            logger.error(traceback.format_exc())
         finally:
+            loop.run_until_complete(main_bot.application.shutdown())
+            loop.run_until_complete(flux_lora_image_generator.close())
             close_database_connection(main_bot.client)
-            loop.stop()
+            tasks = asyncio.all_tasks(loop)
+            for task in tasks:
+                task.cancel()
+            loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+            loop.run_until_complete(loop.shutdown_asyncgens())
             loop.close()
