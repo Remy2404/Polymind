@@ -18,7 +18,7 @@ from services.user_data_manager import UserDataManager
 from services.gemini_api import GeminiAPI
 from handlers.command_handlers import CommandHandlers
 from handlers.text_handlers import TextHandler
-from handlers.message_handlers import MessageHandlers  # Ensure this is your custom handler
+from handlers.message_handlers import MessageHandlers
 from utils.telegramlog import TelegramLogger, telegram_logger
 from utils.pdf_handler import PDFHandler
 from threading import Thread
@@ -28,6 +28,7 @@ from services.rate_limiter import RateLimiter
 import google.generativeai as genai
 from services.flux_lora_img import flux_lora_image_generator
 import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
 
 
 load_dotenv()
@@ -43,6 +44,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 @app.get('/health')
 async def health_check():
@@ -121,13 +141,13 @@ class TelegramBot:
         webhook_path = f"/webhook/{self.token}"
         webhook_url = f"{os.getenv('WEBHOOK_URL')}{webhook_path}"
 
-        # First, delete existing webhook and get pending updates
         await self.application.bot.delete_webhook(drop_pending_updates=True)
 
         webhook_config = {
             "url": webhook_url,
             "allowed_updates": ["message", "edited_message", "callback_query", "inline_query"],
-            "max_connections": 1000
+            "max_connections": 1000,
+            "secret_token": os.getenv('WEBHOOK_SECRET', None)  # Add webhook secret for security
         }
 
         self.logger.info(f"Setting webhook to: {webhook_url}")
@@ -135,36 +155,44 @@ class TelegramBot:
         if not self.application.running:
             await self.application.initialize()
 
-        # Set up webhook with new configuration
         await self.application.bot.set_webhook(**webhook_config)
 
-        # Log webhook info for verification
         webhook_info = await self.application.bot.get_webhook_info()
         self.logger.info(f"Webhook status: {webhook_info}")
 
-        # Only start the application if it's not already running
         if not self.application.running:
             await self.application.start()
         else:
             self.logger.info("Application is already running. Skipping start.")
 
-    async def process_update(self, update_data: dict):
+    async def process_update(self, update_data: dict, request: Request):
         """Process updates received from webhook."""
         try:
+            # Verify webhook secret token
+            secret_token = os.getenv('WEBHOOK_SECRET')
+            if secret_token:
+                if request.headers.get('X-Telegram-Bot-Api-Secret-Token') != secret_token:
+                    self.logger.warning("Invalid webhook secret token")
+                    return False
+
             update = Update.de_json(update_data, self.application.bot)
             self.logger.debug(f"Received update: {update}")
             await self.application.process_update(update)
             self.logger.debug("Processed update successfully.")
+            return True
         except Exception as e:
             self.logger.error(f"Error in process_update: {e}")
             self.logger.error(traceback.format_exc())
+            return False
 
     def run_webhook(self, loop):
         @app.post(f"/webhook{self.token}")
         async def webhook_handler(request: Request):
             try:
                 update_data = await request.json()
-                await self.process_update(update_data)
+                success = await self.process_update(update_data, request)
+                if not success:
+                    return JSONResponse(content={"status": "error", "message": "Invalid request"}, status_code=403)
                 return JSONResponse(content={"status": "ok", "method": "webhook"}, status_code=200)
             except Exception as e:
                 self.logger.error(f"Update processing error: {e}")
@@ -191,34 +219,41 @@ if __name__ == '__main__':
     asyncio.set_event_loop(loop)
     app = create_app(main_bot, loop)
 
-    if os.environ.get('DEV_SERVER') == 'uvicorn':
-        uvicorn.run(app, host="0.0.0.0", port=8000)
-    else:
-        try:
-            if not os.getenv('WEBHOOK_URL'):
-                logger.error("WEBHOOK_URL not set in .env")
-                sys.exit(1)
+    try:
+        if not os.getenv('WEBHOOK_URL'):
+            logger.error("WEBHOOK_URL not set in .env")
+            sys.exit(1)
 
-            loop.create_task(main_bot.setup_webhook())
-            loop.create_task(start_bot(main_bot))
+        port = int(os.environ.get("PORT", 8000))
+        
+        loop.create_task(main_bot.setup_webhook())
+        loop.create_task(start_bot(main_bot))
 
-            def run_fastapi():
-                port = int(os.environ.get("PORT", 8000))
-                uvicorn.run(app, host="0.0.0.0", port=port)
-
-            fastapi_thread = Thread(target=run_fastapi)
-            fastapi_thread.start()
-            loop.run_forever()
-        except Exception as e:
-            logger.error(f"Unhandled exception: {str(e)}")
-            logger.error(traceback.format_exc())
-        finally:
-            loop.run_until_complete(main_bot.application.shutdown())
-            loop.run_until_complete(flux_lora_image_generator.close())
-            close_database_connection(main_bot.client)
-            tasks = asyncio.all_tasks(loop)
-            for task in tasks:
-                task.cancel()
-            loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-            loop.run_until_complete(loop.shutdown_asyncgens())
-            loop.close()
+        config = uvicorn.Config(
+            app=app,
+            host="0.0.0.0",
+            port=port,
+            workers=4,
+            loop=loop,
+            proxy_headers=True,
+            forwarded_allow_ips='*',
+            log_level="info",
+            reload=False,  # Disable reload in production
+            access_log=True
+        )
+        server = uvicorn.Server(config)
+        loop.run_until_complete(server.serve())
+        
+    except Exception as e:
+        logger.error(f"Unhandled exception: {str(e)}")
+        logger.error(traceback.format_exc())
+    finally:
+        loop.run_until_complete(main_bot.application.shutdown())
+        loop.run_until_complete(flux_lora_image_generator.close())
+        close_database_connection(main_bot.client)
+        tasks = asyncio.all_tasks(loop)
+        for task in tasks:
+            task.cancel()
+        loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()

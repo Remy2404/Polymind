@@ -14,6 +14,7 @@ services:
       - key: WEBHOOK_URL
         sync: false
     healthCheckPath: /health
-    autoDeploy: true    git add .
+    autoDeploy: true
+    git add .
     git commit -m "Prepare for Render deployment"
     git push origin main

@@ -28,9 +28,31 @@ from services.rate_limiter import RateLimiter
 import google.generativeai as genai
 from services.flux_lora_img import flux_lora_image_generator
 import uvicorn
+from contextlib import asynccontextmanager
 
 
 load_dotenv()
+
+def validate_environment():
+    """Validate all required environment variables are set."""
+    required_vars = [
+        'TELEGRAM_BOT_TOKEN',
+        'GEMINI_API_KEY',
+        'DATABASE_URL',
+        'WEBHOOK_URL',
+        'MONGODB_DB_NAME',
+        'ADMIN_USER_ID',
+        'PORT'
+    ]
+    
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    
+    if missing_vars:
+        logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
+        sys.exit(1)
+
+load_dotenv()
+validate_environment()
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -42,27 +64,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+
 global main_bot
 main_bot = None
 
-@app.on_event("startup")
-async def startup_event():
-    global main_bot
-    main_bot = TelegramBot()
-    await start_bot(main_bot)
-    logger.info("Telegram bot started.")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    try:
+        logger.info("Starting up bot...")
+        await start_bot()
+        yield
+    finally:
+        # Shutdown
+        logger.info("Shutting down bot...")
+        await shutdown()
+async def shutdown():
+    try:
+        logger.info("Starting graceful shutdown...")
+        tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        
+        if 'main_bot' in globals():
+            await main_bot.application.shutdown()
+        if 'flux_lora_image_generator' in globals():
+            await flux_lora_image_generator.close()
+        
+        logger.info("Shutdown complete")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
+        raise
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    global main_bot
-    if main_bot:
-        await main_bot.application.stop()
-        await flux_lora_image_generator.close()
-        main_bot.shutdown()
-        logger.info("Telegram bot stopped and database connection closed.")
-        main_bot = None
-
+app = FastAPI(lifespan=lifespan)
 @app.post("/webhook/{token}")
 async def telegram_update(token: str, request: Request):
     if token != os.getenv('TELEGRAM_BOT_TOKEN'):
