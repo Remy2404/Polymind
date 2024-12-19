@@ -19,8 +19,5 @@ ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV PYTHON_PATH=/app
 
-# Expose port
-EXPOSE 8000
-
 # Run the application
 CMD ["python", "src/main.py"]
