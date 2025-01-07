@@ -8,14 +8,16 @@ from pydub import AudioSegment
 from handlers.text_handlers import TextHandler
 from services.user_data_manager import UserDataManager
 from telegram.ext import MessageHandler, filters
+import asyncio
 
 
 class MessageHandlers:
-    def __init__(self, gemini_api, user_data_manager, telegram_logger, pdf_handler):
+    def __init__(self, gemini_api, user_data_manager, telegram_logger , document_processor ,text_handler):
         self.gemini_api = gemini_api
+        self.text_handler = text_handler
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
-        self.pdf_handler = pdf_handler
+        self.document_processor = document_processor
         self.logger = logging.getLogger(__name__)
 
 
@@ -145,32 +147,49 @@ class MessageHandlers:
         except Exception as e:
             self.logger.error(f"Error processing voice message: {str(e)}")
             await self._error_handler(update, context)
-   
-    async def _handle_pdf_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle PDF documents."""
+    async def _handle_document_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle incoming document messages."""
         user_id = update.effective_user.id
+        self.logger.info(f"Processing document for user: {user_id}")
+
         try:
-            self.logger.info(f"Received PDF document from user {user_id}")
-            
-            if not update.message.document or update.message.document.mime_type != 'application/pdf':
-                await update.message.reply_text("Please send a valid PDF file.")
-                return
+            document = update.message.document
+            file = await context.bot.get_file(document.file_id)
+            file_extension = document.file_name.split('.')[-1]
 
-            await self.user_data_manager.initialize_user(user_id)
-            
-            file = await context.bot.get_file(update.message.document.file_id)
-            file_content = io.BytesIO()
-            await file.download(out=file_content)
-            file_content.seek(0)
+            # Download the file data
+            file_data = await file.download_as_bytearray()
+            file_stream = io.BytesIO(file_data)
 
-            # Process the PDF using the pdf_handler
-            await self.pdf_handler.handle_pdf_upload(update, context, file_content)
-            
-            await self.user_data_manager.update_stats(user_id, pdf_document=True)
-            await update.message.reply_text("PDF received and processed. You can now ask questions about it.")
+            # Process the document
+            response = await self.document_processor.process_document_from_file(
+                file=file_stream,
+                file_extension=file_extension,
+                prompt="Analyze this document."
+            )
+
+            formatted_response = await self.text_handler.format_telegram_markdown(response)
+            await update.message.reply_text(
+                formatted_response,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+
+            await self.user_data_manager.update_user_stats(user_id, {'document': True})
+            self.telegram_logger.log_message("Document processed successfully.", user_id)
+
         except Exception as e:
-            self.logger.error(f"Error handling PDF: {str(e)}")
-            await update.message.reply_text("An error occurred while processing your PDF. Please try again.")
+            self.logger.error(f"Error processing document: {e}")
+            await self._error_handler(update, context)
+
+    async def _error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle errors occurring in the dispatcher."""
+        self.logger.error(f"Update {update} caused error: {context.error}")
+        if update and update.effective_message:
+            await update.effective_message.reply_text(
+                "An error occurred while processing your request. Please try again later."
+            )
+
 
     async def _error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle errors occurring in the dispatcher."""
@@ -185,7 +204,7 @@ class MessageHandlers:
             application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text_message))
             application.add_handler(MessageHandler(filters.PHOTO, self._handle_image_message))
             application.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
-            application.add_handler(MessageHandler(filters.Document.MimeType('application/pdf'), self._handle_pdf_document))
+            application.add_handler(MessageHandler(filters.Document.ALL, self._handle_document_message))
 
             application.add_error_handler(self._error_handler)
             self.logger.info("Message handlers registered successfully")

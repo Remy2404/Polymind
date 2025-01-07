@@ -1,4 +1,5 @@
 import os
+import io
 import sys
 import logging
 import asyncio
@@ -19,40 +20,19 @@ from services.gemini_api import GeminiAPI
 from handlers.command_handlers import CommandHandlers
 from handlers.text_handlers import TextHandler
 from handlers.message_handlers import MessageHandlers
-from utils.telegramlog import TelegramLogger, telegram_logger
-from utils.pdf_handler import PDFHandler
 from threading import Thread
+from utils.telegramlog import telegram_logger
 from services.reminder_manager import ReminderManager
 from utils.language_manager import LanguageManager 
 from services.rate_limiter import RateLimiter
+from services.document_processing import DocumentProcessor
+from utils.fileHandler import FileHandler
 import google.generativeai as genai
 from services.flux_lora_img import flux_lora_image_generator
 import uvicorn
-from contextlib import asynccontextmanager
 
 
 load_dotenv()
-
-def validate_environment():
-    """Validate all required environment variables are set."""
-    required_vars = [
-        'TELEGRAM_BOT_TOKEN',
-        'GEMINI_API_KEY',
-        'DATABASE_URL',
-        'WEBHOOK_URL',
-        'MONGODB_DB_NAME',
-        'ADMIN_USER_ID',
-        'PORT'
-    ]
-    
-    missing_vars = [var for var in required_vars if not os.getenv(var)]
-    
-    if missing_vars:
-        logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
-        sys.exit(1)
-
-load_dotenv()
-validate_environment()
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -64,52 +44,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-global main_bot
-main_bot = None
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    try:
-        logger.info("Starting up bot...")
-        await start_bot()
-        yield
-    finally:
-        # Shutdown
-        logger.info("Shutting down bot...")
-        await shutdown()
-async def shutdown():
-    try:
-        logger.info("Starting graceful shutdown...")
-        tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        
-        if 'main_bot' in globals():
-            await main_bot.application.shutdown()
-        if 'flux_lora_image_generator' in globals():
-            await flux_lora_image_generator.close()
-        
-        logger.info("Shutdown complete")
-    except Exception as e:
-        logger.error(f"Error during shutdown: {e}")
-        raise
-
-app = FastAPI(lifespan=lifespan)
-@app.post("/webhook/{token}")
-async def telegram_update(token: str, request: Request):
-    if token != os.getenv('TELEGRAM_BOT_TOKEN'):
-        return JSONResponse(status_code=403, content={"error": "Invalid token"})
-    try:
-        update_data = await request.json()
-        update = Update.de_json(update_data, main_bot.application.bot)
-        await main_bot.application.process_update(update)
-        return JSONResponse(status_code=200, content={"status": "ok"})
-    except Exception as e:
-        logger.error(f"An error occurred while processing a Telegram update: {traceback.format_exc()}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+app = FastAPI()
 
 @app.get('/health')
 async def health_check():
@@ -152,16 +87,23 @@ class TelegramBot:
             telegram_logger=self.telegram_logger,
             flux_lora_image_generator=flux_lora_image_generator,
         )
-        self.pdf_handler = PDFHandler(
-            text_handler=self.text_handler,
-            telegram_logger=self.telegram_logger
+         # Initialize FileHandler
+        self.file_handler = FileHandler(
+            telegram_logger=self.telegram_logger,
+            gemini_api=self.gemini_api,
+            user_data_manager=self.user_data_manager
         )
+        # Initialize DocumentProcessor
+        self.document_processor = DocumentProcessor()
+        # Update MessageHandlers initialization with document_processor
         self.message_handlers = MessageHandlers(
             self.gemini_api,
             self.user_data_manager,
             self.telegram_logger,
-            self.pdf_handler
+            self.document_processor,
+            self.text_handler
         )
+        # Initialize ReminderManager and LanguageManager
         self.reminder_manager = ReminderManager(self.application.bot)
         self.language_manager = LanguageManager()
         self._setup_handlers()
@@ -174,8 +116,6 @@ class TelegramBot:
         self.command_handler.register_handlers(self.application)
         for handler in self.text_handler.get_handlers():
             self.application.add_handler(handler)
-        for handler in self.pdf_handler.get_handlers():
-            self.application.add_handler(handler)
         self.message_handlers.register_handlers(self.application)
         self.application.add_handler(CommandHandler("remind", self.reminder_manager.set_reminder))
         self.application.add_handler(CommandHandler("language", self.language_manager.set_language))
@@ -183,42 +123,40 @@ class TelegramBot:
         self.application.add_error_handler(self.message_handlers._error_handler)
         self.application.run_webhook = self.run_webhook
 
-    def _setup_webhook_route(self):
-        @self.router.post(f"/webhook/{self.token}")
-        async def webhook_handler(request: Request):
-            try:
-                update_data = await request.json()
-                update = Update.de_json(update_data, self.application.bot)
-                await self.application.process_update(update)
-                return JSONResponse(content={"status": "ok"}, status_code=200)
-            except Exception as e:
-                logger.error(f"Error processing update: {e}")
-                return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
-
     async def setup_webhook(self):
-        try:
-            webhook_path = f"/webhook/{self.token}"
-            webhook_url = f"{os.getenv('WEBHOOK_URL').rstrip('/')}{webhook_path}"
+        """Set up webhook with proper update processing."""
+        webhook_path = f"/webhook/{self.token}"
+        webhook_url = f"{os.getenv('WEBHOOK_URL')}{webhook_path}"
 
-            await self.application.bot.delete_webhook(drop_pending_updates=True)
+        # First, delete existing webhook and get pending updates
+        await self.application.bot.delete_webhook(drop_pending_updates=True)
 
-            webhook_config = {
-                "url": webhook_url,
-                "allowed_updates": ["message", "edited_message", "callback_query", "inline_query"],
-                "max_connections": 100
-            }
+        webhook_config = {
+            "url": webhook_url,
+            "allowed_updates": ["message", "edited_message", "callback_query", "inline_query"],
+            "max_connections": 1000
+        }
 
-            self.logger.info(f"Setting webhook to: {webhook_url}")
-            await self.application.bot.set_webhook(**webhook_config)
+        self.logger.info(f"Setting webhook to: {webhook_url}")
 
-            webhook_info = await self.application.bot.get_webhook_info()
-            self.logger.info(f"Webhook status: {webhook_info}")
+        if not self.application.running:
+            await self.application.initialize()
 
-        except Exception as e:
-            self.logger.error(f"Webhook setup failed: {e}")
-            raise
+        # Set up webhook with new configuration
+        await self.application.bot.set_webhook(**webhook_config)
+
+        # Log webhook info for verification
+        webhook_info = await self.application.bot.get_webhook_info()
+        self.logger.info(f"Webhook status: {webhook_info}")
+
+        # Only start the application if it's not already running
+        if not self.application.running:
+            await self.application.start()
+        else:
+            self.logger.info("Application is already running. Skipping start.")
 
     async def process_update(self, update_data: dict):
+        """Process updates received from webhook."""
         try:
             update = Update.de_json(update_data, self.application.bot)
             self.logger.debug(f"Received update: {update}")
@@ -240,18 +178,18 @@ class TelegramBot:
                 self.logger.error(traceback.format_exc())
                 return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
 
-async def start_bot(bot: TelegramBot):
+async def start_bot(webhook: TelegramBot):
     try:
-        await bot.application.initialize()
-        await bot.application.start()
+        await webhook.application.initialize()
+        await webhook.application.start()
         logger.info("Bot started successfully.")
     except Exception as e:
         logger.error(f"Error: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise
 
-def create_app(bot: TelegramBot, loop):
-    bot.run_webhook(loop)
+def create_app(webhook: TelegramBot, loop):
+    webhook.run_webhook(loop)
     return app
 
 if __name__ == '__main__':
@@ -260,39 +198,34 @@ if __name__ == '__main__':
     asyncio.set_event_loop(loop)
     app = create_app(main_bot, loop)
 
-    try:
-        if not os.getenv('WEBHOOK_URL'):
-            logger.error("WEBHOOK_URL not set in .env")
-            sys.exit(1)
+    if os.environ.get('DEV_SERVER') == 'uvicorn':
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    else:
+        try:
+            if not os.getenv('WEBHOOK_URL'):
+                logger.error("WEBHOOK_URL not set in .env")
+                sys.exit(1)
 
-        port = int(os.environ.get("PORT", 8000))
-        
-        loop.run_until_complete(main_bot.application.initialize())
-        loop.run_until_complete(main_bot.setup_webhook())
-        
-        if os.environ.get('DYNO'):
-            uvicorn.run(
-                "main:app",
-                host="0.0.0.0",
-                port=port,
-                log_level="info",
-                reload=True
-            )
-        else:
+            loop.create_task(main_bot.setup_webhook())
+            loop.create_task(start_bot(main_bot))
+
+            def run_fastapi():
+                port = int(os.environ.get("PORT", 8000))
+                uvicorn.run(app, host="0.0.0.0", port=port)
+
+            fastapi_thread = Thread(target=run_fastapi)
+            fastapi_thread.start()
             loop.run_forever()
-
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        logger.error(f"Unhandled exception: {str(e)}")
-        logger.error(traceback.format_exc())
-    finally:
-        loop.run_until_complete(main_bot.application.shutdown())
-        loop.run_until_complete(flux_lora_image_generator.close())
-        close_database_connection(main_bot.client)
-        tasks = asyncio.all_tasks(loop)
-        for task in tasks:
-            task.cancel()
-        loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-        loop.run_until_complete(loop.shutdown_asyncgens())
-        loop.close()
+        except Exception as e:
+            logger.error(f"Unhandled exception: {str(e)}")
+            logger.error(traceback.format_exc())
+        finally:
+            loop.run_until_complete(main_bot.application.shutdown())
+            loop.run_until_complete(flux_lora_image_generator.close())
+            close_database_connection(main_bot.client)
+            tasks = asyncio.all_tasks(loop)
+            for task in tasks:
+                task.cancel()
+            loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.close()

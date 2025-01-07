@@ -76,14 +76,18 @@ class CommandHandlers:
 
         keyboard = [
             [
-                InlineKeyboardButton("Help 📚", callback_data='help_command'),
-                InlineKeyboardButton("Settings ⚙️", callback_data='settings')
+                InlineKeyboardButton("Help 📚", callback_data='help'),
+                InlineKeyboardButton("Settings ⚙️", callback_data='preferences')
             ],
-            [InlineKeyboardButton("Support Channel 📢", url='https://t.me/Gemini_AIAssistBot')]
+            [InlineKeyboardButton("Support Channel 📢", url='https://t.me/GemBotAI')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await update.message.reply_text(welcome_message, reply_markup=reply_markup)
+        if update.callback_query:
+            await update.callback_query.message.reply_text(welcome_message, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(welcome_message, reply_markup=reply_markup)
+            
         await self.user_data_manager.initialize_user(user_id)
         self.logger.info(f"New user started the bot: {user_id}")
 
@@ -103,7 +107,11 @@ class CommandHandlers:
             "• Supports markdown formatting\n\n"
             "Need more help? Join our support channel!"
         )
-        await update.message.reply_text(help_text)
+        if update.callback_query:
+            await update.callback_query.message.reply_text(help_text)
+        else:
+            await update.message.reply_text(help_text)
+
     async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
         self.user_data_manager.reset_conversation(user_id)
@@ -112,7 +120,7 @@ class CommandHandlers:
     async def settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
         settings = self.user_data_manager.get_user_settings(user_id)
-
+    
         keyboard = [
             [
                 InlineKeyboardButton(
@@ -128,14 +136,22 @@ class CommandHandlers:
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(
-            "⚙️ *Bot Settings*\nCustomize your interaction preferences:",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
+    
+        settings_text = "⚙️ *Bot Settings*\nCustomize your interaction preferences:"
+    
+        if update.callback_query:
+            await update.callback_query.message.reply_text(
+                settings_text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                settings_text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
         self.telegram_logger.log_message(user_id, "Opened settings menu")
-
     async def handle_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
         user_data = self.user_data_manager.get_user_data(user_id)

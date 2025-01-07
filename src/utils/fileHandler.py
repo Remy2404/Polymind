@@ -1,5 +1,3 @@
-# src/utils/file_handler.py
-
 import io
 import zipfile
 import os
@@ -8,6 +6,9 @@ import aiofiles
 from pdfminer.high_level import extract_text
 from docx import Document
 
+#Application
+from telegram.ext import Application
+
 # External services and utilities
 from services.gemini_api import GeminiAPI
 from utils.telegramlog import TelegramLogger
@@ -15,6 +16,9 @@ from services.user_data_manager import UserDataManager
 
 # Caching
 from aiocache import cached, Cache
+
+from telegram import Update
+from telegram.ext import MessageHandler, filters
 
 class FileHandler:
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -47,7 +51,7 @@ class FileHandler:
     async def handle_docx(self, file_content: io.BytesIO, user_id: int) -> str:
         try:
             if self._validate_file_size(file_content, self.MAX_FILE_SIZE):
-                # Since aiofiles does not support file-like objects, write to a temporary file first
+                # Write to a temporary file
                 with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
                     tmp_file.write(file_content.read())
                     tmp_file_path = tmp_file.name
@@ -90,11 +94,11 @@ class FileHandler:
             self.telegram_logger.log_error(f"ZIP processing error: {str(e)}", user_id)
             return "❌ Error processing ZIP file."
 
-    async def handle_code(self, file_content: io.BytesIO, user_id: int, language: str) -> str:
+    async def handle_code_as_txt(self, file_content: io.BytesIO, user_id: int, language: str) -> str:
         try:
             if self._validate_file_size(file_content, self.MAX_CODE_SIZE):
-                # Since aiofiles does not support file-like objects, write to a temporary file first
-                with tempfile.NamedTemporaryFile(delete=False, mode='w', encoding='utf-8') as tmp_file:
+                # Convert code file to .txt
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.txt', mode='w', encoding='utf-8') as tmp_file:
                     tmp_file.write(file_content.read().decode('utf-8'))
                     tmp_file_path = tmp_file.name
 
@@ -106,7 +110,7 @@ class FileHandler:
 
                 preprocessed_code = self._preprocess_code(code)
                 analysis = await self.gemini_api.analyze_code(preprocessed_code, language=language)
-                await self._update_user_stats(user_id, file_type='code')
+                await self._update_user_stats(user_id, file_type='code_txt')
                 return f"💻 **{language.capitalize()} Code Analysis**\n\n{analysis}"
             else:
                 return "❌ Code file is too large. Maximum allowed size is 5MB."
@@ -117,13 +121,13 @@ class FileHandler:
             self.telegram_logger.log_error(f"Code processing error: {str(e)}", user_id)
             return "❌ Error processing code file."
 
+    async def handle_code(self, file_content: io.BytesIO, user_id: int, language: str) -> str:
+        return await self.handle_code_as_txt(file_content, user_id, language)
+
     async def handle_additional_file_types(self, file_content: io.BytesIO, user_id: int, file_type: str) -> str:
-        """
-        Extend this method to handle additional file types as needed.
-        """
-        if file_type == 'java':
-            return await self.handle_code(file_content, user_id, language='java')
-        # Add more file type handlers here
+        programming_languages = ['python', 'java', 'javascript', 'csharp', 'cpp', 'go', 'ruby', 'php', 'typescript', 'swift']
+        if file_type.lower() in programming_languages:
+            return await self.handle_code_as_txt(file_content, user_id, language=file_type.lower())
         else:
             return "❌ Unsupported file type."
 
@@ -153,3 +157,26 @@ class FileHandler:
 
     async def _update_user_stats(self, user_id: int, file_type: str) -> None:
         await self.user_data_manager.update_stats(user_id, file_type=file_type)
+
+    async def setUp_handler(self, application: 'Application') -> None:
+        """Set up file handling handlers with the Telegram bot application."""
+
+        async def handle_document(update: Update, context):
+            document = update.message.document
+            file_id = document.file_id
+            file_type = document.file_name.split('.')[-1].lower()
+
+            new_file = await context.bot.get_file(file_id)
+            file_bytes = io.BytesIO()
+            await new_file.download_to_memory(file_bytes)
+            file_bytes.seek(0)
+
+            response = await self.handle_additional_file_types(
+                file_bytes,
+                user_id=update.message.from_user.id,
+                file_type=file_type
+            )
+            await update.message.reply_text(response)
+
+        document_handler = MessageHandler(filters.Document.ALL, handle_document)
+        application.add_handler(document_handler)
