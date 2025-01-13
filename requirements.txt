@@ -19,5 +19,5 @@ SQLAlchemy==1.4.54
 telegramify-markdown==0.1.17
 uvicorn==0.24.0.post1
 pydub==0.25.1
-speech_recognition==3.11.0
+speechrecognition==3.11.0
 ffmpeg-python==0.2.0
