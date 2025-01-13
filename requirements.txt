@@ -65,6 +65,7 @@ protobuf==5.29.0
 psycopg2-binary==2.9.10
 pyasn1==0.6.1
 pyasn1_modules==0.4.1
+pdfminer.six==20201018
 pycares==4.5.0
 pycparser==2.22
 pydantic==2.10.2
