@@ -27,6 +27,8 @@ from services.rate_limiter import RateLimiter
 import google.generativeai as genai
 from services.flux_lora_img import flux_lora_image_generator
 import uvicorn
+import requests
+from services.document_processing import DocumentProcessor
 
 
 load_dotenv()
@@ -84,11 +86,15 @@ class TelegramBot:
             telegram_logger=self.telegram_logger,
             flux_lora_image_generator=flux_lora_image_generator,
         )
+        # Initialize DocumentProcessor
+        self.document_processor = DocumentProcessor()
+        # Update MessageHandlers initialization with document_processor
         self.message_handlers = MessageHandlers(
             self.gemini_api,
             self.user_data_manager,
             self.telegram_logger,
-            self.pdf_handler
+            self.document_processor,
+            self.text_handler
         )
         self.reminder_manager = ReminderManager(self.application.bot)
         self.language_manager = LanguageManager()
@@ -101,8 +107,6 @@ class TelegramBot:
     def _setup_handlers(self):
         self.command_handler.register_handlers(self.application)
         for handler in self.text_handler.get_handlers():
-            self.application.add_handler(handler)
-        for handler in self.pdf_handler.get_handlers():
             self.application.add_handler(handler)
         self.message_handlers.register_handlers(self.application)
         self.application.add_handler(CommandHandler("remind", self.reminder_manager.set_reminder))
@@ -166,6 +170,17 @@ class TelegramBot:
                 self.logger.error(traceback.format_exc())
                 return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
 
+    def run_webhook(self, loop):
+        @app.post(f"/webhook/{self.token}")
+        async def webhook_handler(request: Request):
+            try:
+                update_data = await request.json()
+                await self.process_update(update_data)
+                return JSONResponse(content={"status": "ok", "method": "webhook"}, status_code=200)
+            except Exception as e:
+                self.logger.error(f"Update processing error: {e}")
+                self.logger.error(traceback.format_exc())
+                return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
 async def start_bot(webhook: TelegramBot):
     try:
         await webhook.application.initialize()

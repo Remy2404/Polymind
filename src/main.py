@@ -3,8 +3,9 @@ import io
 import sys
 import logging
 import asyncio
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from telegram import Update
 import traceback
@@ -46,9 +47,47 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"Request: {request.method} {request.url}")
+    response = await call_next(request)
+    logger.info(f"Response status: {response.status_code}")
+    return response
+
+# Add error handling middleware
+@app.middleware("http")
+async def catch_exceptions_middleware(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as e:
+        logger.error(f"Request failed: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "Internal server error"}
+        )
+@app.get('/')
+async def root():
+    return {"message": "Hello World"}
 @app.get('/health')
 async def health_check():
     return JSONResponse(content={"status": "ok"}, status_code=200)
+
+@app.on_event("startup")
+async def startup_event():
+    global main_bot
+    main_bot = TelegramBot()
+    main_bot.run_webhook(asyncio.get_event_loop())
+    await main_bot.setup_webhook()
 
 class TelegramBot:
     def __init__(self):
@@ -168,7 +207,7 @@ class TelegramBot:
 
     def run_webhook(self, loop):
         @app.post(f"/webhook/{self.token}")
-        async def webhook_handler(request: Request):
+        async def webhook_handler(request: Request) -> JSONResponse:
             try:
                 update_data = await request.json()
                 await self.process_update(update_data)
@@ -177,7 +216,6 @@ class TelegramBot:
                 self.logger.error(f"Update processing error: {e}")
                 self.logger.error(traceback.format_exc())
                 return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
-
 async def start_bot(webhook: TelegramBot):
     try:
         await webhook.application.initialize()
@@ -198,34 +236,41 @@ if __name__ == '__main__':
     asyncio.set_event_loop(loop)
     app = create_app(main_bot, loop)
 
-    if os.environ.get('DEV_SERVER') == 'uvicorn':
-        uvicorn.run(app, host="0.0.0.0", port=8000)
-    else:
-        try:
-            if not os.getenv('WEBHOOK_URL'):
-                logger.error("WEBHOOK_URL not set in .env")
-                sys.exit(1)
+    try:
+        if not os.getenv('WEBHOOK_URL'):
+            logger.error("WEBHOOK_URL not set in .env")
+            sys.exit(1)
 
-            loop.create_task(main_bot.setup_webhook())
-            loop.create_task(start_bot(main_bot))
+        port = int(os.environ.get("PORT", 8000))
+        
+        loop.create_task(main_bot.setup_webhook())
+        loop.create_task(start_bot(main_bot))
 
-            def run_fastapi():
-                port = int(os.environ.get("PORT", 8000))
-                uvicorn.run(app, host="0.0.0.0", port=port)
-
-            fastapi_thread = Thread(target=run_fastapi)
-            fastapi_thread.start()
-            loop.run_forever()
-        except Exception as e:
-            logger.error(f"Unhandled exception: {str(e)}")
-            logger.error(traceback.format_exc())
-        finally:
-            loop.run_until_complete(main_bot.application.shutdown())
-            loop.run_until_complete(flux_lora_image_generator.close())
-            close_database_connection(main_bot.client)
-            tasks = asyncio.all_tasks(loop)
-            for task in tasks:
-                task.cancel()
-            loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-            loop.run_until_complete(loop.shutdown_asyncgens())
-            loop.close()
+        config = uvicorn.Config(
+            app=app,
+            host="0.0.0.0",
+            port=port,
+            workers=4,
+            loop=loop,
+            proxy_headers=True,
+            forwarded_allow_ips='*',
+            log_level="info",
+            reload=False,  # Disable reload in production
+            access_log=True
+        )
+        server = uvicorn.Server(config)
+        loop.run_until_complete(server.serve())
+        
+    except Exception as e:
+        logger.error(f"Unhandled exception: {str(e)}")
+        logger.error(traceback.format_exc())
+    finally:
+        loop.run_until_complete(main_bot.application.shutdown())
+        loop.run_until_complete(flux_lora_image_generator.close())
+        close_database_connection(main_bot.client)
+        tasks = asyncio.all_tasks(loop)
+        for task in tasks:
+            task.cancel()
+        loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()

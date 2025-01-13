@@ -38,10 +38,10 @@ class GeminiAPI:
             "temperature": 0.7,
             "top_p": 0.8,
             "top_k": 20,
-            "max_output_tokens": 4096,
+            "max_output_tokens": 2096,
         }
         try:
-            self.vision_model = genai.GenerativeModel("gemini-1.5-pro")
+            self.vision_model = genai.GenerativeModel("gemini-1.5-flash")
             self.rate_limiter = RateLimiter(requests_per_minute=20)
             # Initialize MongoDB connection
             self.db, self.client = get_database()
@@ -216,3 +216,22 @@ class GeminiAPI:
             self.logger.error(f"Error generating response: {str(e)}")
         
         return None
+
+    async def generate_content(self, content, generation_config, max_retries=5):
+        retry_delay = 1  # Start with 1 second
+
+        for attempt in range(max_retries):
+            async with self.rate_limiter:
+                try:
+                    response = await genai.generate_content(content, generation_config=generation_config)
+                    return response
+                except Exception as e:
+                    if "RATE_LIMIT_EXCEEDED" in str(e).upper():
+                        self.logger.warning(f"Rate limit exceeded. Retrying in {retry_delay} seconds...")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        self.logger.error(f"Error generating content: {e}")
+                        raise
+        self.logger.error("Max retries exceeded. Unable to generate content.")
+        raise Exception("Service is currently unavailable. Please try again later.")

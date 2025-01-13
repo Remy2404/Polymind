@@ -147,7 +147,9 @@ class MessageHandlers:
         except Exception as e:
             self.logger.error(f"Error processing voice message: {str(e)}")
             await self._error_handler(update, context)
-    async def _handle_document_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # src/handlers/message_handlers.py
+
+    async def _handle_document_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle incoming document messages."""
         user_id = update.effective_user.id
         self.logger.info(f"Processing document for user: {user_id}")
@@ -157,13 +159,8 @@ class MessageHandlers:
             file = await context.bot.get_file(document.file_id)
             file_extension = document.file_name.split('.')[-1]
 
-            # Download the file data
-            file_data = await file.download_as_bytearray()
-            file_stream = io.BytesIO(file_data)
-
-            # Process the document
             response = await self.document_processor.process_document_from_file(
-                file=file_stream,
+                file=await file.download_as_bytearray(),
                 file_extension=file_extension,
                 prompt="Analyze this document."
             )
@@ -175,12 +172,17 @@ class MessageHandlers:
                 disable_web_page_preview=True
             )
 
-            await self.user_data_manager.update_user_stats(user_id, {'document': True})
+            self.user_data_manager.update_stats(user_id, document=True)
             self.telegram_logger.log_message("Document processed successfully.", user_id)
 
         except Exception as e:
             self.logger.error(f"Error processing document: {e}")
-            await self._error_handler(update, context)
+            if "RATE_LIMIT_EXCEEDED" in str(e).upper():
+                await update.message.reply_text(
+                    "The service is currently experiencing high demand. Please try again later."
+                )
+            else:
+                await self._error_handler(update, context)
 
     async def _error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle errors occurring in the dispatcher."""
