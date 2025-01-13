@@ -1,5 +1,4 @@
-FROM python:3.9-slim
-
+FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies
@@ -19,5 +18,6 @@ ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV PYTHON_PATH=/app
 
-# Run the application
+WORKDIR /app/src
+
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
