@@ -31,6 +31,7 @@ from utils.fileHandler import FileHandler
 import google.generativeai as genai
 from services.flux_lora_img import flux_lora_image_generator
 import uvicorn
+from mangum import Mangum 
 
 
 load_dotenv()
@@ -216,6 +217,8 @@ class TelegramBot:
                 self.logger.error(f"Update processing error: {e}")
                 self.logger.error(traceback.format_exc())
                 return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
+# Initialize Mangum handler for Vercel
+handler = Mangum(app)
 async def start_bot(webhook: TelegramBot):
     try:
         await webhook.application.initialize()
@@ -229,7 +232,6 @@ async def start_bot(webhook: TelegramBot):
 def create_app(webhook: TelegramBot, loop):
     webhook.run_webhook(loop)
     return app
-
 if __name__ == '__main__':
     main_bot = TelegramBot()
     loop = asyncio.new_event_loop()
