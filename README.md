@@ -98,9 +98,12 @@ TEXT_TO_IMAGE_API_KEY=your_huggingface_api_key
 Run the following command to launch the bot:
 
 ```bash
-python src/main.py
+python src/app.py
 ```
-
+<span style="color: red;">For production you can start the bot </span>
+```bash
+ cd src && uvicorn main:app --host 0.0.0.0 --port 8000
+```
 ## 🛠️ Bot Commands
 
 Interact with the bot using the following commands:
@@ -110,8 +113,6 @@ Interact with the bot using the following commands:
 - `/settings` - Configure bot settings such as language and notification preferences.
 - `/reset` - Reset conversation history and preferences.
 - `/generate_image` - Generate images from text descriptions.
-- `/analyze_image` - Analyze uploaded images for detailed information.
-- `/transcribe_voice` - Transcribe sent voice messages into text.
 - `/language` - Change the bot's interface language.
 - `/stats` - View your usage statistics and interaction history.
 - `/export` - Export your conversation history in a preferred format.
@@ -187,7 +188,6 @@ src/
 4. **Configure Environment Variables:**
 
     Create a 
-
 .env
 
  file as described in the Installation section.
@@ -253,6 +253,7 @@ render.yaml
  for streamlined deployment on [Render](https://render.com/).
 2. **Docker Containers:** Deploy using Docker for isolation and scalability on platforms like AWS, Azure, or DigitalOcean.
 3. **Traditional Python Hosting:** Host on platforms that support Python applications, such as Heroku or Google Cloud Platform.
+4. **koyeb.com:** support for popular languages and Docker containers, without any modification.
 
 ### Setting Up Webhooks
 
@@ -266,9 +267,7 @@ render.yaml
 
 2. **Configure Webhook URL:**
 
-    Ensure the `WEBHOOK_URL` in your 
-
-.env
+    Ensure the `WEBHOOK_URL` in your .env
 
  file is set to the public URL provided by ngrok or your deployed server.
 
