@@ -1,11 +1,12 @@
 
 # Telegram Gemini Bot
 
-A sophisticated Telegram bot powered by Google's Gemini AI, offering advanced image processing, text analysis, PDF handling, voice message transcription, and multilingual support.<div align="center">
+A sophisticated Telegram bot powered by Google's Gemini AI, offering advanced image processing, text analysis, PDF handling, voice message transcription, and multilingual support.
+<div align="center">
   <img src="assets/templates/Project_report_group5.png" alt="Telegram Gemini Bot Logo" width="200">
 </div>
-## 🚀 Features
 
+## 🚀 Features
 - **🤖 AI-Powered Conversations**
   - Engage in intelligent, context-aware conversations using Google's Gemini AI.
   - Receive meaningful and dynamic responses tailored to your queries and interactions.
@@ -72,9 +73,7 @@ pip install -r requirements.txt
 
 ### 3. Configure Environment Variables
 
-Create a 
-
-.env
+Create a .env
 
  file in the root directory with the following content:
 
@@ -100,13 +99,6 @@ Run the following command to launch the bot:
 
 ```bash
 python src/app.py
-<<<<<<< HEAD
-=======
-```
-<span style="color: red;">For production you can start the bot </span>
-```bash
- cd src && uvicorn main:app --host 0.0.0.0 --port 8000
->>>>>>> b301a9f6608cf179845ae65186eb7bd2e915af9e
 ```
 ## 🛠️ Bot Commands
 
