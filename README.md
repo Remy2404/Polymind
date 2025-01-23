@@ -1,8 +1,9 @@
 
 # Telegram Gemini Bot
 
-A sophisticated Telegram bot powered by Google's Gemini AI, offering advanced image processing, text analysis, PDF handling, voice message transcription, and multilingual support.
-
+A sophisticated Telegram bot powered by Google's Gemini AI, offering advanced image processing, text analysis, PDF handling, voice message transcription, and multilingual support.<div align="center">
+  <img src="assets/templates/Project_report_group5.png" alt="Telegram Gemini Bot Logo" width="200">
+</div>
 ## 🚀 Features
 
 - **🤖 AI-Powered Conversations**
@@ -59,7 +60,7 @@ Follow these steps to set up the Telegram Gemini Bot on your local machine or se
 git clone https://github.com/Remy2404/Telegram-Gemini-Bot.git
 cd Telegram-Gemini-Bot
 code .
-```
+``` 
 
 ### 2. Install Dependencies
 
@@ -98,7 +99,7 @@ TEXT_TO_IMAGE_API_KEY=your_huggingface_api_key
 Run the following command to launch the bot:
 
 ```bash
-python src/main.py
+python src/app.py
 ```
 
 ## 🛠️ Bot Commands
