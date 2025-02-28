@@ -36,12 +36,13 @@ class GeminiAPI:
         # Generation configuration
         self.generation_config = {
             "temperature": 0.7,
-            "top_p": 0.8,
-            "top_k": 20,
-            "max_output_tokens": 2096,
+            "top_p": 0.95,
+            "top_k": 64,
+            "max_output_tokens": 65536,
+            "response_mime_type": "text/plain"
         }
         try:
-            self.vision_model = genai.GenerativeModel("gemini-1.5-flash")
+            self.vision_model = genai.GenerativeModel("gemini-2.0-flash-thinking-exp-01-21")
             self.rate_limiter = RateLimiter(requests_per_minute=20)
             # Initialize MongoDB connection
             self.db, self.client = get_database()
@@ -82,7 +83,7 @@ class GeminiAPI:
                     self.vision_model.generate_content,
                     [
                         prompt,  # First element is the text prompt
-                        {"mime_type": "image/jpeg, image.png", "data": processed_image}  # Second element is the image data
+                        {"mime_type": "image/jpeg, image.png", "data": processed_image}
                     ],
                     safety_settings=[
                         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
@@ -165,14 +166,15 @@ class GeminiAPI:
         except Exception as e:
             self.logger.error(f"Image generation error: {str(e)}")
             return None
-    async def generate_response(self, prompt: str, context: List[Dict] = None) -> Optional[str]:
+
+    async def generate_response(self, prompt: str, context: List[Dict] = None, image_context: str = None) -> Optional[str]:
         """
         Generate a text response based on the provided prompt and context.
         Returns the response as a string.
         """
         # Acquire rate limiter
         await self.rate_limiter.acquire()
-    
+
         try:
             # Prepare the conversation history
             conversation = []
@@ -181,6 +183,16 @@ class GeminiAPI:
             conversation.append(genai.types.ContentDict(
                 role="user",
                 parts=["You are Gembot, an AI assistant that can help you with various tasks."]
+            ))
+            
+            # Add system context about memory capabilities
+            memory_context = ("You have the ability to remember previous conversations including " 
+                             "descriptions of images the user has shared. When answering, consider " 
+                             "both text conversations and image descriptions in your context.")
+                             
+            conversation.append(genai.types.ContentDict(
+                role="user",
+                parts=[memory_context]
             ))
             
             if context:
@@ -195,7 +207,7 @@ class GeminiAPI:
                 role="user",
                 parts=[prompt]
             ))
-    
+
             # Generate the response using the conversation history
             response = await asyncio.to_thread(
                 self.vision_model.generate_content,
@@ -208,7 +220,7 @@ class GeminiAPI:
                     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
                 ]
             )
-    
+
             if response.text:
                 return response.text
         

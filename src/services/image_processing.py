@@ -54,16 +54,19 @@ class ImageProcessor:
         """
         try:
             with Image.open(io.BytesIO(image_data)) as img:
-                # Verify the image
-                img.verify()
                 # Check if format is supported
-                if img.format not in ['JPEG', 'PNG', 'WEBP' ,'GIF' ,]:
+                supported_formats = ['JPEG', 'PNG', 'WEBP', 'GIF']
+                if img.format not in supported_formats:
+                    logging.warning(f"Unsupported image format: {img.format}")
                     return False
+                    
                 # Check if size is reasonable
                 if img.size[0] * img.size[1] > 25000000:  # Max 25MP
+                    logging.warning(f"Image too large: {img.size[0]}x{img.size[1]}")
                     return False
+                    
                 return True
         except Exception as e:
             logging.error(f"Image validation failed: {str(e)}")
-            return False
+            return False  # Explicitly return False on exception
 

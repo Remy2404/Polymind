@@ -11,7 +11,6 @@ from telegram.ext import (
     Application, 
     CommandHandler, 
     PicklePersistence,
-    filters
 )
 from database.connection import get_database, close_database_connection
 from services.user_data_manager import UserDataManager
@@ -27,7 +26,6 @@ from services.rate_limiter import RateLimiter
 import google.generativeai as genai
 from services.flux_lora_img import flux_lora_image_generator
 import uvicorn
-import requests
 from services.document_processing import DocumentProcessor
 
 
@@ -38,7 +36,6 @@ logging.basicConfig(
     level=logging.INFO,
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('bot.log', encoding='utf-8')
     ]
 )
 logger = logging.getLogger(__name__)
