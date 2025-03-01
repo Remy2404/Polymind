@@ -17,17 +17,34 @@ class DocumentProcessor:
     """Handles document processing using the Gemini API."""
 
     # Supported MIME types for document processing
+        # Update the SUPPORTED_MIME_TYPES dictionary
     SUPPORTED_MIME_TYPES = {
         'pdf': 'application/pdf',
-        'js': ['application/x-javascript', 'text/javascript'],
-        'py': ['application/x-python', 'text/x-python'],
+        'js': 'text/plain',  # Changed to text/plain
+        'py': 'text/plain',  # Changed to text/plain
         'txt': 'text/plain',
         'html': 'text/html',
         'css': 'text/css',
         'md': 'text/markdown',
         'csv': 'text/csv',
         'xml': 'text/xml',
-        'rtf': 'text/rtf'
+        'rtf': 'text/rtf',
+        # Add defaults for common programming languages
+        'java': 'text/plain',
+        'cpp': 'text/plain',
+        'c': 'text/plain',
+        'cs': 'text/plain',
+        'php': 'text/plain',
+        'rb': 'text/plain',
+        'go': 'text/plain',
+        'swift': 'text/plain',
+        'kt': 'text/plain',
+        'rs': 'text/plain',
+        'ts': 'text/plain',
+        'sql': 'text/plain',
+        'sh': 'text/plain',
+        'yaml': 'text/plain',
+        'json': 'text/plain',
     }
 
     # Code file extensions that can be converted to text
@@ -67,12 +84,24 @@ class DocumentProcessor:
             self.logger.error(f"Error uploading file: {str(e)}")
             raise
 
-    def get_mime_type(self, file_extension: str) -> Optional[str]:
-        """Get the MIME type for a given file extension."""
-        mime_type = self.SUPPORTED_MIME_TYPES.get(file_extension.lower().strip('.'))
+    def get_mime_type(self, file_extension: str) -> str:
+        """Get the MIME type for a given file extension with fallback to text/plain for code files."""
+        file_extension = file_extension.lower().strip('.')
+        
+        # Check if it's a recognized code file extension
+        if file_extension in self.CODE_EXTENSIONS:
+            return 'text/plain'
+        
+        # Try to get from supported mime types
+        mime_type = self.SUPPORTED_MIME_TYPES.get(file_extension)
         if isinstance(mime_type, list):
             return mime_type[0]  # Return first MIME type if multiple are available
-        return mime_type
+        
+        # If no specific mapping and it's text-like, default to text/plain
+        if file_extension in ['txt', 'log', 'ini', 'cfg', 'conf', 'properties']:
+            return 'text/plain'
+        
+        return mime_type or 'text/plain'  # Default to text/plain if all else fails
 
     async def process_document_from_url(self, document_url: str, prompt: str) -> str:
         """Process a document from a URL using the Gemini API."""
@@ -123,53 +152,56 @@ class DocumentProcessor:
             self.logger.error(f"Error converting code to text: {str(e)}")
             raise
 
-    async def process_document_from_file(self, file: BinaryIO, file_extension: str, prompt: str) -> str:
-        """Process a document file using the Gemini API."""
+    async def process_document_from_file(self, file, file_extension: str, prompt: str) -> str:
+        """Process a document from a file object."""
         try:
-            file_extension = file_extension.lower().strip('.')
-            
-            # Handle code files by converting them to text
-            if file_extension in self.CODE_EXTENSIONS:
-                text_file, mime_type = self._convert_code_to_text(file, file_extension)
+            # Convert BytesIO to bytes if needed
+            if hasattr(file, 'read'):
+                # If file is a file-like object (like BytesIO), read its content
+                file_content = file.read()
+                if isinstance(file_content, bytearray):
+                    file_content = bytes(file_content)
+            elif isinstance(file, bytearray):
+                # If file is directly a bytearray, convert to bytes
+                file_content = bytes(file)
             else:
-                mime_type = self.get_mime_type(file_extension)
-                if not mime_type:
-                    supported_formats = (
-                        list(self.SUPPORTED_MIME_TYPES.keys()) + 
-                        list(self.CODE_EXTENSIONS)
-                    )
-                    raise ValueError(
-                        f"Unsupported file type: {file_extension}. "
-                        f"Supported formats are: {', '.join(supported_formats)}"
-                    )
-                text_file = file
-
-            # Upload file
-            uploaded_file = await self.upload_file(file=text_file, mime_type=mime_type)
-
-            # Generate content
+                # Otherwise use as is
+                file_content = file
+                
+            # Fixed method name: _get_mime_type → get_mime_type
+            mime_type = self.get_mime_type(file_extension)
+            
+            # Now continue with document processing
+            file_io = io.BytesIO(file_content)
+            file_io.seek(0)  # Reset file pointer to beginning
+            
+            # Upload file to Gemini API
+            uploaded_file = await self.upload_file(
+                file=file_io,
+                mime_type=mime_type
+            )
+            
+            # Generate response
             response = await asyncio.to_thread(
                 self.model.generate_content,
-                [uploaded_file, {"text": prompt}],
+                [uploaded_file, prompt],
                 generation_config=self.generation_config
             )
-
-            # Clean up the uploaded file
+            
+            # Clean up
             try:
-                await asyncio.to_thread(
-                    genai.delete_file, uploaded_file
-                )
+                await asyncio.to_thread(genai.delete_file, uploaded_file)
             except Exception as e:
                 self.logger.warning(f"Failed to delete uploaded file: {e}")
-
+            
             if hasattr(response, 'text') and response.text:
                 return response.text
-            elif isinstance(response, str) and response:
+            elif isinstance(response, str):
                 return response
-            return "Sorry, I couldn't process the document content."
-
+            return "Sorry, I couldn't process the document properly."
+                
         except Exception as e:
-            self.logger.error(f"Error processing document: {str(e)}")
+            logging.error(f"Error processing document: {str(e)}")
             raise
 
     async def process_multiple_documents(self, documents: List[Dict], prompt: str) -> str:
@@ -231,3 +263,148 @@ class DocumentProcessor:
         except Exception as e:
             self.logger.error(f"Error listing files: {str(e)}")
             return []
+        
+    async def process_document_enhanced(self, file, file_extension: str, prompt: str) -> str:
+        """
+        Process documents with enhanced capabilities, including code analysis.
+        """
+        try:
+            # Convert BytesIO to bytes if needed
+            if hasattr(file, 'read'):
+                file_content = file.read()
+                if isinstance(file_content, bytearray):
+                    file_content = bytes(file_content)
+            elif isinstance(file, bytearray):
+                file_content = bytes(file)
+            else:
+                file_content = file
+            
+            file_extension = file_extension.lower().strip('.')
+            
+            # Enhanced code file handling
+            if file_extension in self.CODE_EXTENSIONS:
+                mime_type = 'text/plain'
+                
+                # Add a header to identify the programming language
+                header = f"# Code file: {file_extension.upper()}\n\n"
+                file_content = header.encode('utf-8') + file_content
+                
+                # Create a prompt that guides the model to analyze the code
+                enhanced_prompt = self._get_language_specific_prompt(file_extension, f"""
+                This is a {file_extension.upper()} code file. Please analyze it with the following focus:
+                - Understand the structure and functionality
+                - Identify key components, classes, and functions
+                - Highlight any potential issues or improvements
+                - Suggest optimizations or best practices
+                
+                User's instructions: {prompt}
+                """)
+                
+                file_io = io.BytesIO(file_content)
+                file_io.seek(0)
+                
+                uploaded_file = await self.upload_file(file=file_io, mime_type=mime_type)
+                
+                # Generate response
+                response = await asyncio.to_thread(
+                    self.model.generate_content,
+                    [uploaded_file, {"text": enhanced_prompt}],
+                    generation_config=self.generation_config
+                )
+                
+                # Clean up
+                try:
+                    await asyncio.to_thread(genai.delete_file, uploaded_file)
+                except Exception as e:
+                    self.logger.warning(f"Failed to delete uploaded file: {e}")
+                
+                if hasattr(response, 'text') and response.text:
+                    return response.text
+                return f"Sorry, I couldn't analyze the {file_extension.upper()} code properly."
+                
+            # Enhanced PDF handling (existing code)
+            elif file_extension == 'pdf':
+                mime_type = 'application/pdf'
+                
+                # Create a prompt that guides the model to leverage its enhanced capabilities
+                enhanced_prompt = f"""
+                Process this PDF document with the following focus:
+                - Preserve and understand the document layout 
+                - Analyze any charts, tables, or diagrams in the document
+                - Extract structured information where relevant
+                
+                User's instructions: {prompt}
+                """
+                
+                # Upload file to Gemini
+                uploaded_file = await self.upload_file(file=file_content, mime_type=mime_type)
+                
+                # Use Gemini 1.5 Pro for best document processing results
+                pro_model = genai.GenerativeModel("gemini-1.5-pro")
+                
+                # Generate response with enhanced configuration
+                response = await asyncio.to_thread(
+                    pro_model.generate_content,
+                    [uploaded_file, {"text": enhanced_prompt}],
+                    generation_config={
+                        "temperature": 0.2,  # Lower for more factual responses
+                        "top_p": 0.95,
+                        "top_k": 64,
+                        "max_output_tokens": 8192,  # Allow longer responses for document analysis
+                        "response_mime_type": "text/plain"
+                    }
+                )
+                
+                # Clean up the uploaded file
+                try:
+                    await asyncio.to_thread(genai.delete_file, uploaded_file)
+                except Exception as e:
+                    self.logger.warning(f"Failed to delete uploaded file: {e}")
+                
+                if hasattr(response, 'text') and response.text:
+                    return response.text
+                else:
+                    return "Sorry, I couldn't analyze the document properly."
+                    
+            # Use existing implementation for other file types
+            else:
+                return await self.process_document_from_file(file, file_extension, prompt)
+                
+        except Exception as e:
+            self.logger.error(f"Error in enhanced document processing: {str(e)}")
+            raise ValueError(f"Document processing failed: {str(e)}")
+
+    # Add this method to provide language-specific guidance
+    def _get_language_specific_prompt(self, file_extension: str, base_prompt: str) -> str:
+        """Get language-specific analysis prompts based on file extension."""
+        language_prompts = {
+            'py': """
+                Python-specific analysis:
+                - Check for PEP 8 compliance
+                - Identify use of common libraries (NumPy, Pandas, Flask, etc.)
+                - Look for Pythonic patterns and anti-patterns
+            """,
+            'js': """
+                JavaScript-specific analysis:
+                - Identify the framework if any (React, Vue, Angular, etc.)
+                - Check for modern JS features and patterns
+                - Look for potential performance issues
+            """,
+            'java': """
+                Java-specific analysis:
+                - Identify design patterns used
+                - Check for proper exception handling
+                - Review class structure and inheritance
+            """,
+            'cpp': """
+                C++ specific analysis:
+                - Check for memory management issues
+                - Look for efficient use of STL
+                - Identify potential performance bottlenecks
+            """
+        }
+        
+        language_specific = language_prompts.get(file_extension.lower(), "")
+        if language_specific:
+            return f"{base_prompt}\n\n{language_specific}"
+        return base_prompt

@@ -31,40 +31,43 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error initializing user {user_id}: {str(e)}")
             raise
-    def update_stats(self, user_id: str, text_message: bool = False, voice_message: bool = False, image: bool = False) -> None:
-        """
-        Update user statistics based on their activity.
-        
-        :param user_id: Unique identifier for the user
-        :param text_message: Whether a text message was sent
-        :param voice_message: Whether a voice message was sent
-        :param image: Whether an image was sent
-        """
+
+    def update_stats(self, user_id: int, message: bool = False, image: bool = False, image_generation: bool = False, document: bool = False):
+        """Update user statistics."""
         try:
-            user = self.get_user_data(user_id)
-            stats = user.get('stats', {})
-            stats['last_active'] = datetime.now().isoformat()
+            users_collection = self.db.get_collection("users")
             
-            # Initialize stats if they don't exist
-            stats.setdefault('messages', 0)
-            stats.setdefault('voice_messages', 0)
-            stats.setdefault('images', 0)
+            # Create update dictionary
+            update_dict = {
+                "$set": {"last_active": datetime.now()},
+                "$inc": {}
+            }
             
-            if text_message:
-                stats['messages'] += 1
-            if voice_message:
-                stats['voice_messages'] += 1
+            # Increment message count if applicable
+            if message:
+                update_dict["$inc"]["messages_count"] = 1
+                
+            # Increment image count if applicable
             if image:
-                stats['images'] += 1
-            
-            self.users_collection.update_one(
-                {"user_id": user_id}, 
-                {"$set": {"stats": stats}},
+                update_dict["$inc"]["images_count"] = 1
+                
+            # Increment image generation count if applicable
+            if image_generation:
+                update_dict["$inc"]["images_generated_count"] = 1
+                
+            # Increment document count if applicable (NEW)
+            if document:
+                update_dict["$inc"]["documents_count"] = 1
+                
+            # Update user record
+            users_collection.update_one(
+                {"user_id": user_id},
+                update_dict,
                 upsert=True
             )
-            self.logger.debug(f"Updated stats for user: {user_id}")
         except Exception as e:
-            self.logger.error(f"Error updating stats for user {user_id}: {str(e)}")
+            logging.error(f"Error updating user stats: {str(e)}")
+
     async def update_user_data(self, user_id: int, user_data: dict) -> None:
         """Update user data in the database."""
         try:

@@ -1,6 +1,7 @@
 import logging
 import google.generativeai as genai
-from typing import Optional, List, Dict
+# from google import genai as genai_client
+from typing import Optional, List, Dict, BinaryIO
 import asyncio
 import datetime
 import sys
@@ -12,7 +13,7 @@ from utils.telegramlog import telegram_logger
 from dotenv import load_dotenv
 from services.image_processing import ImageProcessor
 from database.connection import get_database, get_image_cache_collection
-
+import httpx
 # Load environment variables
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -167,7 +168,88 @@ class GeminiAPI:
             self.logger.error(f"Image generation error: {str(e)}")
             return None
 
-    async def generate_response(self, prompt: str, context: List[Dict] = None, image_context: str = None) -> Optional[str]:
+    async def generate_image_with_imagen3(self, prompt: str) -> Optional[bytes]:
+        """
+        Generate an image using Google's Imagen API.
+        Returns the image as bytes.
+        """
+        await self.rate_limiter.acquire()
+        
+        try:
+            # Use a proper configuration for image generation
+            import httpx
+            import json
+            import base64
+            
+            # Update to use the recommended model
+            url = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent"
+            headers = {
+                "Content-Type": "application/json",
+                "x-goog-api-key": GEMINI_API_KEY
+            }
+            
+            # Format the request specifically for image generation
+            data = {
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "text": f"Generate a high-quality, detailed image of: {prompt}. Return the image only without any text."
+                            }
+                        ]
+                    }
+                ],
+                "generation_config": {
+                    "temperature": 0.4,
+                    "topP": 0.95,
+                    "topK": 32,
+                    "maxOutputTokens": 2048
+                }
+            }
+            
+            self.logger.info(f"Sending image generation request for: {prompt}")
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=headers, json=data, timeout=60.0)
+                
+                # Handle error responses
+                if response.status_code != 200:
+                    self.logger.error(f"API error: {response.status_code} - {response.text}")
+                    return None
+                    
+                response_data = response.json()
+                
+                # Extract the image data from the response
+                if 'candidates' in response_data and response_data['candidates']:
+                    for part in response_data['candidates'][0]['content']['parts']:
+                        if 'inline_data' in part:  # Note: changed from 'inlineData' to 'inline_data'
+                            # Extract base64 encoded image
+                            mime_type = part['inline_data']['mime_type']
+                            image_data = part['inline_data']['data']
+                            binary_image = base64.b64decode(image_data)
+                            
+                            # Cache the image if cache is available
+                            if self.image_cache:
+                                cache_document = {
+                                    "prompt": prompt,
+                                    "image_data": binary_image,
+                                    "model": "imagen3",
+                                    "timestamp": datetime.datetime.utcnow()
+                                }
+                                await asyncio.to_thread(self.image_cache.insert_one, cache_document)
+                            
+                            self.logger.info(f"Successfully generated image for: {prompt}")
+                            return binary_image
+                
+                self.logger.warning(f"No image found in response for prompt: {prompt}")
+                return None
+                        
+        except Exception as e:
+            self.logger.error(f"Imagen 3 generation error: {str(e)}")
+            return None
+
+    async def generate_response(self, prompt: str, context: List[Dict] = None, image_context: str = None, document_context: str = None) -> Optional[str]:
         """
         Generate a text response based on the provided prompt and context.
         Returns the response as a string.
@@ -179,22 +261,23 @@ class GeminiAPI:
             # Prepare the conversation history
             conversation = []
             
-            # Add bot identification at the start of the conversation as a user message
+            # Add bot identification at the start of the conversation as a system message
             conversation.append(genai.types.ContentDict(
                 role="user",
-                parts=["You are Gembot, an AI assistant that can help you with various tasks."]
+                parts=["You are Gembot, an AI assistant that can help with various tasks."]
             ))
             
             # Add system context about memory capabilities
-            memory_context = ("You have the ability to remember previous conversations including " 
-                             "descriptions of images the user has shared. When answering, consider " 
-                             "both text conversations and image descriptions in your context.")
+            memory_context = ("You have the ability to remember previous conversations including "
+                             "descriptions of images and documents the user has shared. When answering, "
+                             "consider text conversations, image descriptions, and document content in your context.")
                              
             conversation.append(genai.types.ContentDict(
                 role="user",
                 parts=[memory_context]
             ))
             
+            # Add conversation context
             if context:
                 for message in context:
                     conversation.append(genai.types.ContentDict(
@@ -207,8 +290,8 @@ class GeminiAPI:
                 role="user",
                 parts=[prompt]
             ))
-
-            # Generate the response using the conversation history
+            
+            # Generate the response
             response = await asyncio.to_thread(
                 self.vision_model.generate_content,
                 conversation,

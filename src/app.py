@@ -70,7 +70,7 @@ class TelegramBot:
             .build()
         )
 
-        vision_model = genai.GenerativeModel("gemini-1.5-flash")
+        vision_model = genai.GenerativeModel("gemini-2.0-flash-thinking-exp-01-21")
         rate_limiter = RateLimiter(requests_per_minute=10)
         self.gemini_api = GeminiAPI(vision_model=vision_model, rate_limiter=rate_limiter)
 
@@ -109,6 +109,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("remind", self.reminder_manager.set_reminder))
         self.application.add_handler(CommandHandler("language", self.language_manager.set_language))
         self.application.add_handler(CommandHandler("history", self.text_handler.show_history))
+        self.application.add_handler(CommandHandler("documents", self.command_handler.show_document_history))
         self.application.add_error_handler(self.message_handlers._error_handler)
         self.application.run_webhook = self.run_webhook
 

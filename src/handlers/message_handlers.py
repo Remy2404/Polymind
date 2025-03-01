@@ -3,11 +3,14 @@ import tempfile
 import logging
 import speech_recognition as sr
 from telegram import Update
+from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 from pydub import AudioSegment
 from handlers.text_handlers import TextHandler
 from services.user_data_manager import UserDataManager
 from telegram.ext import MessageHandler, filters
+import datetime
+from services.gemini_api import GeminiAPI
 import asyncio
 
 
@@ -184,6 +187,124 @@ class MessageHandlers:
             else:
                 await self._error_handler(update, context)
 
+    async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        self.telegram_logger.log_message("Processing document", user_id)
+
+        try:
+            # Check if the message is in a group chat
+            if update.effective_chat.type in ['group', 'supergroup']:
+                # Process only if the bot is mentioned in the caption
+                bot_username = '@' + context.bot.username
+                caption = update.message.caption or ""
+                if bot_username not in caption:
+                    return
+                else:
+                    # Remove bot mention
+                    caption = caption.replace(bot_username, '').strip()
+            else:
+                caption = update.message.caption or "Please analyze this document."
+            
+            # Get basic document information
+            document = update.message.document
+            file_name = document.file_name
+            file_id = document.file_id
+            file_extension = os.path.splitext(file_name)[1][1:] if '.' in file_name else ''
+            
+            # Send typing action and status message
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+            status_message = await update.message.reply_text(
+                f"Processing your {file_extension.upper()} document... This might take a moment."
+            )
+            
+            # Download and process the document
+            document_file = await context.bot.get_file(file_id)
+            file_content = await document_file.download_as_bytearray()
+            document_file_obj = io.BytesIO(file_content)
+            
+            # Default prompt if caption is empty
+            prompt = caption or f"Please analyze this {file_extension.upper()} file and provide a detailed summary."
+            
+            # Use enhanced document processing for PDFs
+            if file_extension.lower() == 'pdf':
+                response = await self.document_processor.process_document_enhanced(
+                    file=document_file_obj,
+                    file_extension=file_extension,
+                    prompt=prompt
+                )
+            else:
+                response = await self.document_processor.process_document_from_file(
+                    file=document_file_obj,
+                    file_extension=file_extension,
+                    prompt=prompt
+                )
+            
+            # Delete status message
+            await status_message.delete()
+            
+            if response:
+                # Split long messages
+                response_chunks = await self.text_handler.split_long_message(response)
+                sent_messages = []
+                
+                # Send each chunk
+                for chunk in response_chunks:
+                    try:
+                        formatted_chunk = await self.text_handler.format_telegram_markdown(chunk)
+                        sent_message = await update.message.reply_text(
+                            formatted_chunk,
+                            parse_mode='MarkdownV2',
+                            disable_web_page_preview=True
+                        )
+                        sent_messages.append(sent_message.message_id)
+                    except Exception as markdown_error:
+                        self.logger.warning(f"Markdown formatting failed: {markdown_error}")
+                        sent_message = await update.message.reply_text(chunk, parse_mode=None)
+                        sent_messages.append(sent_message.message_id)
+                
+                # Store document info in user context
+                self.user_data_manager.add_to_context(
+                    user_id, 
+                    {"role": "user", "content": f"[Document: {file_name} with prompt: {prompt}]"}
+                )
+                self.user_data_manager.add_to_context(
+                    user_id, 
+                    {"role": "assistant", "content": response}
+                )
+                
+                # Store document reference in user data (NEW)
+                if 'document_history' not in context.user_data:
+                    context.user_data['document_history'] = []
+    
+                # Store document info in user data (OLD)
+                context.user_data['document_history'].append({
+                    'timestamp': datetime.datetime.now().isoformat(),
+                    'file_id': file_id,
+                    'file_name': file_name, 
+                    'file_extension': file_extension,
+                    'prompt': prompt,
+                    'summary': response[:300] + "..." if len(response) > 300 else response,
+                    'full_response': response,  # Critical for follow-up questions
+                    'message_id': update.message.message_id,
+                    'response_message_ids': [msg.message_id for msg in sent_messages]
+                })
+                
+                # Update user stats
+                if self.user_data_manager:
+                    self.user_data_manager.update_stats(user_id, document=True)
+                
+                self.telegram_logger.log_message(f"Document analysis completed successfully", user_id)
+            else:
+                await update.message.reply_text("Sorry, I couldn't analyze the document. Please try again.")
+        
+        except ValueError as ve:
+            await update.message.reply_text(f"Error: {str(ve)}")
+        except Exception as e:
+            self.logger.error(f"Error processing document: {str(e)}")
+            await update.message.reply_text(
+                "Sorry, I couldn't process your document. Please ensure it's in a supported format."
+            )
+
     async def _error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle errors occurring in the dispatcher."""
         self.logger.error(f"Update {update} caused error: {context.error}")
@@ -212,4 +333,4 @@ class MessageHandlers:
             self.logger.info("Message handlers registered successfully")
         except Exception as e:
             self.logger.error(f"Failed to register message handlers: {str(e)}")
-            raise
+            raise Exception("Failed to register message handlers") from e

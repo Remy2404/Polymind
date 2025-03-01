@@ -464,6 +464,85 @@ class CommandHandlers:
         # Placeholder for now
         await update.callback_query.edit_message_text("Preference settings not implemented yet.")
 
+    async def generate_image_advanced(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle the /imagen3 command for advanced image generation."""
+        user_id = update.effective_user.id
+        self.telegram_logger.log_message("Imagen 3 image generation requested", user_id)
+        
+        if not context.args:
+            await update.message.reply_text(
+                "Please provide a description for the image you want to generate.\n"
+                "Example: `/imagen3 a surreal landscape with floating islands and waterfalls`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Join all arguments to form the prompt
+        prompt = ' '.join(context.args)
+        
+        # Send a status message
+        status_message = await update.message.reply_text("Generating image with AI... This may take a moment.")
+        
+        try:
+            # Use the correct method name: text_to_image instead of generate_images
+            images = await self.flux_lora_image_generator.text_to_image(
+                prompt=prompt,
+                num_images=1,
+                num_inference_steps=30,  # Higher quality setting
+                width=768,
+                height=768,
+                guidance_scale=7.5
+            )
+            
+            if images and len(images) > 0:
+                # Delete the status message
+                await status_message.delete()
+                
+                # Convert PIL Image to bytes
+                with io.BytesIO() as output:
+                    images[0].save(output, format='PNG')
+                    output.seek(0)
+                    image_bytes = output.getvalue()
+                
+                # Send the generated image
+                await update.message.reply_photo(
+                    photo=image_bytes,
+                    caption=f"Generated image based on: '{prompt}'",
+                    parse_mode='Markdown'
+                )
+                
+                # Update user stats
+                if self.user_data_manager:
+                    self.user_data_manager.update_stats(user_id, image_generation=True)
+            else:
+                await status_message.edit_text(
+                    "Sorry, I couldn't generate that image. Please try a different description or try again later."
+                )
+        except Exception as e:
+            self.logger.error(f"Image generation error: {str(e)}")
+            await status_message.edit_text(
+                "Sorry, there was an error generating your image. Please try a different description."
+            )
+
+    async def show_document_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show the user's document processing history."""
+        user_id = update.effective_user.id
+        
+        if 'document_history' not in context.user_data or not context.user_data['document_history']:
+            await update.message.reply_text("You haven't processed any documents yet.")
+            return
+            
+        history_text = "Your document history:\n\n"
+        
+        for idx, doc in enumerate(context.user_data['document_history']):
+            timestamp = datetime.datetime.fromisoformat(doc['timestamp'])
+            formatted_time = timestamp.strftime("%Y-%m-%d %H:%M")
+            
+            history_text += f"{idx+1}. {doc['file_name']} ({formatted_time})\n"
+            history_text += f"   Prompt: {doc['prompt']}\n\n"
+        
+        await update.message.reply_text(history_text)
+
     def register_handlers(self, application: Application) -> None:
         try:
             application.add_handler(CommandHandler("start", self.start_command))
@@ -477,6 +556,7 @@ class CommandHandlers:
             application.add_handler(CallbackQueryHandler(self.handle_image_prompt_callback, pattern="^(confirm|cancel|edit)_image_prompt$"))
             application.add_handler(CallbackQueryHandler(self.handle_image_settings, pattern="^img_.+_steps_.+$"))
             application.add_handler(CallbackQueryHandler(self.handle_callback_query))
+            application.add_handler(CommandHandler("imagen3", self.generate_image_advanced))
         
             
             self.logger.info("Command handlers registered successfully")
