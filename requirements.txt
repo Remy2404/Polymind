@@ -10,22 +10,12 @@ together==1.4.1
 python-multipart==0.0.18
 aiohttp==3.11.8
 pillow==11.1.0
-
-# File processing
 PyPDF2==3.0.1
 python-docx==1.1.2
 pdfminer.six==20221105
-
-# Image processing (these are large but seem core to your functionality)
 huggingface-hub==0.26.3
-
-# Voice processing
 SpeechRecognition==3.11.0
 pydub==0.25.1
-
-# AWS Lambda support (if needed)
 mangum==0.14.0
-
-# Utilities
 pydantic==2.10.2
 telegramify-markdown==0.1.17
