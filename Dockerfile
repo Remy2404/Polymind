@@ -20,9 +20,11 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy and install wheels - simplified approach
+# Copy wheels from the builder
 COPY --from=builder /app/wheels /app/wheels
-RUN pip install --no-cache-dir --no-index --find-links=/app/wheels /* && \
-    rm -rf /app/wheels
+
+# Install wheels from /app/wheels folder and remove them after installation
+RUN pip install --no-cache-dir --no-index --find-links=/app/wheels /app/wheels/* && rm -rf /app/wheels
 
 # Copy application code - exclude unnecessary files
 COPY src/ /app/src/
