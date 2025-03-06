@@ -19,14 +19,17 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy and install wheels - simplified approach
+# Copy requirements and wheels
+COPY requirements.txt .
 COPY --from=builder /app/wheels /app/wheels
-RUN pip install --no-cache-dir --no-index --find-links=/app/wheels /* && \
+
+# Install packages from wheels correctly
+RUN pip install --no-cache-dir --no-index --find-links=/app/wheels -r requirements.txt && \
     rm -rf /app/wheels
 
 # Copy application code - exclude unnecessary files
 COPY src/ /app/src/
-COPY app.py requirements.txt .env* ./
+COPY app.py ./
 
 # Set environment variables
 ENV PORT=8000
