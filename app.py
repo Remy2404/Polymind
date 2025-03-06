@@ -48,7 +48,9 @@ app = FastAPI()
 @app.get('/health')
 async def health_check():
     return JSONResponse(content={"status": "ok"}, status_code=200)
-
+@app.get("/")
+async def read_root():
+    return {"message": "Hello, World!"}
 class TelegramBot:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
