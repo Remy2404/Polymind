@@ -1,14 +1,12 @@
-# src/handlers/command_handlers.py
-
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ContextTypes, CommandHandler,CallbackQueryHandler, Application, InlineQueryHandler
-from services.user_data_manager import UserDataManager
+from services.user_data_manager import user_data_manager
 from services.gemini_api import GeminiAPI
 from utils.telegramlog import  TelegramLogger as telegram_logger
 import logging
 import re
-from io import BytesIO
-import requests
 from services.flux_lora_img import FluxLoraImageGenerator as flux_lora_image_generator
 import time , asyncio
 from dataclasses import dataclass, field
@@ -54,7 +52,7 @@ class ImageGenerationHandler:
         self.request_cache[cache_key] = image
 
 class CommandHandlers:
-    def __init__(self, gemini_api: GeminiAPI, user_data_manager: UserDataManager , telegram_logger:telegram_logger,flux_lora_image_generator: flux_lora_image_generator):
+    def __init__(self, gemini_api: GeminiAPI, user_data_manager: user_data_manager , telegram_logger:telegram_logger,flux_lora_image_generator: flux_lora_image_generator):
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
         self.flux_lora_image_generator = flux_lora_image_generator
@@ -214,6 +212,8 @@ class CommandHandlers:
         await query.answer()
 
         data = query.data
+        if data.startswith('model_'):
+           return
 
         if data == 'help_command':
             await self.help_command(update, context)
@@ -683,8 +683,116 @@ class CommandHandlers:
                     text=f"❌ Error generating video: {str(e)}",
                     inline_message_id=inline_message_id
                 )
+        # Add this to the CommandHandlers class in command_handlers.py
+    
+    async def generate_together_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle the /genimg command for image generation using Together AI."""
+        user_id = update.effective_user.id
+        self.telegram_logger.log_message("Together AI image generation requested", user_id)
+        
+        if not context.args:
+            await update.message.reply_text(
+                "Please provide a description for the image you want to generate.\n"
+                "Example: `/genimg a sunset over a calm lake with mountains in the background`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Join all arguments to form the prompt
+        prompt = ' '.join(context.args)
+        
+        # Send a status message
+        status_message = await update.message.reply_text("🎨 Generating image with Together AI... This may take a moment.")
+        
+        # Send typing action to indicate processing
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+        
+        try:
+            # Import the generator
+            from services.together_ai_img import together_ai_image_generator
+            
+            # Generate the image
+            image = await together_ai_image_generator.generate_image(
+                prompt=prompt,
+                num_steps=4,
+                width=1024,
+                height=1024
+            )
+            
+            if image:
+                # Delete the status message
+                await status_message.delete()
+                
+                # Send the generated image
+                with io.BytesIO() as output:
+                    image.save(output, format='PNG')
+                    output.seek(0)
+                    
+                    await update.message.reply_photo(
+                        photo=output,
+                        caption=f"🖼️ Generated image based on: '{prompt}'",
+                        parse_mode='Markdown'
+                    )
+                    
+                # Update user stats if available
+                if self.user_data_manager:
+                    self.user_data_manager.update_stats(user_id, image_generation=True)
+            else:
+                await status_message.edit_text(
+                    "❌ Sorry, I couldn't generate the image. Please try a different description or try again later."
+                )
+        except Exception as e:
+            self.telegram_logger.log_error(f"Image generation error: {str(e)}", user_id)
+            await status_message.edit_text(
+                "❌ An error occurred while generating your image. Please try again later."
+            )
+
+    async def switch_model_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle the /switchmodel command to let users select their preferred LLM."""
+        user_id = update.effective_user.id
+        
+        # Create inline keyboard with model options
+        keyboard = [
+            [
+                InlineKeyboardButton("Gemini 2.0 Flash", callback_data="model_gemini"),
+                InlineKeyboardButton("DeepSeek 70B", callback_data="model_deepseek")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Get current model
+        current_model = self.user_data_manager.get_user_preference(user_id, "preferred_model", default="gemini")
+        current_model_name = "Gemini 2.0 Flash" if current_model == "gemini" else "DeepSeek 70B"
+        
+        await update.message.reply_text(
+            f"🔄 Your current model is: *{current_model_name}*\n\n"
+            "Choose the AI model you'd like to use for chat:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    async def handle_model_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle model selection callbacks."""
+        query = update.callback_query
+        user_id = query.from_user.id
+        
+        await query.answer()
+        
+        selected_model = query.data.replace("model_", "")
+        model_name = "Gemini 2.0 Flash" if selected_model == "gemini" else "DeepSeek 70B"
+        
+        # Save user's model preference
+        self.user_data_manager.set_user_preference(user_id, "preferred_model", selected_model)
+        
+        # Update the message
+        await query.edit_message_text(
+            f"✅ Model switched successfully!\n\nYou're now using *{model_name}*.\n\n"
+            f"You can change this anytime with /switchmodel",
+            parse_mode='Markdown'
+        )
+    
     def register_handlers(self, application: Application) -> None:
         try:
+            # Command handlers
             application.add_handler(CommandHandler("start", self.start_command))
             application.add_handler(CommandHandler("help", self.help_command))
             application.add_handler(CommandHandler("reset", self.reset_command))
@@ -693,12 +801,18 @@ class CommandHandlers:
             application.add_handler(CommandHandler("export", self.handle_export))
             application.add_handler(CommandHandler("preferences", self.handle_preferences))
             application.add_handler(CommandHandler("generate_image", self.generate_image_command))
-            application.add_handler(CallbackQueryHandler(self.handle_image_prompt_callback, pattern="^(confirm|cancel|edit)_image_prompt$"))
-            application.add_handler(CallbackQueryHandler(self.handle_image_settings, pattern="^img_.+_steps_.+$"))
-            application.add_handler(CallbackQueryHandler(self.handle_callback_query))
             application.add_handler(CommandHandler("imagen3", self.generate_image_advanced))
             application.add_handler(CommandHandler("genvid", self.generate_video_command))
-        
+            application.add_handler(CommandHandler("genimg", self.generate_together_image))
+            application.add_handler(CommandHandler("switchmodel", self.switch_model_command))
+            
+            # Specific callback handlers FIRST
+            application.add_handler(CallbackQueryHandler(self.handle_model_selection, pattern="^model_"))
+            application.add_handler(CallbackQueryHandler(self.handle_image_prompt_callback, pattern="^(confirm|cancel|edit)_image_prompt$"))
+            application.add_handler(CallbackQueryHandler(self.handle_image_settings, pattern="^img_.+_steps_.+$"))
+            
+            # General callback handler LAST
+            application.add_handler(CallbackQueryHandler(self.handle_callback_query))
             
             self.logger.info("Command handlers registered successfully")
         except Exception as e:

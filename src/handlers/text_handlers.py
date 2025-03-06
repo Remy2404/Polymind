@@ -3,18 +3,17 @@ from telegram.ext import ContextTypes, MessageHandler, filters
 from telegram.constants import ChatAction
 from utils.telegramlog import telegram_logger
 from services.gemini_api import GeminiAPI
-from services.user_data_manager import UserDataManager
+from services.user_data_manager import user_data_manager
 from typing import List
 import datetime
 import logging
-
+from services.DeepSeek_R1_Distill_Llama_70B import deepseek_llm
 class TextHandler:
-    def __init__(self, gemini_api: GeminiAPI, user_data_manager: UserDataManager):
+    def __init__(self, gemini_api: GeminiAPI, user_data_manager: user_data_manager):
         self.logger = logging.getLogger(__name__)
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
-        self.max_context_length = 5
-
+        self.max_context_length = 9
     async def format_telegram_markdown(self, text: str) -> str:
         try:
             from telegramify_markdown import convert
@@ -173,11 +172,27 @@ class TextHandler:
                     )
                     # Continue with normal text response as fallback
             
-            # Generate response
-            response = await self.gemini_api.generate_response(
-                prompt=enhanced_prompt,
-                context=user_context[-self.max_context_length:]
-            )
+            # Determine which model to use based on user preference
+            
+            
+            preferred_model = self.user_data_manager.get_user_preference(user_id, "preferred_model", default="gemini")
+            
+            # Generate response based on user's preferred model
+            if preferred_model == "deepseek":
+                # Use DeepSeek model
+                system_message = "You are an AI assistant that helps users with tasks and answers questions helpfully, accurately, and ethically."
+                response = await deepseek_llm.generate_text(
+                    prompt=enhanced_prompt,
+                    system_message=system_message,
+                    temperature=0.7,
+                    max_tokens=4000
+                )
+            else:
+                # Use default Gemini model
+                response = await self.gemini_api.generate_response(
+                    prompt=enhanced_prompt,
+                    context=user_context[-self.max_context_length:]
+                )
 
             if response is None:
                 await thinking_message.delete()
@@ -195,12 +210,17 @@ class TextHandler:
 
             # Store the message IDs for potential editing
             sent_messages = []
-            
-            last_message = None
+            model_indicator = "🧠 Gemini" if preferred_model == "gemini" else "🔮 DeepSeek"
+
             for i, chunk in enumerate(message_chunks):
                 try:
+                    # Add model indicator to first message only
+                    text_to_send = chunk
+                    if i == 0:
+                        text_to_send = f"{model_indicator}\n\n{chunk}"
+                        
                     # Format with telegramify-markdown
-                    formatted_chunk = await self.format_telegram_markdown(chunk)
+                    formatted_chunk = await self.format_telegram_markdown(text_to_send)
                     if i == 0:
                         last_message = await message.reply_text(
                             formatted_chunk,

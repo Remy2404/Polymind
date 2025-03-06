@@ -1,10 +1,14 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pymongo.collection import Collection
+from database.connection import get_database
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 import logging
 import warnings
 
-class UserDataManager:
+class user_data_manager:
     def __init__(self, db):
         """
         Initialize UserDataManager with a database connection.
@@ -257,3 +261,40 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error resetting conversation history for user {user_id}: {str(e)}")
             raise
+
+    def get_user_preference(self, user_id: int, preference_key: str, default=None):
+        """Get a user's preference setting."""
+        try:
+            user_data = self.get_user_data(user_id)
+            if not user_data or 'preferences' not in user_data:
+                return default
+            return user_data['preferences'].get(preference_key, default)
+        except Exception as e:
+            self.logger.error(f"Error getting user preference: {e}")
+            return default
+
+    def set_user_preference(self, user_id: int, preference_key: str, value):
+        """Set a user's preference setting."""
+        try:
+            # Initialize user if not yet initialized
+            self.initialize_user(user_id)
+            
+            # Update preference
+            update_query = {
+                "$set": {f"preferences.{preference_key}": value}
+            }
+            self.users_collection.update_one({"user_id": user_id}, update_query)
+            
+            # Also update in-memory cache if we have one
+            if hasattr(self, 'user_data_cache') and user_id in self.user_data_cache:
+                if 'preferences' not in self.user_data_cache[user_id]:
+                    self.user_data_cache[user_id]['preferences'] = {}
+                self.user_data_cache[user_id]['preferences'][preference_key] = value
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"Error setting user preference: {e}")
+            return False
+        
+db, client = get_database()
+UserDataManager = user_data_manager(db)

@@ -12,22 +12,25 @@ from telegram.ext import (
     CommandHandler, 
     PicklePersistence,
 )
-from database.connection import get_database, close_database_connection
-from services.user_data_manager import UserDataManager
-from services.gemini_api import GeminiAPI
-from handlers.command_handlers import CommandHandlers
-from handlers.text_handlers import TextHandler
-from handlers.message_handlers import MessageHandlers  # Ensure this is your custom handler
-from utils.telegramlog import TelegramLogger, telegram_logger
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.database.connection import get_database, close_database_connection
+from src.services.user_data_manager import UserDataManager
+from src.services.gemini_api import GeminiAPI
+from src.handlers.command_handlers import CommandHandlers
+from src.handlers.text_handlers import TextHandler
+from src.handlers.message_handlers import MessageHandlers  # Ensure this is your custom handler
+from src.utils.telegramlog import TelegramLogger, telegram_logger
 from threading import Thread
-from services.reminder_manager import ReminderManager
-from utils.language_manager import LanguageManager 
-from services.rate_limiter import RateLimiter
+from src.services.reminder_manager import ReminderManager
+from src.utils.language_manager import LanguageManager 
+from src.services.rate_limiter import RateLimiter
 import google.generativeai as genai
-from services.flux_lora_img import flux_lora_image_generator
+from src.services.flux_lora_img import flux_lora_image_generator
 import uvicorn
-from services.document_processing import DocumentProcessor
-
+from src.services.document_processing import DocumentProcessor
+from src.database.connection import get_database
+from src.services.user_data_manager import user_data_manager
+from src.services.text_to_video import text_to_video_generator
 
 load_dotenv()
 
@@ -74,7 +77,8 @@ class TelegramBot:
         rate_limiter = RateLimiter(requests_per_minute=10)
         self.gemini_api = GeminiAPI(vision_model=vision_model, rate_limiter=rate_limiter)
 
-        self.user_data_manager = UserDataManager(self.db)
+        self.db, self.client = get_database()
+        self.user_data_manager = user_data_manager(self.db)
         self.telegram_logger = telegram_logger
         self.text_handler = TextHandler(self.gemini_api, self.user_data_manager)
         self.command_handler = CommandHandlers(
@@ -224,7 +228,7 @@ if __name__ == '__main__':
             loop.run_until_complete(main_bot.application.shutdown())
             loop.run_until_complete(flux_lora_image_generator.close())
             # Add this line to properly close text_to_video_generator
-            from services.text_to_video import text_to_video_generator
+           
             loop.run_until_complete(text_to_video_generator.close())
             close_database_connection(main_bot.client)
             tasks = asyncio.all_tasks(loop)

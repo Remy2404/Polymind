@@ -18,6 +18,8 @@ ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV PYTHON_PATH=/app
 
-WORKDIR /app/src
+# Keep WORKDIR at the app root since app.py is there
+# Instead of: WORKDIR /app/src
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Change the CMD to use app.py in the root directory
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

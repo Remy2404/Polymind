@@ -4,7 +4,6 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
 # Set up logging
