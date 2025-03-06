@@ -1,3 +1,4 @@
+accelerate==1.4.0
 aiocache==0.12.3
 aiodns==3.0.0
 aiofiles==23.2.1
