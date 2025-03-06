@@ -1,11 +1,9 @@
 import os
-import io
 import sys
 import logging
 import asyncio
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from telegram import Update
 import traceback
@@ -13,26 +11,26 @@ from telegram.ext import (
     Application, 
     CommandHandler, 
     PicklePersistence,
-    filters
 )
-from database.connection import get_database, close_database_connection
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.database.connection import get_database, close_database_connection
 from services.user_data_manager import UserDataManager
 from services.gemini_api import GeminiAPI
 from handlers.command_handlers import CommandHandlers
 from handlers.text_handlers import TextHandler
-from handlers.message_handlers import MessageHandlers
+from handlers.message_handlers import MessageHandlers  # Ensure this is your custom handler
+from utils.telegramlog import TelegramLogger, telegram_logger
 from threading import Thread
-from utils.telegramlog import telegram_logger
 from services.reminder_manager import ReminderManager
 from utils.language_manager import LanguageManager 
 from services.rate_limiter import RateLimiter
-from services.document_processing import DocumentProcessor
-from utils.fileHandler import FileHandler
 import google.generativeai as genai
 from services.flux_lora_img import flux_lora_image_generator
 import uvicorn
-from mangum import Mangum 
-
+from services.document_processing import DocumentProcessor
+from database.connection import get_database
+from services.user_data_manager import user_data_manager
+from services.text_to_video import text_to_video_generator
 
 load_dotenv()
 
@@ -41,54 +39,15 @@ logging.basicConfig(
     level=logging.INFO,
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('app.log')
     ]
 )
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Add logging middleware
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    logger.info(f"Request: {request.method} {request.url}")
-    response = await call_next(request)
-    logger.info(f"Response status: {response.status_code}")
-    return response
-
-# Add error handling middleware
-@app.middleware("http")
-async def catch_exceptions_middleware(request: Request, call_next):
-    try:
-        return await call_next(request)
-    except Exception as e:
-        logger.error(f"Request failed: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"message": "Internal server error"}
-        )
-@app.get('/')
-async def root():
-    return {"message": "Hello World"}
 @app.get('/health')
 async def health_check():
     return JSONResponse(content={"status": "ok"}, status_code=200)
-
-@app.on_event("startup")
-async def startup_event():
-    global main_bot
-    main_bot = TelegramBot()
-    main_bot.run_webhook(asyncio.get_event_loop())
-    await main_bot.setup_webhook()
 
 class TelegramBot:
     def __init__(self):
@@ -114,11 +73,12 @@ class TelegramBot:
             .build()
         )
 
-        vision_model = genai.GenerativeModel("gemini-1.5-flash")
+        vision_model = genai.GenerativeModel("gemini-2.0-flash-thinking-exp-01-21")
         rate_limiter = RateLimiter(requests_per_minute=10)
         self.gemini_api = GeminiAPI(vision_model=vision_model, rate_limiter=rate_limiter)
 
-        self.user_data_manager = UserDataManager(self.db)
+        self.db, self.client = get_database()
+        self.user_data_manager = user_data_manager(self.db)
         self.telegram_logger = telegram_logger
         self.text_handler = TextHandler(self.gemini_api, self.user_data_manager)
         self.command_handler = CommandHandlers(
@@ -126,12 +86,6 @@ class TelegramBot:
             user_data_manager=self.user_data_manager,
             telegram_logger=self.telegram_logger,
             flux_lora_image_generator=flux_lora_image_generator,
-        )
-         # Initialize FileHandler
-        self.file_handler = FileHandler(
-            telegram_logger=self.telegram_logger,
-            gemini_api=self.gemini_api,
-            user_data_manager=self.user_data_manager
         )
         # Initialize DocumentProcessor
         self.document_processor = DocumentProcessor()
@@ -143,12 +97,11 @@ class TelegramBot:
             self.document_processor,
             self.text_handler
         )
-        # Initialize ReminderManager and LanguageManager
         self.reminder_manager = ReminderManager(self.application.bot)
         self.language_manager = LanguageManager()
         self._setup_handlers()
 
-    def shutdown(self):
+    def   shutdown(self):
         close_database_connection(self.client)
         logger.info("Shutdown complete. Database connection closed.")
 
@@ -160,6 +113,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("remind", self.reminder_manager.set_reminder))
         self.application.add_handler(CommandHandler("language", self.language_manager.set_language))
         self.application.add_handler(CommandHandler("history", self.text_handler.show_history))
+        self.application.add_handler(CommandHandler("documents", self.command_handler.show_document_history))
         self.application.add_error_handler(self.message_handlers._error_handler)
         self.application.run_webhook = self.run_webhook
 
@@ -208,7 +162,7 @@ class TelegramBot:
 
     def run_webhook(self, loop):
         @app.post(f"/webhook/{self.token}")
-        async def webhook_handler(request: Request) -> JSONResponse:
+        async def webhook_handler(request: Request):
             try:
                 update_data = await request.json()
                 await self.process_update(update_data)
@@ -217,8 +171,18 @@ class TelegramBot:
                 self.logger.error(f"Update processing error: {e}")
                 self.logger.error(traceback.format_exc())
                 return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
-# Initialize Mangum handler for Vercel
-handler = Mangum(app)
+
+    def run_webhook(self, loop):
+        @app.post(f"/webhook/{self.token}")
+        async def webhook_handler(request: Request):
+            try:
+                update_data = await request.json()
+                await self.process_update(update_data)
+                return JSONResponse(content={"status": "ok", "method": "webhook"}, status_code=200)
+            except Exception as e:
+                self.logger.error(f"Update processing error: {e}")
+                self.logger.error(traceback.format_exc())
+                return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
 async def start_bot(webhook: TelegramBot):
     try:
         await webhook.application.initialize()
@@ -232,47 +196,44 @@ async def start_bot(webhook: TelegramBot):
 def create_app(webhook: TelegramBot, loop):
     webhook.run_webhook(loop)
     return app
+
 if __name__ == '__main__':
     main_bot = TelegramBot()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     app = create_app(main_bot, loop)
 
-    try:
-        if not os.getenv('WEBHOOK_URL'):
-            logger.error("WEBHOOK_URL not set in .env")
-            sys.exit(1)
+    if os.environ.get('DEV_SERVER') == 'uvicorn':
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    else:
+        try:
+            if not os.getenv('WEBHOOK_URL'):
+                logger.error("WEBHOOK_URL not set in .env")
+                sys.exit(1)
 
-        port = int(os.environ.get("PORT", 8000))
-        
-        loop.create_task(main_bot.setup_webhook())
-        loop.create_task(start_bot(main_bot))
+            loop.create_task(main_bot.setup_webhook())
+            loop.create_task(start_bot(main_bot))
 
-        config = uvicorn.Config(
-            app=app,
-            host="0.0.0.0",
-            port=port,
-            workers=4,
-            loop=loop,
-            proxy_headers=True,
-            forwarded_allow_ips='*',
-            log_level="info",
-            reload=False,  # Disable reload in production
-            access_log=True
-        )
-        server = uvicorn.Server(config)
-        loop.run_until_complete(server.serve())
-        
-    except Exception as e:
-        logger.error(f"Unhandled exception: {str(e)}")
-        logger.error(traceback.format_exc())
-    finally:
-        loop.run_until_complete(main_bot.application.shutdown())
-        loop.run_until_complete(flux_lora_image_generator.close())
-        close_database_connection(main_bot.client)
-        tasks = asyncio.all_tasks(loop)
-        for task in tasks:
-            task.cancel()
-        loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-        loop.run_until_complete(loop.shutdown_asyncgens())
-        loop.close()
+            def run_fastapi():
+                port = int(os.environ.get("PORT", 8000))
+                uvicorn.run(app, host="0.0.0.0", port=port)
+
+            fastapi_thread = Thread(target=run_fastapi)
+            fastapi_thread.start()
+            loop.run_forever()
+        except Exception as e:
+            logger.error(f"Unhandled exception: {str(e)}")
+            logger.error(traceback.format_exc())
+        finally:
+            loop.run_until_complete(main_bot.application.shutdown())
+            loop.run_until_complete(flux_lora_image_generator.close())
+            # Add this line to properly close text_to_video_generator
+           
+            loop.run_until_complete(text_to_video_generator.close())
+            close_database_connection(main_bot.client)
+            tasks = asyncio.all_tasks(loop)
+            for task in tasks:
+                task.cancel()
+            loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.close()

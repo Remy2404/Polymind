@@ -790,6 +790,7 @@ class CommandHandlers:
             parse_mode='Markdown'
         )
     
+       # In your command_handlers.py
     def register_handlers(self, application: Application) -> None:
         try:
             # Command handlers

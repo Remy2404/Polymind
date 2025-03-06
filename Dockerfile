@@ -30,6 +30,7 @@ RUN pip install --no-cache-dir --no-index --find-links=/app/wheels -r requiremen
 # Copy application code - exclude unnecessary files
 COPY src/ /app/src/
 COPY app.py ./
+COPY .env ./
 
 # Set environment variables
 ENV PORT=8000
@@ -40,5 +41,5 @@ ENV PYTHONPATH=/app
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/health || exit 1
 
-# Use a simpler command without conditionals
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use python3 to run app.py
+CMD ["python3", "app.py"]
