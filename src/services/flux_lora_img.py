@@ -63,7 +63,7 @@ class FluxLoraImageGenerator:
     async def text_to_image(
         self, 
         prompt: str, 
-        num_images: int = 1, 
+        num_images: int = 4, 
         num_inference_steps: int = 30,  
         width: int = 1024,                
         height: int = 1024,               
@@ -90,8 +90,15 @@ class FluxLoraImageGenerator:
             return self.cache[prompt]
         
         tasks = [
-            self._generate_single_image(prompt, num_inference_steps, width, height, guidance_scale)
-            for _ in range(num_images)
+            self._generate_single_image(
+                prompt, 
+                num_inference_steps, 
+                width, 
+                height, 
+                guidance_scale,
+                seed=int(time.time() * 1000) + i  # Different seed for each image
+            )
+            for i in range(num_images)
         ]
 
         images = await asyncio.gather(*tasks)
@@ -108,15 +115,21 @@ class FluxLoraImageGenerator:
         num_inference_steps: int, 
         width: int, 
         height: int, 
-        guidance_scale: float
+        guidance_scale: float,
+        seed: int = None
     ) -> Image.Image:
+        # Generate a random seed if none is provided
+        if seed is None:
+            seed = int(time.time() * 1000) % 1000000 + id(prompt) % 1000
+        
         payload = {
             "inputs": prompt,
             "parameters": {
                 "num_inference_steps": num_inference_steps,
                 "width": width,
                 "height": height,
-                "guidance_scale": guidance_scale
+                "guidance_scale": guidance_scale,
+                "seed": seed  # Add seed parameter
             }
         }
 
@@ -191,13 +204,32 @@ class FluxLoraImageGenerator:
 flux_lora_image_generator = FluxLoraImageGenerator(
     model_name="black-forest-labs/FLUX.1-schnell",
     api_key=os.getenv("TEXT_TO_IMAGE_API_KEY"),
-    api_endpoint="https://api-inference.huggingface.co",  # Corrected endpoint
-    max_concurrent_requests=5,  # Adjust based on your requirements
-    timeout=300  # 5 minutes timeout
+    api_endpoint="https://api-inference.huggingface.co",
+    max_concurrent_requests=5,
+    timeout=300 
 )
-
-# Ensure that the aiohttp session is closed gracefully on shutdown
 def shutdown():
-    asyncio.get_event_loop().create_task(flux_lora_image_generator.close())
-
-atexit.register(shutdown)
+    try:
+        # Try to get the event loop
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(flux_lora_image_generator.close())
+            else:
+                # If loop exists but not running, run the close directly
+                loop.run_until_complete(flux_lora_image_generator.close())
+        except RuntimeError:
+            # No event loop - create a new one for cleanup
+            try:
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                new_loop.run_until_complete(flux_lora_image_generator.close())
+                new_loop.close()
+            except Exception as e:
+                logging.warning(f"Failed to create new event loop for cleanup: {e}")
+                # Last resort - just set the session to None to help garbage collection
+                if hasattr(flux_lora_image_generator, 'session') and flux_lora_image_generator.session:
+                    flux_lora_image_generator.session = None
+    except Exception as e:
+        # Catch any other exceptions to prevent shutdown errors
+        logging.warning(f"Error during flux_lora shutdown: {e}")

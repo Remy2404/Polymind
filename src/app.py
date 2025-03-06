@@ -97,7 +97,7 @@ class TelegramBot:
         self.language_manager = LanguageManager()
         self._setup_handlers()
 
-    def shutdown(self):
+    def   shutdown(self):
         close_database_connection(self.client)
         logger.info("Shutdown complete. Database connection closed.")
 
@@ -223,6 +223,9 @@ if __name__ == '__main__':
         finally:
             loop.run_until_complete(main_bot.application.shutdown())
             loop.run_until_complete(flux_lora_image_generator.close())
+            # Add this line to properly close text_to_video_generator
+            from services.text_to_video import text_to_video_generator
+            loop.run_until_complete(text_to_video_generator.close())
             close_database_connection(main_bot.client)
             tasks = asyncio.all_tasks(loop)
             for task in tasks:

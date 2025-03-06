@@ -1,7 +1,7 @@
 # src/handlers/command_handlers.py
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
-from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, Application
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InlineQueryResultArticle, InputTextMessageContent
+from telegram.ext import ContextTypes, CommandHandler,CallbackQueryHandler, Application, InlineQueryHandler
 from services.user_data_manager import UserDataManager
 from services.gemini_api import GeminiAPI
 from utils.telegramlog import  TelegramLogger as telegram_logger
@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from cachetools import TTLCache
 from typing import Optional
+from telegram.constants import ChatAction
+from services.text_to_video import text_to_video_generator
 from PIL import Image
 import io
 
@@ -523,7 +525,7 @@ class CommandHandlers:
             await status_message.edit_text(
                 "Sorry, there was an error generating your image. Please try a different description."
             )
-
+    
     async def show_document_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Show the user's document processing history."""
         user_id = update.effective_user.id
@@ -543,6 +545,144 @@ class CommandHandlers:
         
         await update.message.reply_text(history_text)
 
+    async def generate_video_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle the /generate_video command for text-to-video generation."""
+        user_id = update.effective_user.id
+        self.telegram_logger.log_message("Video generation requested", user_id)
+        
+        if not context.args:
+            await update.message.reply_text(
+                "Please provide a description for the video you want to generate.\n"
+                "Example: `/generate_video an astronaut dancing on the moon, detailed, 4k`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Join all arguments to form the prompt
+        prompt = ' '.join(context.args)
+        
+        # Send a status message
+        status_message = await update.message.reply_text(
+            "🎬 Generating video from your description... This may take several minutes."
+        )
+        
+        # Send typing action to indicate processing
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_VIDEO)
+        
+        try:
+            # Generate the video
+            video_bytes = await text_to_video_generator.generate_video(
+                prompt=prompt,
+                num_frames=24,  # reasonable default
+                height=256,
+                width=256,
+                num_inference_steps=30
+            )
+            
+            # Delete status message
+            await status_message.delete()
+            
+            if video_bytes:
+                # Send the video
+                with io.BytesIO(video_bytes) as video_io:
+                    video_io.name = "generated_video.mp4"
+                    await update.message.reply_video(
+                        video=video_io,
+                        caption=f"🎬 Generated video based on: '{prompt}'",
+                        supports_streaming=True
+                    )
+                    
+                # Update user stats if available
+                if self.user_data_manager:
+                    self.user_data_manager.update_stats(user_id, videos_generated=1)
+            else:
+                await update.message.reply_text(
+                    "❌ Sorry, I couldn't generate the video. Please try a different description or try again later."
+                )
+        except Exception as e:
+            self.logger.error(f"Video generation error: {str(e)}")
+            await status_message.edit_text(
+                "❌ Sorry, there was an error generating your video. The system might be busy or the request too complex."
+            )
+      
+    
+    # Add this method to your CommandHandlers class
+    async def handle_inline_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle inline queries for video generation with @botname."""
+        query = update.inline_query.query
+        
+        if not query:
+            return
+        
+        results = [
+            InlineQueryResultArticle(
+                id=f"video_{hash(query)}",
+                title="Generate a video",
+                description=f"Create a video of: {query}",
+                input_message_content=InputTextMessageContent(
+                    f"🎬 Generating video: '{query}'\n\n(This may take several minutes...)"
+                ),
+                thumb_url="https://img.icons8.com/color/452/video.png",  # Optional video icon thumbnail
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Cancel", callback_data=f"cancel_video_{hash(query)}")]
+                ])
+            )
+        ]
+        
+        await update.inline_query.answer(results, cache_time=300)
+    
+    # Add this method to handle what happens after a user selects the inline result
+    async def handle_chosen_inline_result(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle the result chosen from an inline query."""
+        result_id = update.chosen_inline_result.result_id
+        query = update.chosen_inline_result.query
+        from_user = update.chosen_inline_result.from_user
+        inline_message_id = update.chosen_inline_result.inline_message_id
+        
+        if result_id.startswith("video_"):
+            # Start the video generation process
+            try:
+                # Generate video
+                video_bytes = await text_to_video_generator.generate_video(
+                    prompt=query,
+                    num_frames=24,
+                    height=256,
+                    width=256,
+                    num_inference_steps=30
+                )
+                
+                if video_bytes:
+                    # We can't directly edit an inline message with a video, so we need to
+                    # use a callback to notify the user the video is ready
+                    await context.bot.edit_message_text(
+                        text=f"✅ Video generated! Check your bot chat to view it.",
+                        inline_message_id=inline_message_id
+                    )
+                    
+                    # Send the video directly to the user in a private chat
+                    with io.BytesIO(video_bytes) as video_io:
+                        video_io.name = "generated_video.mp4"
+                        await context.bot.send_video(
+                            chat_id=from_user.id,
+                            video=video_io,
+                            caption=f"🎬 Generated video based on: '{query}'",
+                            supports_streaming=True
+                        )
+                    
+                    # Update user stats
+                    if self.user_data_manager:
+                        self.user_data_manager.update_stats(from_user.id, videos_generated=1)
+                else:
+                    await context.bot.edit_message_text(
+                        text=f"❌ Failed to generate video for '{query}'.",
+                        inline_message_id=inline_message_id
+                    )
+            except Exception as e:
+                self.logger.error(f"Inline video generation error: {str(e)}")
+                await context.bot.edit_message_text(
+                    text=f"❌ Error generating video: {str(e)}",
+                    inline_message_id=inline_message_id
+                )
     def register_handlers(self, application: Application) -> None:
         try:
             application.add_handler(CommandHandler("start", self.start_command))
@@ -557,6 +697,7 @@ class CommandHandlers:
             application.add_handler(CallbackQueryHandler(self.handle_image_settings, pattern="^img_.+_steps_.+$"))
             application.add_handler(CallbackQueryHandler(self.handle_callback_query))
             application.add_handler(CommandHandler("imagen3", self.generate_image_advanced))
+            application.add_handler(CommandHandler("genvid", self.generate_video_command))
         
             
             self.logger.info("Command handlers registered successfully")
