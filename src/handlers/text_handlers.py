@@ -293,6 +293,7 @@ class TextHandler:
                 image_file = await context.bot.get_file(photo.file_id)
                 image_bytes = await image_file.download_as_bytearray()
                 
+                # Use the updated analyze_image method
                 response = await self.gemini_api.analyze_image(image_bytes, caption)
         
                 if response:

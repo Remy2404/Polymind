@@ -46,6 +46,25 @@ class ImageProcessor:
         except Exception as e:
             logging.error(f"Error processing image: {str(e)}")
             raise ValueError(f"Image processing failed: {str(e)}")
+    
+    @staticmethod
+    def get_mime_type(image_data: bytes) -> str:
+        """
+        Determine the correct MIME type for an image.
+        
+        Args:
+            image_data: Raw image bytes
+            
+        Returns:
+            str: Proper MIME type (e.g., "image/jpeg", "image/png")
+        """
+        try:
+            with Image.open(io.BytesIO(image_data)) as img:
+                fmt = img.format.lower() if img.format else "jpeg"
+                return f"image/{fmt}"
+        except Exception as e:
+            logging.error(f"Error determining image MIME type: {str(e)}")
+            return "image/jpeg"  # Default to JPEG if unable to determine
 
     @staticmethod
     def validate_image(image_data: bytes) -> bool:

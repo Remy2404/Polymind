@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import asyncio
+import time
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
@@ -12,6 +13,7 @@ from telegram.ext import (
     CommandHandler, 
     PicklePersistence,
 )
+from cachetools import TTLCache
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.database.connection import get_database, close_database_connection
 from src.services.user_data_manager import UserDataManager
@@ -53,41 +55,74 @@ async def read_root():
     return {"message": "Hello, World!"}
 class TelegramBot:
     def __init__(self):
+        # Initialize only essential services at startup
         self.logger = logging.getLogger(__name__)
-        self.db, self.client = get_database()
-        if self.db is None:
-            self.logger.error("Failed to connect to the database")
-            raise ConnectionError("Failed to connect to the database")
-        self.logger.info("Connected to MongoDB successfully")
-
         self.token = os.getenv('TELEGRAM_BOT_TOKEN')
         if not self.token:
             raise ValueError("TELEGRAM_BOT_TOKEN not found in .env file")
-
-        self.gemini_api_key = os.getenv('GEMINI_API_KEY')
-        if not self.gemini_api_key:
-            raise ValueError("GEMINI_API_KEY not found in .env file")
-
+            
+        # Initialize database connection with a timeout and retry mechanism
+        self._init_db_connection()
+        
+        # Create application with reasonable timeout settings
         self.application = (
             Application.builder()
             .token(self.token)
             .persistence(PicklePersistence(filepath='conversation_states.pickle'))
+            .http_version('1.1')  # Sometimes helps with connection issues
+            .read_timeout(30)     # Increase timeout for slower connections
+            .write_timeout(30)    # Increase timeout for slower connections
+            .connect_timeout(30)  # Increase timeout for slower connections
+            .pool_timeout(30)     # Increase timeout for slower connections
             .build()
         )
+        
+        # Initialize other services as needed
+        self._init_services()
+        self._setup_handlers()
+        
+    def _init_db_connection(self):
+        # Add retry logic for database connection
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                self.db, self.client = get_database()
+                if self.db is None:
+                    raise ConnectionError("Failed to connect to the database")
+                self.logger.info("Connected to MongoDB successfully")
+                return
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    self.logger.warning(f"Database connection attempt {attempt+1} failed: {e}, retrying...")
+                    time.sleep(1)  # Wait before retrying
+                else:
+                    self.logger.error(f"All database connection attempts failed: {e}")
+                    raise
+    
+    def _init_services(self):
+        # Initialize services with proper error handling
+        try:
+            # Use a more efficient model if available
+            model_name = "gemini-2.0-flash"  # Use a faster model
+            vision_model = genai.GenerativeModel(model_name)
+            rate_limiter = RateLimiter(requests_per_minute=20)  # Increased rate limit
+            self.gemini_api = GeminiAPI(vision_model=vision_model, rate_limiter=rate_limiter)
+            
+            # Other initializations
+            self.user_data_manager = user_data_manager(self.db)
+            self.telegram_logger = telegram_logger
+            # Initialize other services...
+        except Exception as e:
+            self.logger.error(f"Error initializing services: {e}")
+            raise
 
-        vision_model = genai.GenerativeModel("gemini-2.0-flash-thinking-exp-01-21")
-        rate_limiter = RateLimiter(requests_per_minute=10)
-        self.gemini_api = GeminiAPI(vision_model=vision_model, rate_limiter=rate_limiter)
-
-        self.db, self.client = get_database()
-        self.user_data_manager = user_data_manager(self.db)
-        self.telegram_logger = telegram_logger
         self.text_handler = TextHandler(self.gemini_api, self.user_data_manager)
         self.command_handler = CommandHandlers(
             gemini_api=self.gemini_api, 
             user_data_manager=self.user_data_manager,
             telegram_logger=self.telegram_logger,
             flux_lora_image_generator=flux_lora_image_generator,
+
         )
         # Initialize DocumentProcessor
         self.document_processor = DocumentProcessor()
@@ -108,7 +143,11 @@ class TelegramBot:
         logger.info("Shutdown complete. Database connection closed.")
 
     def _setup_handlers(self):
-        self.command_handler.register_handlers(self.application)
+        # Create a response cache
+        self.response_cache = TTLCache(maxsize=1000, ttl=60)
+        
+        # Register handlers with cache awareness
+        self.command_handler.register_handlers(self.application, cache=self.response_cache)
         for handler in self.text_handler.get_handlers():
             self.application.add_handler(handler)
         self.message_handlers.register_handlers(self.application)
@@ -152,15 +191,29 @@ class TelegramBot:
             self.logger.info("Application is already running. Skipping start.")
 
     async def process_update(self, update_data: dict):
-        """Process updates received from webhook."""
+        """Process updates received from webhook with improved error handling."""
         try:
+            # Set a timeout for update processing
             update = Update.de_json(update_data, self.application.bot)
-            self.logger.debug(f"Received update: {update}")
-            await self.application.process_update(update)
-            self.logger.debug("Processed update successfully.")
+            
+            # Process update with timeout protection
+            try:
+                # Use asyncio.wait_for to set a timeout on processing
+                await asyncio.wait_for(
+                    self.application.process_update(update),
+                    timeout=10.0  # 10-second timeout
+                )
+            except asyncio.TimeoutError:
+                # If processing takes too long, log and send a quick response
+                self.logger.warning(f"Update processing timed out: {update.update_id}")
+                if hasattr(update, 'message') and update.message:
+                    await update.message.reply_text("Processing your request... please wait.")
+                
         except Exception as e:
             self.logger.error(f"Error in process_update: {e}")
-            self.logger.error(traceback.format_exc())
+            # Less verbose error logging in production
+            if os.getenv('ENVIRONMENT') != 'production':
+                self.logger.error(traceback.format_exc())
 
     def run_webhook(self, loop):
         @app.post(f"/webhook/{self.token}")
@@ -178,13 +231,17 @@ class TelegramBot:
         @app.post(f"/webhook/{self.token}")
         async def webhook_handler(request: Request):
             try:
+                # Send an immediate ACK to Telegram to avoid timeout
                 update_data = await request.json()
-                await self.process_update(update_data)
-                return JSONResponse(content={"status": "ok", "method": "webhook"}, status_code=200)
+                
+                # Process update in background task
+                asyncio.create_task(self.process_update(update_data))
+                
+                # Return 200 OK immediately
+                return JSONResponse(content={"status": "ok"}, status_code=200)
             except Exception as e:
                 self.logger.error(f"Update processing error: {e}")
-                self.logger.error(traceback.format_exc())
-                return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
+                return JSONResponse(content={"status": "error"}, status_code=500)
 async def start_bot(webhook: TelegramBot):
     try:
         await webhook.application.initialize()

@@ -52,7 +52,7 @@ class ImageGenerationHandler:
         self.request_cache[cache_key] = image
 
 class CommandHandlers:
-    def __init__(self, gemini_api: GeminiAPI, user_data_manager: user_data_manager , telegram_logger:telegram_logger,flux_lora_image_generator: flux_lora_image_generator):
+    def __init__(self, gemini_api: GeminiAPI, user_data_manager: user_data_manager, telegram_logger:telegram_logger, flux_lora_image_generator: flux_lora_image_generator):
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
         self.flux_lora_image_generator = flux_lora_image_generator
@@ -791,7 +791,7 @@ class CommandHandlers:
         )
     
        # In your command_handlers.py
-    def register_handlers(self, application: Application) -> None:
+    def register_handlers(self, application: Application, cache=None) -> None:
         try:
             # Command handlers
             application.add_handler(CommandHandler("start", self.start_command))
@@ -811,6 +811,9 @@ class CommandHandlers:
             application.add_handler(CallbackQueryHandler(self.handle_model_selection, pattern="^model_"))
             application.add_handler(CallbackQueryHandler(self.handle_image_prompt_callback, pattern="^(confirm|cancel|edit)_image_prompt$"))
             application.add_handler(CallbackQueryHandler(self.handle_image_settings, pattern="^img_.+_steps_.+$"))
+            
+            # Save cache for use in command handlers if needed
+            self.response_cache = cache
             
             # General callback handler LAST
             application.add_handler(CallbackQueryHandler(self.handle_callback_query))

@@ -75,8 +75,9 @@ class GeminiAPI:
             if not ImageProcessor.validate_image(image_data):
                 return "Sorry, the image format is not supported. Please send a JPEG or PNG image."
 
-            # Process the image
+            # Process the image and get the correct MIME type
             processed_image = await ImageProcessor.prepare_image(image_data)
+            mime_type = ImageProcessor.get_mime_type(processed_image)
             
             # Generate response with proper error handling
             try:
@@ -84,7 +85,7 @@ class GeminiAPI:
                     self.vision_model.generate_content,
                     [
                         prompt,  # First element is the text prompt
-                        {"mime_type": "image/jpeg, image.png", "data": processed_image}
+                        {"mime_type": mime_type, "data": processed_image}  # Use correct MIME type
                     ],
                     safety_settings=[
                         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
