@@ -58,7 +58,6 @@ class TelegramBot:
         # Initialize only essential services at startup
         self.logger = logging.getLogger(__name__)
         self.response_cache = TTLCache(maxsize=100, ttl=3600)
-        self.user_data_manager = UserDataManager()
         self.user_response_cache = {}
         self.token = os.getenv('TELEGRAM_BOT_TOKEN')
         if not self.token:
