@@ -152,6 +152,10 @@ class TelegramBot:
         # Create a response cache
         self.response_cache = TTLCache(maxsize=1000, ttl=60)
         
+        # First remove any existing error handlers to prevent duplicates
+        if self.application.error_handlers:
+            self.application.error_handlers.clear()
+        
         # Register handlers with cache awareness
         self.command_handler.register_handlers(self.application, cache=self.response_cache)
         for handler in self.text_handler.get_handlers():
@@ -161,6 +165,8 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("language", self.language_manager.set_language))
         self.application.add_handler(CommandHandler("history", self.text_handler.show_history))
         self.application.add_handler(CommandHandler("documents", self.command_handler.show_document_history))
+        
+        # Add error handler last
         self.application.add_error_handler(self.message_handlers._error_handler)
         self.application.run_webhook = self.run_webhook
 
@@ -200,43 +206,43 @@ class TelegramBot:
     async def process_update(self, update_data: dict):
         """Process updates received from webhook with improved error handling."""
         try:
+            # Ensure application is initialized before processing updates
+            if not self.application.running:
+                self.logger.info("Application not initialized yet, initializing now...")
+                await self.application.initialize()
+                await self.application.start()
+                
             update = Update.de_json(update_data, self.application.bot)
             
             try:
-                # Reduced timeout for faster failure detection
+                # Process update normally after ensuring initialization
                 await asyncio.wait_for(
                     self.application.process_update(update),
-                    timeout=5.0  
+                    timeout=10.0  # Increased timeout to allow for processing
                 )
             except asyncio.TimeoutError:
                 self.logger.warning(f"Update processing timed out: {update.update_id}")
                 if hasattr(update, 'message') and update.message:
-                    # Non-blocking response
                     asyncio.create_task(update.message.reply_text(
                         "I'm processing your request... It might take a moment."
                     ))
         except Exception as e:
-            # Minimal logging in production for speed
             if os.getenv('ENVIRONMENT') == 'production':
                 self.logger.error(f"Error in process_update: {str(e)}")
             else:
                 self.logger.error(f"Error in process_update: {e}")
                 self.logger.error(traceback.format_exc())
-
     def run_webhook(self, loop):
         @app.post(f"/webhook/{self.token}")
         async def webhook_handler(request: Request):
             try:
-                # Process minimal extraction and return response immediately
                 update_data = await request.json()
-                # Fire-and-forget task to process the update
-                asyncio.create_task(self.process_update(update_data))
-                
-                # Return 200 OK immediately
-                return JSONResponse(content={"status": "ok"}, status_code=200)
+                await self.process_update(update_data)
+                return JSONResponse(content={"status": "ok", "method": "webhook"}, status_code=200)
             except Exception as e:
-                self.logger.error(f"Update processing error: {str(e)}")
-                return JSONResponse(content={"status": "error"}, status_code=500)
+                self.logger.error(f"Update processing error: {e}")
+                self.logger.error(traceback.format_exc())
+                return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
 async def start_bot(webhook: TelegramBot):
     try:
         await webhook.application.initialize()
@@ -255,9 +261,12 @@ if __name__ == '__main__':
     main_bot = TelegramBot()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    app = create_app(main_bot, loop)
-
+    
+    # Ensure the application is initialized before accepting webhook requests
     if os.environ.get('DEV_SERVER') == 'uvicorn':
+        # For development server, initialize the application first
+        loop.run_until_complete(main_bot.application.initialize())
+        loop.run_until_complete(main_bot.application.start())
         uvicorn.run(app, host="0.0.0.0", port=8000)
     else:
         try:
@@ -265,9 +274,18 @@ if __name__ == '__main__':
                 logger.error("WEBHOOK_URL not set in .env")
                 sys.exit(1)
 
-            loop.create_task(main_bot.setup_webhook())
-            loop.create_task(start_bot(main_bot))
-
+            # Initialize and start the application before setting up webhooks
+            loop.run_until_complete(main_bot.application.initialize())
+            loop.run_until_complete(main_bot.application.start())
+            logger.info("Bot application initialized and started")
+            
+            # Now set up the webhook
+            loop.run_until_complete(main_bot.setup_webhook())
+            
+            # Register the webhook handler
+            app = create_app(main_bot, loop)
+            
+            # Run FastAPI
             def run_fastapi():
                 port = int(os.environ.get("PORT", 8000))
                 uvicorn.run(app, host="0.0.0.0", port=port)
@@ -276,16 +294,7 @@ if __name__ == '__main__':
             fastapi_thread.start()
             loop.run_forever()
         except Exception as e:
-            logger.error(f"Unhandled exception: {str(e)}")
-            logger.error(traceback.format_exc())
-        finally:
-            loop.run_until_complete(main_bot.application.shutdown())
-            loop.run_until_complete(flux_lora_image_generator.close())
-            loop.run_until_complete(text_to_video_generator.close())
-            close_database_connection(main_bot.client)
-            tasks = asyncio.all_tasks(loop)
-            for task in tasks:
-                task.cancel()
-            loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-            loop.run_until_complete(loop.shutdown_asyncgens())
-            loop.close()
+            logger.error(f"Error: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            main_bot.shutdown()
+            sys.exit(1)
