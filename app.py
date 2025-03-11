@@ -57,6 +57,9 @@ class TelegramBot:
     def __init__(self):
         # Initialize only essential services at startup
         self.logger = logging.getLogger(__name__)
+        self.response_cache = TTLCache(maxsize=100, ttl=3600)
+        self.user_data_manager = UserDataManager()
+        self.user_response_cache = {}
         self.token = os.getenv('TELEGRAM_BOT_TOKEN')
         if not self.token:
             raise ValueError("TELEGRAM_BOT_TOKEN not found in .env file")
@@ -69,11 +72,13 @@ class TelegramBot:
             Application.builder()
             .token(self.token)
             .persistence(PicklePersistence(filepath='conversation_states.pickle'))
-            .http_version('1.1')  # Sometimes helps with connection issues
-            .read_timeout(30)     # Increase timeout for slower connections
-            .write_timeout(30)    # Increase timeout for slower connections
-            .connect_timeout(30)  # Increase timeout for slower connections
-            .pool_timeout(30)     # Increase timeout for slower connections
+            .http_version('1.1')
+            .get_updates_http_version('1.1')
+            .read_timeout(20)     # Reduced from 30s
+            .write_timeout(20)    # Reduced from 30s
+            .connect_timeout(15)  # Reduced from 30s
+            .pool_timeout(15)     # Reduced from 30s
+            .connection_pool_size(16)  # Add connection pool setting
             .build()
         )
         
@@ -82,8 +87,10 @@ class TelegramBot:
         self._setup_handlers()
         
     def _init_db_connection(self):
-        # Add retry logic for database connection
+        # More efficient retry with exponential backoff
         max_retries = 3
+        retry_delay = 0.5  # Start with 500ms
+        
         for attempt in range(max_retries):
             try:
                 self.db, self.client = get_database()
@@ -93,8 +100,9 @@ class TelegramBot:
                 return
             except Exception as e:
                 if attempt < max_retries - 1:
-                    self.logger.warning(f"Database connection attempt {attempt+1} failed: {e}, retrying...")
-                    time.sleep(1)  # Wait before retrying
+                    self.logger.warning(f"Database connection attempt {attempt+1} failed, retrying...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
                 else:
                     self.logger.error(f"All database connection attempts failed: {e}")
                     raise
@@ -103,7 +111,7 @@ class TelegramBot:
         # Initialize services with proper error handling
         try:
             # Use a more efficient model if available
-            model_name = "gemini-2.0-flash"  # Use a faster model
+            model_name = "gemini-2.0-flash"
             vision_model = genai.GenerativeModel(model_name)
             rate_limiter = RateLimiter(requests_per_minute=20)  # Increased rate limit
             self.gemini_api = GeminiAPI(vision_model=vision_model, rate_limiter=rate_limiter)
@@ -111,7 +119,6 @@ class TelegramBot:
             # Other initializations
             self.user_data_manager = user_data_manager(self.db)
             self.telegram_logger = telegram_logger
-            # Initialize other services...
         except Exception as e:
             self.logger.error(f"Error initializing services: {e}")
             raise
@@ -169,13 +176,14 @@ class TelegramBot:
         webhook_config = {
             "url": webhook_url,
             "allowed_updates": ["message", "edited_message", "callback_query", "inline_query"],
-            "max_connections": 1000
+            "max_connections": 100
         }
 
         self.logger.info(f"Setting webhook to: {webhook_url}")
 
         if not self.application.running:
             await self.application.initialize()
+            await self.application.start()
 
         # Set up webhook with new configuration
         await self.application.bot.set_webhook(**webhook_config)
@@ -193,54 +201,42 @@ class TelegramBot:
     async def process_update(self, update_data: dict):
         """Process updates received from webhook with improved error handling."""
         try:
-            # Set a timeout for update processing
             update = Update.de_json(update_data, self.application.bot)
             
-            # Process update with timeout protection
             try:
-                # Use asyncio.wait_for to set a timeout on processing
+                # Reduced timeout for faster failure detection
                 await asyncio.wait_for(
                     self.application.process_update(update),
-                    timeout=10.0  # 10-second timeout
+                    timeout=5.0  
                 )
             except asyncio.TimeoutError:
-                # If processing takes too long, log and send a quick response
                 self.logger.warning(f"Update processing timed out: {update.update_id}")
                 if hasattr(update, 'message') and update.message:
-                    await update.message.reply_text("Processing your request... please wait.")
-                
+                    # Non-blocking response
+                    asyncio.create_task(update.message.reply_text(
+                        "I'm processing your request... It might take a moment."
+                    ))
         except Exception as e:
-            self.logger.error(f"Error in process_update: {e}")
-            # Less verbose error logging in production
-            if os.getenv('ENVIRONMENT') != 'production':
+            # Minimal logging in production for speed
+            if os.getenv('ENVIRONMENT') == 'production':
+                self.logger.error(f"Error in process_update: {str(e)}")
+            else:
+                self.logger.error(f"Error in process_update: {e}")
                 self.logger.error(traceback.format_exc())
 
     def run_webhook(self, loop):
         @app.post(f"/webhook/{self.token}")
         async def webhook_handler(request: Request):
             try:
+                # Process minimal extraction and return response immediately
                 update_data = await request.json()
-                await self.process_update(update_data)
-                return JSONResponse(content={"status": "ok", "method": "webhook"}, status_code=200)
-            except Exception as e:
-                self.logger.error(f"Update processing error: {e}")
-                self.logger.error(traceback.format_exc())
-                return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
-
-    def run_webhook(self, loop):
-        @app.post(f"/webhook/{self.token}")
-        async def webhook_handler(request: Request):
-            try:
-                # Send an immediate ACK to Telegram to avoid timeout
-                update_data = await request.json()
-                
-                # Process update in background task
+                # Fire-and-forget task to process the update
                 asyncio.create_task(self.process_update(update_data))
                 
                 # Return 200 OK immediately
                 return JSONResponse(content={"status": "ok"}, status_code=200)
             except Exception as e:
-                self.logger.error(f"Update processing error: {e}")
+                self.logger.error(f"Update processing error: {str(e)}")
                 return JSONResponse(content={"status": "error"}, status_code=500)
 async def start_bot(webhook: TelegramBot):
     try:
@@ -286,8 +282,6 @@ if __name__ == '__main__':
         finally:
             loop.run_until_complete(main_bot.application.shutdown())
             loop.run_until_complete(flux_lora_image_generator.close())
-            # Add this line to properly close text_to_video_generator
-           
             loop.run_until_complete(text_to_video_generator.close())
             close_database_connection(main_bot.client)
             tasks = asyncio.all_tasks(loop)
