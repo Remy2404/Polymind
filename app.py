@@ -322,12 +322,39 @@ def get_application():
     # Set the environment variable so our code knows we're using uvicorn
     os.environ["DEV_SERVER"] = "uvicorn"
     
+    # Create the FastAPI app (moved this up to make sure it's defined)
+    app = FastAPI()
+    
+    # Add routes to the app
+    @app.get('/health')
+    async def health_check():
+        return JSONResponse(content={"status": "ok"}, status_code=200)
+    
+    @app.get("/")
+    async def read_root():
+        return {"message": "Hello, World!"}
+    
     # Initialize the bot
     bot = TelegramBot()
     
     # Setup webhook handling without creating a new loop
     existing_loop = asyncio.get_event_loop()
-    bot.run_webhook(existing_loop)
+    
+    # Configure webhook route
+    @app.post(f"/webhook/{bot.token}")
+    async def webhook_handler(request: Request):
+        try:
+            # Extract data first
+            update_data = await request.json()
+            
+            # Start processing in background task
+            asyncio.create_task(bot.process_update(update_data))
+            
+            # Return response immediately
+            return JSONResponse(content={"status": "ok"}, status_code=200)
+        except Exception as e:
+            bot.logger.error(f"Webhook error: {str(e)}")
+            return JSONResponse(content={"status": "error"}, status_code=500)
     
     # Create a startup event to initialize the application when uvicorn starts
     @app.on_event("startup")
@@ -373,5 +400,7 @@ def get_application():
         # Other cleanup...
         if hasattr(bot, 'reminder_manager') and hasattr(bot.reminder_manager, 'reminder_check_task'):
             await bot.reminder_manager.stop()
-
-application = get_application()
+            
+    # Return the app instance for uvicorn to use
+    return app
+app = get_application()
