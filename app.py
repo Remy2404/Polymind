@@ -143,32 +143,13 @@ class TelegramBot:
         self.reminder_manager = ReminderManager(self.application.bot)
         self.language_manager = LanguageManager()
 
-    async def shutdown(self):
-        """Properly shut down all services with async support"""
-        try:
-            # Close database connection
-            close_database_connection(self.client)
-            
-            # Stop reminder manager if running
-            if hasattr(self, 'reminder_manager') and hasattr(self.reminder_manager, 'reminder_check_task'):
-                await self.reminder_manager.stop()
-                
-            # Stop telegram application
-            if hasattr(self, 'application') and self.application.running:
-                await self.application.stop()
-                
-            logger.info("Bot shutdown complete. Database connection closed.")
-        except Exception as e:
-            logger.error(f"Error during bot shutdown: {e}")
+    def   shutdown(self):
+        close_database_connection(self.client)
+        logger.info("Shutdown complete. Database connection closed.")
 
     def _setup_handlers(self):
         # Create a response cache
-        self.response_cache = TTLCache(maxsize=1000, ttl=60)
-        
-        # First clear any existing error handlers to prevent duplicates
-        if hasattr(self.application, 'error_handlers'):
-            self.application.error_handlers.clear()
-        
+        self.response_cache = TTLCache(maxsize=1000, ttl=60)     
         # Register handlers with cache awareness
         self.command_handler.register_handlers(self.application, cache=self.response_cache)
         for handler in self.text_handler.get_handlers():
@@ -179,10 +160,12 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("history", self.text_handler.show_history))
         self.application.add_handler(CommandHandler("documents", self.command_handler.show_document_history))
         
-        # Add error handler last (only once)
+        # Remove any existing error handlers before adding new one
+        self.application.error_handlers.clear()
+        # Add error handler last
         self.application.add_error_handler(self.message_handlers._error_handler)
-        self.application.run_webhook = self.run_webhook
-
+        self.application.run_webhook = self.run_webhook  
+        
     async def setup_webhook(self):
         """Set up webhook with proper update processing."""
         webhook_path = f"/webhook/{self.token}"
@@ -322,39 +305,12 @@ def get_application():
     # Set the environment variable so our code knows we're using uvicorn
     os.environ["DEV_SERVER"] = "uvicorn"
     
-    # Create the FastAPI app (moved this up to make sure it's defined)
-    app = FastAPI()
-    
-    # Add routes to the app
-    @app.get('/health')
-    async def health_check():
-        return JSONResponse(content={"status": "ok"}, status_code=200)
-    
-    @app.get("/")
-    async def read_root():
-        return {"message": "Hello, World!"}
-    
     # Initialize the bot
     bot = TelegramBot()
     
     # Setup webhook handling without creating a new loop
     existing_loop = asyncio.get_event_loop()
-    
-    # Configure webhook route
-    @app.post(f"/webhook/{bot.token}")
-    async def webhook_handler(request: Request):
-        try:
-            # Extract data first
-            update_data = await request.json()
-            
-            # Start processing in background task
-            asyncio.create_task(bot.process_update(update_data))
-            
-            # Return response immediately
-            return JSONResponse(content={"status": "ok"}, status_code=200)
-        except Exception as e:
-            bot.logger.error(f"Webhook error: {str(e)}")
-            return JSONResponse(content={"status": "error"}, status_code=500)
+    bot.run_webhook(existing_loop)
     
     # Create a startup event to initialize the application when uvicorn starts
     @app.on_event("startup")
@@ -366,41 +322,8 @@ def get_application():
         # Set up the webhook if WEBHOOK_URL is provided
         if os.getenv('WEBHOOK_URL'):
             await bot.setup_webhook()
-        
-        # Start any background tasks that need to run
-        if hasattr(bot, 'reminder_manager'):
-            await bot.reminder_manager.start()
     
-    # Shutdown event to clean up resources
-    @app.on_event("shutdown")
-    async def shutdown_event():
-        """Clean up resources properly when FastAPI is shutting down"""
-        logger.info("Application shutdown initiated")
-        
-        # Clean up text_to_video resources
-        try:
-            if 'text_to_video_generator' in globals() and hasattr(text_to_video_generator, 'session'):
-                await text_to_video_generator.close()
-        except Exception as e:
-            logger.error(f"Error closing text_to_video session: {e}")
-        
-        # Clean up flux_lora resources
-        try:
-            if 'flux_lora_image_generator' in globals() and hasattr(flux_lora_image_generator, 'session'):
-                await flux_lora_image_generator.close()
-        except Exception as e:
-            logger.error(f"Error closing flux_lora session: {e}")
-        
-        # Shutdown the bot properly
-        try:
-            await bot.shutdown()
-        except Exception as e:
-            logger.error(f"Error during bot shutdown: {e}")
-        
-        # Other cleanup...
-        if hasattr(bot, 'reminder_manager') and hasattr(bot.reminder_manager, 'reminder_check_task'):
-            await bot.reminder_manager.stop()
-            
-    # Return the app instance for uvicorn to use
     return app
-app = get_application()
+
+# For uvicorn to import
+application = get_application()
