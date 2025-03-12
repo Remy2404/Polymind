@@ -249,7 +249,32 @@ class GeminiAPI:
         except Exception as e:
             self.logger.error(f"Imagen 3 generation error: {str(e)}")
             return None
-
+    async def _get_response_guidelines(self) -> str:
+            """Load response style guidelines from dataset file."""
+            try:
+                guidelines_path = os.path.join(os.path.dirname(__file__), '..', 'doc', 'dataset.md')
+                
+                # Read file synchronously as it's a small file
+                with open(guidelines_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    
+                # Extract the core guidelines (first two rules from each main section)
+                guidelines = [
+                    "# RESPONSE STYLE GUIDELINES:",
+                    "- Use straightforward language and explain technical terms",
+                    "- Keep explanations direct and focused on essential information",
+                    "- Structure responses with clear headings and organized lists",
+                    "- Include examples for programming or technical explanations",
+                    "- Use a professional yet conversational tone",
+                    "- End complex responses with a follow-up question",
+                    "- Reference previous interactions and shared images when relevant",
+                    "- Provide relevant command suggestions when appropriate"
+                ]
+                
+                return "\n".join(guidelines)
+            except Exception as e:
+                self.logger.error(f"Failed to load response guidelines: {str(e)}")
+                return ""  # Return empty string if file can't be loaded
     async def generate_response(self, prompt: str, context: List[Dict] = None, image_context: str = None, document_context: str = None) -> Optional[str]:
         """
         Generate a text response based on the provided prompt and context.
@@ -257,15 +282,23 @@ class GeminiAPI:
         """
         # Acquire rate limiter
         await self.rate_limiter.acquire()
-
+    
         try:
             # Prepare the conversation history
             conversation = []
             
-            # Add bot identification at the start of the conversation as a system message
+            # Get response style guidelines
+            guidelines = await self._get_response_guidelines()
+            
+            # Add bot identification and style guidelines at the start of the conversation
+            system_message = (
+                "You are DeepGem, an AI assistant that can help with various tasks. "
+                f"{guidelines}"
+            )
+            
             conversation.append(genai.types.ContentDict(
                 role="user",
-                parts=["You are Gembot, an AI assistant that can help with various tasks."]
+                parts=[system_message]
             ))
             
             # Add system context about memory capabilities
@@ -291,7 +324,6 @@ class GeminiAPI:
                 role="user",
                 parts=[prompt]
             ))
-            
             # Generate the response
             response = await asyncio.to_thread(
                 self.vision_model.generate_content,

@@ -115,8 +115,12 @@ class DeepSeekLLM:
             
         logger.info(f"Generating response using {self.model_name}")
         
+        # Add response style guidelines to system prompt
+        modified_messages = await self._add_guidelines(messages)
+        
         # Add instruction to prevent thinking tags
-        modified_messages = self._add_anti_thinking_instruction(messages)
+        modified_messages = self._add_anti_thinking_instruction(modified_messages)
+        
         
         async with self.semaphore:
             try:
@@ -229,6 +233,45 @@ class DeepSeekLLM:
         except Exception as e:
             logger.error(f"Error retrieving conversation context: {e}")
             return []
+        
+    async def _add_guidelines(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Add response style guidelines to the messages."""
+        try:
+            # Create a copy to avoid modifying the original
+            modified_messages = messages.copy()
+            
+            # Load guidelines
+            guidelines_path = os.path.join(os.path.dirname(__file__), '..', 'doc', 'dataset.md')
+            with open(guidelines_path, 'r', encoding='utf-8') as file:
+                content = file.read()
+                # Extract DeepSeek specific guidelines
+                deepseek_guidelines = """
+                Follow these response guidelines:
+                - Provide detailed analytical responses for complex questions
+                - Avoid using <think> tags in final output
+                - Use straightforward language and explain technical terms
+                - Include relevant examples, especially for code
+                - Maintain professional yet conversational tone
+                """
+                
+            # Find system message if it exists
+            system_message_idx = -1
+            for i, msg in enumerate(modified_messages):
+                if msg["role"] == "system":
+                    system_message_idx = i
+                    break
+            
+            if system_message_idx >= 0:
+                # Append to existing system message
+                modified_messages[system_message_idx]["content"] += f"\n\n{deepseek_guidelines}"
+            else:
+                # Add new system message at the beginning
+                modified_messages.insert(0, {"role": "system", "content": deepseek_guidelines})
+                
+            return modified_messages
+        except Exception as e:
+            logger.error(f"Error adding guidelines: {str(e)}")
+            return messages
 
 # Initialize the DeepSeekLLM instance
 deepseek_llm = DeepSeekLLM()

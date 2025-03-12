@@ -19,3 +19,4 @@ pydub==0.25.1
 mangum==0.14.0
 pydantic==2.10.2
 telegramify-markdown==0.1.17
+aiofiles ===23.2.1

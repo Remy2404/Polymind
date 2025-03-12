@@ -1,3 +1,5 @@
+import os
+import aiofiles
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 from telegram.constants import ChatAction
@@ -9,6 +11,7 @@ import datetime
 import logging
 from services.DeepSeek_R1_Distill_Llama_70B import deepseek_llm
 import asyncio
+
 class TextHandler:
     def __init__(self, gemini_api: GeminiAPI, user_data_manager: user_data_manager):
         self.logger = logging.getLogger(__name__)
@@ -171,31 +174,31 @@ class TextHandler:
                     await status_message.edit_text(
                         "Sorry, there was an error generating your image. Please try again later."
                     )
-                    # Continue with normal text response as fallback
-            
-            # Determine which model to use based on user preference
             
             preferred_model = self.user_data_manager.get_user_preference(user_id, "preferred_model", default="gemini")
+            
+            # Apply response style guidelines
+            enhanced_prompt_with_guidelines = await self._apply_response_guidelines(enhanced_prompt, preferred_model)
             
             try:
                 if preferred_model == "deepseek":
                     system_message = "You are an AI assistant that helps users with tasks and answers questions helpfully, accurately, and ethically."
                     response = await asyncio.wait_for(
                         deepseek_llm.generate_text(
-                            prompt=enhanced_prompt,
+                            prompt=enhanced_prompt_with_guidelines,  # Use the prompt with guidelines
                             system_message=system_message,
                             temperature=0.7,
                             max_tokens=4000
                         ),
-                        timeout=30.0
+                        timeout=300.0
                     )
                 else:
                     response = await asyncio.wait_for(
                         self.gemini_api.generate_response(
-                            prompt=enhanced_prompt,
+                            prompt=enhanced_prompt_with_guidelines,  # Use the prompt with guidelines
                             context=user_context[-self.max_context_length:]
                         ),
-                        timeout=30.0
+                        timeout=60.0
                     )
             except asyncio.TimeoutError:
                 await thinking_message.delete()
@@ -461,6 +464,40 @@ class TextHandler:
             return True, image_prompt
         
         return False, ""
+
+    async def _apply_response_guidelines(self, prompt: str, preferred_model: str) -> str:
+        """Apply appropriate response style guidelines based on the selected model."""
+        try:
+            guidelines_path = os.path.join(os.path.dirname(__file__), '..', 'doc', 'dataset.md')
+            async with aiofiles.open(guidelines_path, 'r', encoding='utf-8') as file:
+                content = await file.read()
+                
+            # Select appropriate guidelines based on model
+            if preferred_model == "deepseek":
+                style_instruction = """
+                Please follow these guidelines for your response:
+                - Provide detailed analytical responses
+                - Include code examples for programming questions
+                - Use logical organization with headers
+                - Start with the most important information
+                - End complex responses with a follow-up question
+                """
+            else:  # gemini
+                style_instruction = """
+                Please follow these guidelines for your response:
+                - Use straightforward language and explain technical terms
+                - Focus on essential information first
+                - Include code examples for programming questions
+                - Use a professional yet conversational tone
+                - End with a follow-up question when appropriate
+                """
+                
+            # Add the style instruction to the beginning of the prompt
+            enhanced_prompt = f"{style_instruction}\n\nUser query: {prompt}"
+            return enhanced_prompt
+        except Exception as e:
+            self.logger.error(f"Error applying response guidelines: {str(e)}")
+            return prompt  # Return original prompt if there was an error
 
     def get_handlers(self):
         return [
