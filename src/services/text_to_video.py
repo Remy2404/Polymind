@@ -41,6 +41,11 @@ class TextToVideoGenerator:
         self.api_key = os.getenv("TEXT_TO_VIDEO_API_KEY")
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
         self.session = None
+        # Add these for circuit breaker tracking
+        self.image_api_failures = 0
+        self.image_api_last_failure = 0
+        self.video_api_failures = 0  
+        self.video_api_last_failure = 0
         
         if not self.api_key:
             logger.warning("TEXT_TO_VIDEO_API_KEY not found in environment variables")
@@ -91,14 +96,25 @@ class TextToVideoGenerator:
         try:
             async with self.semaphore:
                 # Step 1: Generate an image from the prompt
-                image_bytes = await self._generate_image_from_text(prompt, negative_prompt, width, height, num_inference_steps, guidance_scale)
+                image_bytes = await self.call_with_circuit_breaker(
+                    "image_api", 
+                    self._generate_image_from_text, 
+                    prompt, 
+                    negative_prompt, 
+                    width, 
+                    height, 
+                    num_inference_steps, 
+                    guidance_scale
+                )
                 if not image_bytes:
                     return None
                     
                 # Step 2: Convert the image to a video
-                video_bytes = await self._generate_video_from_image(
+                video_bytes = await self.call_with_circuit_breaker(
+                    "video_api", 
+                    self._generate_video_from_image, 
                     image_bytes, 
-                    num_frames=num_frames,
+                    num_frames=num_frames, 
                     num_inference_steps=num_inference_steps
                 )
                 
@@ -168,7 +184,7 @@ class TextToVideoGenerator:
             video_api_url = f"https://api-inference.huggingface.co/models/{self.video_model_name}"
             
             logger.info("Calling image-to-video API")
-            async with self.session.post(video_api_url, json=payload) as response:
+            async with self.session.post(video_api_url, json=payload, timeout=120) as response:
                 if response.status == 200:
                     video_bytes = await response.read()
                     logger.info("Video generated successfully")
@@ -182,6 +198,33 @@ class TextToVideoGenerator:
             logger.error(f"Error in video generation: {e}")
             return None
 
+    # Add the circuit breaker method
+    async def call_with_circuit_breaker(self, api_name, api_function, *args, **kwargs):
+        """Call API with circuit breaker pattern to prevent cascading failures."""
+        # Check if circuit is open (5+ failures in the last 5 minutes)
+        failures = getattr(self, f"{api_name}_failures", 0)
+        last_failure = getattr(self, f"{api_name}_last_failure", 0)
+        
+        if failures >= 5 and (time.time() - last_failure) < 300:
+            # Circuit is open - API is considered unreliable right now
+            logger.warning(f"Circuit breaker open for {api_name} - too many recent failures")
+            return None
+        
+        # Circuit is closed or half-open (allowing a test request)
+        try:
+            result = await api_function(*args, **kwargs)
+            if result:
+                # Success - reset failure count if we were in half-open state
+                if failures > 0:
+                    setattr(self, f"{api_name}_failures", 0)
+            return result
+        except Exception as e:
+            # Track this failure
+            setattr(self, f"{api_name}_failures", failures + 1)
+            setattr(self, f"{api_name}_last_failure", time.time())
+            logger.error(f"API failure for {api_name}: {str(e)}")
+            raise
+
     async def close(self):
         """Clean up resources."""
         if self.session:
@@ -192,21 +235,13 @@ class TextToVideoGenerator:
 # Initialize the TextToVideoGenerator
 text_to_video_generator = TextToVideoGenerator()
 
-# Register the close method to run at exit
 def shutdown():
+    """Safe shutdown function that doesn't rely on event loop"""
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(text_to_video_generator.close())
-        else:
-            try:
-                loop.run_until_complete(text_to_video_generator.close())
-            except RuntimeError:
-                # If there's no event loop, create a new one
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                new_loop.run_until_complete(text_to_video_generator.close())
+        logger.info("Marking text-to-video resources for cleanup")
+        # Just mark for cleanup - don't attempt async operations
+        if hasattr(text_to_video_generator, 'session') and text_to_video_generator.session:
+            # Setting to None helps garbage collection without needing an event loop
+            text_to_video_generator.session = None
     except Exception as e:
         logger.warning(f"Error during shutdown: {e}")
-
-atexit.register(shutdown)

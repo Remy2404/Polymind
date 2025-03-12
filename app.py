@@ -143,16 +143,30 @@ class TelegramBot:
         self.reminder_manager = ReminderManager(self.application.bot)
         self.language_manager = LanguageManager()
 
-    def   shutdown(self):
-        close_database_connection(self.client)
-        logger.info("Shutdown complete. Database connection closed.")
+    async def shutdown(self):
+        """Properly shut down all services with async support"""
+        try:
+            # Close database connection
+            close_database_connection(self.client)
+            
+            # Stop reminder manager if running
+            if hasattr(self, 'reminder_manager') and hasattr(self.reminder_manager, 'reminder_check_task'):
+                await self.reminder_manager.stop()
+                
+            # Stop telegram application
+            if hasattr(self, 'application') and self.application.running:
+                await self.application.stop()
+                
+            logger.info("Bot shutdown complete. Database connection closed.")
+        except Exception as e:
+            logger.error(f"Error during bot shutdown: {e}")
 
     def _setup_handlers(self):
         # Create a response cache
         self.response_cache = TTLCache(maxsize=1000, ttl=60)
         
-        # First remove any existing error handlers to prevent duplicates
-        if self.application.error_handlers:
+        # First clear any existing error handlers to prevent duplicates
+        if hasattr(self.application, 'error_handlers'):
             self.application.error_handlers.clear()
         
         # Register handlers with cache awareness
@@ -165,7 +179,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("history", self.text_handler.show_history))
         self.application.add_handler(CommandHandler("documents", self.command_handler.show_document_history))
         
-        # Add error handler last
+        # Add error handler last (only once)
         self.application.add_error_handler(self.message_handlers._error_handler)
         self.application.run_webhook = self.run_webhook
 
@@ -333,11 +347,31 @@ def get_application():
     # Shutdown event to clean up resources
     @app.on_event("shutdown")
     async def shutdown_event():
-        if hasattr(bot, 'reminder_manager') and bot.reminder_manager.reminder_check_task:
+        """Clean up resources properly when FastAPI is shutting down"""
+        logger.info("Application shutdown initiated")
+        
+        # Clean up text_to_video resources
+        try:
+            if 'text_to_video_generator' in globals() and hasattr(text_to_video_generator, 'session'):
+                await text_to_video_generator.close()
+        except Exception as e:
+            logger.error(f"Error closing text_to_video session: {e}")
+        
+        # Clean up flux_lora resources
+        try:
+            if 'flux_lora_image_generator' in globals() and hasattr(flux_lora_image_generator, 'session'):
+                await flux_lora_image_generator.close()
+        except Exception as e:
+            logger.error(f"Error closing flux_lora session: {e}")
+        
+        # Shutdown the bot properly
+        try:
+            await bot.shutdown()
+        except Exception as e:
+            logger.error(f"Error during bot shutdown: {e}")
+        
+        # Other cleanup...
+        if hasattr(bot, 'reminder_manager') and hasattr(bot.reminder_manager, 'reminder_check_task'):
             await bot.reminder_manager.stop()
-        bot.shutdown()
-    
-    return app
 
-# Create the application variable for uvicorn to import
 application = get_application()

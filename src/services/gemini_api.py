@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from services.image_processing import ImageProcessor
 from database.connection import get_database, get_image_cache_collection
 import httpx
+import time
 # Load environment variables
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -54,6 +55,44 @@ class GeminiAPI:
                 self.logger.error("Failed to access image cache collection.")
         except Exception as e:
             self.logger.error(f"Failed to initialize Gemini API: {str(e)}")
+            raise
+
+        # Add these properties for circuit breaker tracking
+        self.api_failures = 0
+        self.api_last_failure = 0
+        self.image_generation_failures = 0
+        self.image_generation_last_failure = 0
+        self.image_analysis_failures = 0
+        self.image_analysis_last_failure = 0
+        self.circuit_breaker_threshold = 5  # Number of failures before opening circuit
+        self.circuit_breaker_timeout = 300  # Seconds to keep circuit open (5 minutes)
+
+    async def call_with_circuit_breaker(self, api_name, api_function, *args, **kwargs):
+        """Call API with circuit breaker pattern to prevent cascading failures."""
+        # Get the current failure count and last failure timestamp
+        failures = getattr(self, f"{api_name}_failures", 0)
+        last_failure = getattr(self, f"{api_name}_last_failure", 0)
+        
+        # Check if circuit is open (too many failures recently)
+        if failures >= self.circuit_breaker_threshold and (time.time() - last_failure) < self.circuit_breaker_timeout:
+            self.logger.warning(f"Circuit breaker open for {api_name} - too many recent failures")
+            return None
+        
+        # Circuit is closed or half-open (allowing a test request)
+        try:
+            result = await api_function(*args, **kwargs)
+            
+            # If successful and we had previous failures, reset the counter
+            if result and failures > 0:
+                setattr(self, f"{api_name}_failures", 0)
+                
+            return result
+            
+        except Exception as e:
+            # Track this failure
+            setattr(self, f"{api_name}_failures", failures + 1)
+            setattr(self, f"{api_name}_last_failure", time.time())
+            self.logger.error(f"API failure for {api_name}: {str(e)}")
             raise
 
     async def format_message(self, text: str) -> str:
@@ -276,13 +315,22 @@ class GeminiAPI:
                 self.logger.error(f"Failed to load response guidelines: {str(e)}")
                 return ""  # Return empty string if file can't be loaded
     async def generate_response(self, prompt: str, context: List[Dict] = None, image_context: str = None, document_context: str = None) -> Optional[str]:
-        """
-        Generate a text response based on the provided prompt and context.
-        Returns the response as a string.
-        """
-        # Acquire rate limiter
+        """Generate a text response with circuit breaker protection."""
+        try:
+            return await self.call_with_circuit_breaker(
+                "api", 
+                self._generate_response_impl,  # Create a private implementation method
+                prompt, context, image_context, document_context
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to generate response: {str(e)}")
+            return "I'm sorry, I'm having trouble processing your request. Please try again later."
+        
+# Move your current implementation to a private method
+    async def _generate_response_impl(self, prompt: str, context: List[Dict] = None, image_context: str = None, document_context: str = None) -> Optional[str]:
+        # Your existing generate_response code here
         await self.rate_limiter.acquire()
-    
+        # ... rest of the current implementation
         try:
             # Prepare the conversation history
             conversation = []
@@ -303,9 +351,9 @@ class GeminiAPI:
             
             # Add system context about memory capabilities
             memory_context = ("You have the ability to remember previous conversations including "
-                             "descriptions of images and documents the user has shared. When answering, "
-                             "consider text conversations, image descriptions, and document content in your context.")
-                             
+                            "descriptions of images and documents the user has shared. When answering, "
+                            "consider text conversations, image descriptions, and document content in your context.")
+                            
             conversation.append(genai.types.ContentDict(
                 role="user",
                 parts=[memory_context]

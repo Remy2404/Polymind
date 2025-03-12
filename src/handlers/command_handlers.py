@@ -114,12 +114,12 @@ class CommandHandlers:
 
     async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
-        self.user_data_manager.reset_conversation(user_id)
+        await self.user_data_manager.reset_conversation(user_id)
         await update.message.reply_text("Conversation history has been reset!")
 
     async def settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
-        settings = self.user_data_manager.get_user_settings(user_id)
+        settings = await self.user_data_manager.get_user_settings(user_id)
     
         keyboard = [
             [
@@ -223,13 +223,13 @@ class CommandHandlers:
             # Implement toggle logic here
             user_id = update.effective_user.id
             if data == 'toggle_markdown':
-                current_value = self.user_data_manager.get_user_settings(user_id).get('markdown_enabled', True)
+                current_value = await self.user_data_manager.get_user_settings(user_id).get('markdown_enabled', True)
                 self.user_data_manager.set_user_setting(user_id, 'markdown_enabled', not current_value)
                 status = 'enabled' if not current_value else 'disabled'
                 await query.edit_message_text(f"Markdown Mode has been {status}.")
             elif data == 'toggle_code_suggestions':
-                current_value = self.user_data_manager.get_user_settings(user_id).get('code_suggestions', True)
-                self.user_data_manager.set_user_setting(user_id, 'code_suggestions', not current_value)
+                current_value =  await self.user_data_manager.get_user_settings(user_id).get('code_suggestions', True)
+                await self.user_data_manager.set_user_setting(user_id, 'code_suggestions', not current_value)
                 status = 'enabled' if not current_value else 'disabled'
                 await query.edit_message_text(f"Code Suggestions have been {status}.")
         elif data.startswith('img_'):

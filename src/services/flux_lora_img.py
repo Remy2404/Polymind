@@ -209,27 +209,11 @@ flux_lora_image_generator = FluxLoraImageGenerator(
     timeout=300 
 )
 def shutdown():
+    """Safe shutdown function that doesn't rely on event loop"""
     try:
-        # Try to get the event loop
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(flux_lora_image_generator.close())
-            else:
-                # If loop exists but not running, run the close directly
-                loop.run_until_complete(flux_lora_image_generator.close())
-        except RuntimeError:
-            # No event loop - create a new one for cleanup
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                new_loop.run_until_complete(flux_lora_image_generator.close())
-                new_loop.close()
-            except Exception as e:
-                logging.warning(f"Failed to create new event loop for cleanup: {e}")
-                # Last resort - just set the session to None to help garbage collection
-                if hasattr(flux_lora_image_generator, 'session') and flux_lora_image_generator.session:
-                    flux_lora_image_generator.session = None
+        logging.info("Marking flux-lora resources for cleanup")
+        # Just mark for cleanup - don't attempt async operations
+        if hasattr(flux_lora_image_generator, 'session') and flux_lora_image_generator.session:
+            flux_lora_image_generator.session = None
     except Exception as e:
-        # Catch any other exceptions to prevent shutdown errors
-        logging.warning(f"Error during flux_lora shutdown: {e}")
+        logging.warning(f"Error during shutdown: {e}")
