@@ -8,6 +8,7 @@ from typing import List
 import datetime
 import logging
 from services.DeepSeek_R1_Distill_Llama_70B import deepseek_llm
+import asyncio
 class TextHandler:
     def __init__(self, gemini_api: GeminiAPI, user_data_manager: user_data_manager):
         self.logger = logging.getLogger(__name__)
@@ -174,26 +175,44 @@ class TextHandler:
             
             # Determine which model to use based on user preference
             
-            
             preferred_model = self.user_data_manager.get_user_preference(user_id, "preferred_model", default="gemini")
             
-            # Generate response based on user's preferred model
-            if preferred_model == "deepseek":
-                # Use DeepSeek model
-                system_message = "You are an AI assistant that helps users with tasks and answers questions helpfully, accurately, and ethically."
-                response = await deepseek_llm.generate_text(
-                    prompt=enhanced_prompt,
-                    system_message=system_message,
-                    temperature=0.7,
-                    max_tokens=4000
+            try:
+                if preferred_model == "deepseek":
+                    system_message = "You are an AI assistant that helps users with tasks and answers questions helpfully, accurately, and ethically."
+                    response = await asyncio.wait_for(
+                        deepseek_llm.generate_text(
+                            prompt=enhanced_prompt,
+                            system_message=system_message,
+                            temperature=0.7,
+                            max_tokens=4000
+                        ),
+                        timeout=30.0
+                    )
+                else:
+                    response = await asyncio.wait_for(
+                        self.gemini_api.generate_response(
+                            prompt=enhanced_prompt,
+                            context=user_context[-self.max_context_length:]
+                        ),
+                        timeout=30.0
+                    )
+            except asyncio.TimeoutError:
+                await thinking_message.delete()
+                await message.reply_text(
+                    "Sorry, the request took too long to process. Please try again later.",
+                    parse_mode='MarkdownV2'
                 )
-            else:
-                # Use default Gemini model
-                response = await self.gemini_api.generate_response(
-                    prompt=enhanced_prompt,
-                    context=user_context[-self.max_context_length:]
+                return
+            except Exception as e:
+                self.logger.error(f"Error generating response: {e}")
+                await thinking_message.delete()
+                await message.reply_text(
+                    "Sorry, there was an error processing your request. Please try again later.",
+                    parse_mode='MarkdownV2'
                 )
-
+                return
+            
             if response is None:
                 await thinking_message.delete()
                 await message.reply_text(
@@ -201,11 +220,9 @@ class TextHandler:
                     parse_mode='MarkdownV2'
                 )
                 return
-
-            # Split long messages
+            
+            # Split long messages and send them, then delete the thinking message
             message_chunks = await self.split_long_message(response)
-
-            # Delete thinking message
             await thinking_message.delete()
 
             # Store the message IDs for potential editing

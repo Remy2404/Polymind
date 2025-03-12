@@ -142,7 +142,6 @@ class TelegramBot:
         )
         self.reminder_manager = ReminderManager(self.application.bot)
         self.language_manager = LanguageManager()
-        self._setup_handlers()
 
     def   shutdown(self):
         close_database_connection(self.client)
@@ -236,13 +235,17 @@ class TelegramBot:
         @app.post(f"/webhook/{self.token}")
         async def webhook_handler(request: Request):
             try:
+                # Extract data first
                 update_data = await request.json()
-                await self.process_update(update_data)
-                return JSONResponse(content={"status": "ok", "method": "webhook"}, status_code=200)
+                
+                # Start processing in background task
+                asyncio.create_task(self.process_update(update_data))
+                
+                # Return response immediately
+                return JSONResponse(content={"status": "ok"}, status_code=200)
             except Exception as e:
-                self.logger.error(f"Update processing error: {e}")
-                self.logger.error(traceback.format_exc())
-                return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
+                self.logger.error(f"Webhook error: {str(e)}")
+                return JSONResponse(content={"status": "error"}, status_code=500)
 async def start_bot(webhook: TelegramBot):
     try:
         await webhook.application.initialize()
