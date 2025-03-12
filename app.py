@@ -302,3 +302,31 @@ if __name__ == '__main__':
             logger.error(f"Traceback: {traceback.format_exc()}")
             main_bot.shutdown()
             sys.exit(1)
+
+def get_application():
+    """Create and configure the application for uvicorn without creating a new event loop"""
+    # Set the environment variable so our code knows we're using uvicorn
+    os.environ["DEV_SERVER"] = "uvicorn"
+    
+    # Initialize the bot
+    bot = TelegramBot()
+    
+    # Setup webhook handling without creating a new loop
+    existing_loop = asyncio.get_event_loop()
+    bot.run_webhook(existing_loop)
+    
+    # Create a startup event to initialize the application when uvicorn starts
+    @app.on_event("startup")
+    async def startup_event():
+        # Initialize and start the application using uvicorn's event loop
+        await bot.application.initialize()
+        await bot.application.start()
+        
+        # Set up the webhook if WEBHOOK_URL is provided
+        if os.getenv('WEBHOOK_URL'):
+            await bot.setup_webhook()
+    
+    return app
+
+# For uvicorn to import
+application = get_application()
