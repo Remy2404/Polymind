@@ -215,15 +215,16 @@ class TelegramBot:
             
             try:
                 # Process update normally after ensuring initialization
+                # Increased timeout to 120 seconds for DeepSeek model processing
                 await asyncio.wait_for(
                     self.application.process_update(update),
-                    timeout=10.0  # Increased timeout to allow for processing
+                    timeout=120.0
                 )
             except asyncio.TimeoutError:
                 self.logger.warning(f"Update processing timed out: {update.update_id}")
                 if hasattr(update, 'message') and update.message:
                     asyncio.create_task(update.message.reply_text(
-                        "I'm processing your request... It might take a moment."
+                        "I'm still thinking about your request... This may take a bit longer as I'm carefully considering my response."
                     ))
         except Exception as e:
             if os.getenv('ENVIRONMENT') == 'production':
