@@ -95,7 +95,7 @@ class TextHandler:
             await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
             
             # Get user context
-            user_context = self.user_data_manager.get_user_context(user_id)
+            user_context =  await self.user_data_manager.get_user_context(user_id)
             
             # Build enhanced prompt with relevant context
             enhanced_prompt = message_text
@@ -173,9 +173,9 @@ class TextHandler:
                     self.logger.error(f"Error generating image: {e}")
                     await status_message.edit_text(
                         "Sorry, there was an error generating your image. Please try again later."
-                    )
+                    ) 
             
-            preferred_model = self.user_data_manager.get_user_preference(user_id, "preferred_model", default="gemini")
+            preferred_model = await self.user_data_manager.get_user_preference(user_id, "preferred_model", default="gemini")
             
             # Apply response style guidelines
             enhanced_prompt_with_guidelines = await self._apply_response_guidelines(enhanced_prompt, preferred_model)
@@ -338,8 +338,8 @@ class TextHandler:
                             sent_messages.append(sent_message.message_id)
         
                     # Store image info in user context
-                    self.user_data_manager.add_to_context(user_id, {"role": "user", "content": f"[Image with caption: {caption}]"}) 
-                    self.user_data_manager.add_to_context(user_id, {"role": "assistant", "content": response})
+                    await self.user_data_manager.add_to_context(user_id, {"role": "user", "content": f"[Image with caption: {caption}]"}) 
+                    await self.user_data_manager.add_to_context(user_id, {"role": "assistant", "content": response})
                     
                     # Store image reference in user data for future reference
                     if 'image_history' not in context.user_data:
@@ -370,7 +370,7 @@ class TextHandler:
                 )   
     async def show_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
-        history = self.user_data_manager.get_user_context(user_id)
+        history = await self.user_data_manager.get_user_context(user_id)
         
         if not history:
             await update.message.reply_text("You don't have any conversation history yet.")

@@ -121,24 +121,22 @@ class user_data_manager:
         warnings.warn("add_to_context is deprecated, use add_message instead", DeprecationWarning, stacklevel=2)
         self.add_message(user_id, message)
 
-    def get_user_data(self, user_id: str) -> Dict[str, Any]:
+    async def get_user_data(self, user_id: str) -> Dict[str, Any]:
         """
         Retrieve all data for a specific user.
-        
-        :param user_id: Unique identifier for the user
-        :return: Dictionary containing user data
         """
         try:
             user_data = self.users_collection.find_one({"user_id": user_id})
             if not user_data:
-                self.initialize_user(user_id)
+                await self.initialize_user(user_id)  # Fixed: properly await the coroutine
                 user_data = self.users_collection.find_one({"user_id": user_id})
             return user_data
         except Exception as e:
             self.logger.error(f"Error retrieving data for user {user_id}: {str(e)}")
             raise
-    def get_user_settings(self, user_id: int) -> dict:
-        """Get user settings from the database."""
+    # Rename this method to avoid conflict with the async version
+    def get_user_settings_sync(self, user_id: int) -> dict:
+        """Get user settings from the database (synchronous version)."""
         try:
             user_data = self.users_collection.find_one({"user_id": user_id})
             if user_data and 'settings' in user_data:
@@ -151,35 +149,34 @@ class user_data_manager:
         except Exception as e:
             self.logger.error(f"Error getting settings for user {user_id}: {str(e)}")
             raise
-    def get_user_context(self, user_id: str) -> List[str]:
+    async def get_user_context(self, user_id: str) -> List[str]:
         """
         Retrieve the context for a specific user.
         
         :param user_id: Unique identifier for the user
         :return: List of context messages for the user
         """
-        user_data = self.get_user_data(user_id)
+        user_data = await self.get_user_data(user_id)
         return user_data.get("contexts", [])
-
-    def get_conversation_history(self, user_id: str) -> List[str]:
+    
+    async def get_conversation_history(self, user_id: str) -> List[str]:
         """
         Retrieve the conversation history for a user.
         
         :param user_id: Unique identifier for the user
         :return: List of conversation context messages
         """
-        user_data = self.get_user_data(user_id)
+        user_data = await self.get_user_data(user_id)
         return user_data.get("contexts", [])
-
-
-    def get_user_settings(self, user_id: str) -> Dict[str, Any]:
+    
+    async def get_user_settings(self, user_id: str) -> Dict[str, Any]:
         """
         Retrieve user settings.
         
         :param user_id: Unique identifier for the user
         :return: Dictionary of user settings
         """
-        user_data = self.get_user_data(user_id)
+        user_data = await self.get_user_data(user_id)
         return user_data.get('settings', {})
 
     def update_user_settings(self, user_id: str, new_settings: Dict[str, Any]) -> None:
@@ -262,22 +259,23 @@ class user_data_manager:
             self.logger.error(f"Error resetting conversation history for user {user_id}: {str(e)}")
             raise
 
-    def get_user_preference(self, user_id: int, preference_key: str, default=None):
+    # Convert these methods to async since they call async methods
+    async def get_user_preference(self, user_id: int, preference_key: str, default=None):
         """Get a user's preference setting."""
         try:
-            user_data = self.get_user_data(user_id)
+            user_data = await self.get_user_data(user_id)
             if not user_data or 'preferences' not in user_data:
                 return default
             return user_data['preferences'].get(preference_key, default)
         except Exception as e:
             self.logger.error(f"Error getting user preference: {e}")
             return default
-
-    def set_user_preference(self, user_id: int, preference_key: str, value):
+    
+    async def set_user_preference(self, user_id: int, preference_key: str, value):
         """Set a user's preference setting."""
         try:
             # Initialize user if not yet initialized
-            self.initialize_user(user_id)
+            await self.initialize_user(user_id)
             
             # Update preference
             update_query = {

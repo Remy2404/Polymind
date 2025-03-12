@@ -154,9 +154,9 @@ class CommandHandlers:
         self.telegram_logger.log_message(user_id, "Opened settings menu")
     async def handle_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
-        user_data = self.user_data_manager.get_user_data(user_id)
+        user_data = await self.user_data_manager.get_user_data(user_id)
         stats = user_data.get('stats', {})
-
+    
         stats_message = (
             "📊 Your Bot Usage Statistics:\n\n"
             f"📝 Text Messages: {stats.get('messages', 0)}\n"
@@ -165,7 +165,7 @@ class CommandHandlers:
             f"📑 PDFs Analyzed: {stats.get('pdfs_processed', 0)}\n"
             f"Last Active: {stats.get('last_active', 'Never')}"
         )
-
+    
         await update.message.reply_text(stats_message)
 
     async def handle_export(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -760,8 +760,8 @@ class CommandHandlers:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Get current model
-        current_model = self.user_data_manager.get_user_preference(user_id, "preferred_model", default="gemini")
+        # Get current model - ADD await HERE
+        current_model = await self.user_data_manager.get_user_preference(user_id, "preferred_model", default="gemini")
         current_model_name = "Gemini 2.0 Flash" if current_model == "gemini" else "DeepSeek 70B"
         
         await update.message.reply_text(
@@ -780,8 +780,8 @@ class CommandHandlers:
         selected_model = query.data.replace("model_", "")
         model_name = "Gemini 2.0 Flash" if selected_model == "gemini" else "DeepSeek 70B"
         
-        # Save user's model preference
-        self.user_data_manager.set_user_preference(user_id, "preferred_model", selected_model)
+        # Save user's model preference - ADD await HERE
+        await self.user_data_manager.set_user_preference(user_id, "preferred_model", selected_model)
         
         # Update the message
         await query.edit_message_text(
@@ -789,7 +789,6 @@ class CommandHandlers:
             f"You can change this anytime with /switchmodel",
             parse_mode='Markdown'
         )
-    
        # In your command_handlers.py
     def register_handlers(self, application: Application, cache=None) -> None:
         try:

@@ -325,8 +325,19 @@ def get_application():
         # Set up the webhook if WEBHOOK_URL is provided
         if os.getenv('WEBHOOK_URL'):
             await bot.setup_webhook()
+        
+        # Start any background tasks that need to run
+        if hasattr(bot, 'reminder_manager'):
+            await bot.reminder_manager.start()
+    
+    # Shutdown event to clean up resources
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        if hasattr(bot, 'reminder_manager') and bot.reminder_manager.reminder_check_task:
+            await bot.reminder_manager.stop()
+        bot.shutdown()
     
     return app
 
-# For uvicorn to import
+# Create the application variable for uvicorn to import
 application = get_application()
