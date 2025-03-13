@@ -87,16 +87,16 @@ class TelegramBot:
             .persistence(PicklePersistence(filepath='conversation_states.pickle'))
             .http_version('1.1')
             .get_updates_http_version('1.1')
-            .read_timeout(15)     # Further reduced from 20s
-            .write_timeout(15)    # Further reduced from 20s
-            .connect_timeout(10)  # Further reduced from 15s
-            .pool_timeout(10)     # Further reduced from 15s
-            .connection_pool_size(32)  # Increased connection pool size
+            .read_timeout(None)     
+            .write_timeout(None)    
+            .connect_timeout(None)  
+            .pool_timeout(None)     
+            .connection_pool_size(128)  # Increased connection pool size
             .build()
         )
         
         # Initialize other services as needed
-        self._init_services()
+        self._init_services() 
         self._setup_handlers()
         
         # Create client session for HTTP requests
@@ -229,51 +229,23 @@ class TelegramBot:
         else:
             self.logger.info("Application is already running. Skipping start.")
 
-    async def _process_update_with_timeout(self, update, timeout=120.0):
-        """Process a single update with timeout protection"""
-        try:
-            return await asyncio.wait_for(
-                self.application.process_update(update),
-                timeout=timeout
-            )
-        except asyncio.TimeoutError:
-            self.logger.warning(f"Update processing timed out: {update.update_id}")
-            if hasattr(update, 'message') and update.message:
-                await update.message.reply_text(
-                    "Processing your request is taking longer than expected. I'll notify you when it's ready."
-                )
-            return None
-
     async def process_update(self, update_data: dict):
-        """Process updates received from webhook with improved error handling and performance."""
+        """Process updates received from webhook without timeout."""
         try:
-            # Ensure application is initialized before processing updates
             if not self.application.running:
-                self.logger.info("Application not initialized yet, initializing now...")
                 await self.application.initialize()
                 await self.application.start()
                 
-            # Check cache for identical recent requests (deduplication)
-            cache_key = str(hash(str(update_data)))
-            if cache_key in self.response_cache:
-                self.logger.info(f"Duplicate request detected, skipping: {update_data.get('update_id', 'unknown')}")
-                return
-            
-            # Add to cache to prevent duplicates
-            self.response_cache[cache_key] = True
-                
             update = Update.de_json(update_data, self.application.bot)
-            
-            # Process update with adaptive timeout
-            await self._process_update_with_timeout(update)
+            # Process update without timeout
+            await self.application.process_update(update)
             
         except Exception as e:
-            if os.getenv('ENVIRONMENT') == 'production':
-                self.logger.error(f"Error in process_update: {str(e)}")
-            else:
-                self.logger.error(f"Error in process_update: {e}")
-                self.logger.error(traceback.format_exc())
-                
+            self.logger.error(f"Error in process_update: {str(e)}")
+            if hasattr(update, 'message') and update.message:
+                await update.message.reply_text(
+                    "I'm processing your request. Please wait..."
+                )              
     def run_webhook(self, loop):
         @app.post(f"/webhook/{self.token}")
         async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
@@ -291,18 +263,28 @@ class TelegramBot:
                 return JSONResponse(content={"status": "error"}, status_code=500)
 
 async def start_bot(webhook: TelegramBot):
-    try:
-        # Create HTTP session
-        await webhook.create_session()
-        
-        # Initialize and start application
-        await webhook.application.initialize()
-        await webhook.application.start()
-        logger.info("Bot started successfully.")
-    except Exception as e:
-        logger.error(f"Error: {e}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise
+        try:
+            # Create HTTP session
+            await webhook.create_session()
+            
+            # Initialize and start application
+            await webhook.application.initialize()
+            await webhook.application.start()
+            logger.info("Bot started successfully.")
+        except Exception as e:
+            logger.error(f"Error: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise
+# Add this method to TelegramBot class
+async def keep_alive(self):
+        """Keep the connection alive."""
+        while True:
+            try:
+                await self.application.bot.get_me()
+            except Exception as e:
+                self.logger.warning(f"Keep-alive check failed: {e}")
+            finally:
+                await asyncio.sleep(60)  # Check every minute
 
 def create_app(webhook: TelegramBot, loop):
     webhook.run_webhook(loop)
@@ -338,16 +320,19 @@ if __name__ == '__main__':
             # Register the webhook handler
             app = create_app(main_bot, loop)
             
-            # Run FastAPI with optimized settings
             def run_fastapi():
                 port = int(os.environ.get("PORT", 8000))
-                uvicorn.run(
-                    app, 
-                    host="0.0.0.0", 
+                config = uvicorn.Config(
+                    app,
+                    host="0.0.0.0",
                     port=port,
-                    workers=4,  # Multiple workers for better concurrency
-                    loop="uvloop"  # Use uvloop for better performance
+                    loop="asyncio",
+                    timeout_keep_alive=300,
+                    limit_concurrency=1000,
+                    backlog=2048
                 )
+                server = uvicorn.Server(config)
+                server.run()
 
             fastapi_thread = Thread(target=run_fastapi)
             fastapi_thread.start()
@@ -373,23 +358,18 @@ def get_application():
     # Create a startup event to initialize the application when uvicorn starts
     @app.on_event("startup")
     async def startup_event():
-        # Initialize HTTP session
-        await bot.create_session()
-        
-        # Initialize and start the application using uvicorn's event loop
         await bot.application.initialize()
         await bot.application.start()
-        
-        # Set up the webhook if WEBHOOK_URL is provided
+            
         if os.getenv('WEBHOOK_URL'):
             await bot.setup_webhook()
     
-    # Add shutdown event to clean up resources
+    # Add shutdown handler
     @app.on_event("shutdown")
     async def shutdown_event():
-        await bot.shutdown()
+        await bot.application.stop()
+        await bot.application.shutdown()
     
     return app
-
 # For uvicorn to import
 application = get_application()
