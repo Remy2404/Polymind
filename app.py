@@ -59,10 +59,9 @@ thread_pool = ThreadPoolExecutor(max_workers=4)
 @app.get('/health')
 async def health_check():
     return JSONResponse(content={"status": "ok"}, status_code=200)
-
-@app.get("/")
-async def read_root():
-    return {"message": "Hello, World!"}
+@app.post("/")
+async def root_post():
+    return JSONResponse(content={"message": "Post request received"}, status_code=200)
 
 class TelegramBot:
     def __init__(self):
@@ -101,12 +100,6 @@ class TelegramBot:
         
         # Create client session for HTTP requests
         self.session = None
-        
-    async def create_session(self):
-        """Create aiohttp session for HTTP requests"""
-        if self.session is None or self.session.closed:
-            timeout = aiohttp.ClientTimeout(total=30)
-            self.session = aiohttp.ClientSession(timeout=timeout)
         
     def _init_db_connection(self):
         # More efficient retry with exponential backoff
@@ -228,7 +221,6 @@ class TelegramBot:
             await self.application.start()
         else:
             self.logger.info("Application is already running. Skipping start.")
-
     async def process_update(self, update_data: dict):
         """Process updates received from webhook without timeout."""
         try:
@@ -237,30 +229,43 @@ class TelegramBot:
                 await self.application.start()
                 
             update = Update.de_json(update_data, self.application.bot)
-            # Process update without timeout
-            await self.application.process_update(update)
             
+            # Process update in task to avoid blocking
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(self.application.process_update(update))
+                
         except Exception as e:
             self.logger.error(f"Error in process_update: {str(e)}")
             if hasattr(update, 'message') and update.message:
-                await update.message.reply_text(
-                    "I'm processing your request. Please wait..."
-                )              
+                try:
+                    await update.message.reply_text(
+                        "Processing your request..."
+                    )
+                except Exception as reply_error:
+                    self.logger.error(f"Failed to send error message: {reply_error}")             
+    # Update the webhook handler in run_webhook method
     def run_webhook(self, loop):
         @app.post(f"/webhook/{self.token}")
         async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             try:
-                # Extract data first
-                update_data = await request.json()
+                # Extract data with a timeout
+                update_data = await asyncio.wait_for(request.json(), timeout=None)
                 
-                # Start processing in background task with dedicated task group
+                # Process update in background without timeout
                 background_tasks.add_task(self.process_update, update_data)
                 
-                # Return response immediately
-                return JSONResponse(content={"status": "ok"}, status_code=200)
+                # Return immediate response
+                return JSONResponse(
+                    content={"status": "ok"}, 
+                    status_code=200,
+                    headers={"Connection": "keep-alive"}
+                )
             except Exception as e:
                 self.logger.error(f"Webhook error: {str(e)}")
-                return JSONResponse(content={"status": "error"}, status_code=500)
+                return JSONResponse(
+                    content={"status": "error", "detail": str(e)}, 
+                    status_code=500
+                )
 
 async def start_bot(webhook: TelegramBot):
         try:
@@ -319,7 +324,6 @@ if __name__ == '__main__':
             
             # Register the webhook handler
             app = create_app(main_bot, loop)
-            
             def run_fastapi():
                 port = int(os.environ.get("PORT", 8000))
                 config = uvicorn.Config(
@@ -327,9 +331,11 @@ if __name__ == '__main__':
                     host="0.0.0.0",
                     port=port,
                     loop="asyncio",
-                    timeout_keep_alive=300,
-                    limit_concurrency=1000,
-                    backlog=2048
+                    timeout_keep_alive=None,  
+                    timeout_graceful_shutdown=None,  
+                    limit_concurrency=None,  #
+                    backlog=4096,  
+                    workers=4
                 )
                 server = uvicorn.Server(config)
                 server.run()

@@ -94,36 +94,36 @@ class MessageHandlers:
         """Handle incoming voice messages."""
         user_id = update.effective_user.id
         self.telegram_logger.log_message(user_id, "Received voice message")
-    
-        await update.message.reply_text("I'm processing your voice message. Please wait...")
-    
+        
         try:
+            await update.message.reply_text("I'm processing your voice message. Please wait...")
+        
             with tempfile.TemporaryDirectory() as temp_dir:
                 # Download the voice file
                 file = await context.bot.get_file(update.message.voice.file_id)
                 ogg_file_path = os.path.join(temp_dir, f"{user_id}_voice.ogg")
                 await file.download_to_drive(ogg_file_path)
-    
+        
                 # Convert OGG to WAV
                 wav_file_path = os.path.join(temp_dir, f"{user_id}_voice.wav")
                 audio = AudioSegment.from_ogg(ogg_file_path)
                 audio.export(wav_file_path, format="wav")
-    
+        
                 # Convert the voice file to text
                 recognizer = sr.Recognizer()
                 with sr.AudioFile(wav_file_path) as source:
                     audio_data = recognizer.record(source)
                     text = recognizer.recognize_google(audio_data)
-    
+        
                 # Log the transcribed text
                 self.telegram_logger.log_message(user_id, f"Transcribed text: {text}")
-    
+        
                 # Initialize user data if not already initialized
-                await self.user_data_manager.initialize_user(user_id)
-    
+                self.user_data_manager.initialize_user(user_id)
+        
                 # Create text handler instance
                 text_handler = TextHandler(self.gemini_api, self.user_data_manager)
-    
+        
                 # Create a new Update object with the transcribed text
                 new_update = Update.de_json({
                     'update_id': update.update_id,
@@ -135,12 +135,10 @@ class MessageHandlers:
                         'text': text
                     }
                 }, context.bot)
-    
+        
                 # Process the transcribed text as if it were a regular text message
                 await text_handler.handle_text_message(new_update, context)
-    
-            # Update user stats
-            self.user_data_manager.update_stats(user_id, voice_message=True)
+                await self.user_data_manager.update_user_stats(user_id, {'voice_messages': 1, 'total_messages': 1})
     
         except sr.UnknownValueError:
             await update.message.reply_text("Sorry, I couldn't understand the audio. Could you please try again?")
@@ -150,7 +148,6 @@ class MessageHandlers:
         except Exception as e:
             self.logger.error(f"Error processing voice message: {str(e)}")
             await self._error_handler(update, context)
-    # src/handlers/message_handlers.py
 
     async def _handle_document_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle incoming document messages."""

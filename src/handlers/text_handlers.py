@@ -324,6 +324,7 @@ class TextHandler:
                     # Send each chunk
                     for chunk in response_chunks:
                         try:
+                            # Format with telegramify-markdown
                             formatted_chunk = await self.format_telegram_markdown(chunk)
                             sent_message = await update.message.reply_text(
                                 formatted_chunk,
@@ -331,10 +332,13 @@ class TextHandler:
                                 disable_web_page_preview=True
                             )
                             sent_messages.append(sent_message.message_id)
-                        except Exception as markdown_error:
-                            self.logger.warning(f"Markdown formatting failed: {markdown_error}")
-                            # Try without markdown if formatting fails
-                            sent_message = await update.message.reply_text(chunk, parse_mode=None)
+                        except Exception as formatting_error:
+                            self.logger.warning(f"Markdown formatting failed: {formatting_error}")
+                            # Try without markdown formatting and remove special characters
+                            sent_message = await update.message.reply_text(
+                                chunk.replace('*', '').replace('_', '').replace('`', ''),
+                                parse_mode=None
+                            )
                             sent_messages.append(sent_message.message_id)
         
                     # Store image info in user context
@@ -361,12 +365,13 @@ class TextHandler:
         
                     telegram_logger.log_message(f"Image analysis completed successfully", user_id)
                 else:
-                    await update.message.reply_text("Sorry, I couldn't analyze the image. Please try again.")
+                    await update.message.reply_text("Sorry, I couldn't analyze the image\\. Please try again\\.", parse_mode='MarkdownV2')
         
             except Exception as e:
                 self.logger.error(f"Error processing image: {e}")
                 await update.message.reply_text(
-                    "Sorry, I couldn't process your image. The response might be too long or there might be an issue with the image format. Please try a different image or a more specific question."
+                    "Sorry, I couldn't process your image\\. The response might be too long or there might be an issue with the image format\\. Please try a different image or a more specific question\\.",
+                    parse_mode='MarkdownV2'
                 )   
     async def show_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
