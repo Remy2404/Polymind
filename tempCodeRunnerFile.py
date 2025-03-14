@@ -16,7 +16,6 @@ from telegram.ext import (
     CommandHandler, 
     PicklePersistence,
 )
-from contextlib import asynccontextmanager
 from cachetools import TTLCache, LRUCache
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.database.connection import get_database, close_database_connection
@@ -259,10 +258,9 @@ class TelegramBot:
                 except Exception as reply_error:
                     self.logger.error(f"Failed to send error message: {reply_error}")             
     # Update the webhook handler in run_webhook method
-    def run_webhook(self):
-        # Define route for webhook handling
+    def run_webhook(self, loop):
         @app.post(f"/webhook/{self.token}")
-        async def _webhook_handler(request: Request):
+        async def webhook_handler(request: Request):
             try:
                 update_data = await request.json()
                 await self.process_update(update_data)
@@ -295,11 +293,12 @@ async def keep_alive(self):
                 self.logger.warning(f"Keep-alive check failed: {e}")
             finally:
                 await asyncio.sleep(60)
-def create_app(webhook: TelegramBot):
+
+async def create_app(webhook: TelegramBot, loop):
         """Create and configure the FastAPI application."""
         try:
-            webhook.run_webhook()  # Register webhook route
-            return app  # Return the global FastAPI app
+            app = await webhook.run_webhook(loop)
+            return app
         except Exception as e:
             logger.error(f"Error creating app: {e}")
             logger.error(traceback.format_exc())
@@ -331,8 +330,9 @@ if __name__ == '__main__':
             
             # Now set up the webhook
             loop.run_until_complete(main_bot.setup_webhook())
+            
             # Register the webhook handler
-            app = create_app(main_bot)
+            app = loop.run_until_complete(create_app(main_bot, loop))
             def run_fastapi():
                 port = int(os.environ.get("PORT", 8000))
                 config = uvicorn.Config(
@@ -340,9 +340,9 @@ if __name__ == '__main__':
                     host="0.0.0.0",
                     port=port,
                     loop="asyncio",
-                    timeout_keep_alive=60, 
-                    timeout_graceful_shutdown=None,
-                    limit_concurrency=None,
+                    timeout_keep_alive=None,  
+                    timeout_graceful_shutdown=None,  
+                    limit_concurrency=None,  #
                     backlog=4096,  
                     workers=4
                 )
@@ -357,38 +357,33 @@ if __name__ == '__main__':
             logger.error(f"Traceback: {traceback.format_exc()}")
             loop.run_until_complete(main_bot.shutdown())  # Proper async shutdown
             sys.exit(1)
+
 def get_application():
     """Create and configure the application for uvicorn without creating a new event loop"""
-
-    
     # Set the environment variable so our code knows we're using uvicorn
     os.environ["DEV_SERVER"] = "uvicorn"
     
     # Initialize the bot
     bot = TelegramBot()
     
-    # Create lifespan context manager (replaces on_event)
-    @asynccontextmanager
-    async def lifespan(app_instance: FastAPI):
-        # Startup logic
-        app_instance.state.bot = bot  # Store bot in app state
+    # Setup webhook handling without creating a new loop
+    existing_loop = asyncio.get_event_loop()
+    bot.run_webhook(existing_loop)
+    
+    # Create a startup event to initialize the application when uvicorn starts
+    @app.on_event("startup")
+    async def startup_event():
         await bot.application.initialize()
         await bot.application.start()
-        
+            
         if os.getenv('WEBHOOK_URL'):
             await bot.setup_webhook()
-            
-        yield  # FastAPI serves requests here
-        
-        # Shutdown logic
+    
+    # Add shutdown handler
+    @app.on_event("shutdown")
+    async def shutdown_event():
         await bot.application.stop()
         await bot.application.shutdown()
-    
-    # Register lifespan with the app
-    app.lifespan = lifespan
-    
-    # Setup webhook handling
-    bot.run_webhook()
     
     return app
 # For uvicorn to import
