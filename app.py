@@ -244,28 +244,28 @@ class TelegramBot:
                 except Exception as reply_error:
                     self.logger.error(f"Failed to send error message: {reply_error}")             
     # Update the webhook handler in run_webhook method
-    def run_webhook(self, loop):
-        @app.post(f"/webhook/{self.token}")
-        async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
-            try:
-                # Extract data with a timeout
-                update_data = await asyncio.wait_for(request.json(), timeout=None)
-                
-                # Process update in background without timeout
-                background_tasks.add_task(self.process_update, update_data)
-                
-                # Return immediate response
-                return JSONResponse(
-                    content={"status": "ok"}, 
-                    status_code=200,
-                    headers={"Connection": "keep-alive"}
-                )
-            except Exception as e:
-                self.logger.error(f"Webhook error: {str(e)}")
-                return JSONResponse(
-                    content={"status": "error", "detail": str(e)}, 
-                    status_code=500
-                )
+def run_webhook(self, loop):
+    @app.post(f"/webhook/{self.token}")
+    async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
+        try:
+            # Extract data without a timeout
+            update_data = await request.json()
+
+            # Process update in background without timeout
+            background_tasks.add_task(self.process_update, update_data)
+
+            # Return immediate response
+            return JSONResponse(
+                content={"status": "ok"},
+                status_code=200,
+                headers={"Connection": "keep-alive"}
+            )
+        except Exception as e:
+            self.logger.error(f"Webhook error: {str(e)}")
+            return JSONResponse(
+                content={"status": "error", "detail": str(e)},
+                status_code=500
+            )
 
 async def start_bot(webhook: TelegramBot):
         try:
