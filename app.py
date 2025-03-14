@@ -97,9 +97,23 @@ class TelegramBot:
         # Initialize other services as needed
         self._init_services() 
         self._setup_handlers()
-        
-        # Create client session for HTTP requests
-        self.session = None
+
+    async def create_session(self):
+        """Create an aiohttp session for HTTP requests."""
+        if not hasattr(self, 'session') or self.session is None or self.session.closed:
+            self.session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30)  
+            )
+            return self.session
+
+    # Close the database connection
+    async def close_db_connection(self):
+        close_database_connection(self.client)
+        self.logger.info("Database connection closed.")
+        self.client = None
+        self.db = None
+        self.logger.info("Database connection closed.")
+    
         
     def _init_db_connection(self):
         # More efficient retry with exponential backoff
@@ -125,8 +139,8 @@ class TelegramBot:
     def _init_services(self):
         # Initialize services with proper error handling
         try:
+            model_name = "google/gemma-3-27b-it"
             # Use a more efficient model if available
-            model_name = "gemini-2.0-flash"
             vision_model = genai.GenerativeModel(model_name)
             rate_limiter = RateLimiter(requests_per_minute=30)  # Increased rate limit for better throughput
             self.gemini_api = GeminiAPI(vision_model=vision_model, rate_limiter=rate_limiter)
@@ -244,28 +258,17 @@ class TelegramBot:
                 except Exception as reply_error:
                     self.logger.error(f"Failed to send error message: {reply_error}")             
     # Update the webhook handler in run_webhook method
-def run_webhook(self, loop):
-    @app.post(f"/webhook/{self.token}")
-    async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
-        try:
-            # Extract data without a timeout
-            update_data = await request.json()
-
-            # Process update in background without timeout
-            background_tasks.add_task(self.process_update, update_data)
-
-            # Return immediate response
-            return JSONResponse(
-                content={"status": "ok"},
-                status_code=200,
-                headers={"Connection": "keep-alive"}
-            )
-        except Exception as e:
-            self.logger.error(f"Webhook error: {str(e)}")
-            return JSONResponse(
-                content={"status": "error", "detail": str(e)},
-                status_code=500
-            )
+    def run_webhook(self, loop):
+        @app.post(f"/webhook/{self.token}")
+        async def webhook_handler(request: Request):
+            try:
+                update_data = await request.json()
+                await self.process_update(update_data)
+                return JSONResponse(content={"status": "ok", "method": "webhook"}, status_code=200)
+            except Exception as e:
+                self.logger.error(f"Update processing error: {e}")
+                self.logger.error(traceback.format_exc())
+                return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
 
 async def start_bot(webhook: TelegramBot):
         try:
@@ -289,10 +292,10 @@ async def keep_alive(self):
             except Exception as e:
                 self.logger.warning(f"Keep-alive check failed: {e}")
             finally:
-                await asyncio.sleep(60)  # Check every minute
+                await asyncio.sleep(60)
 
-def create_app(webhook: TelegramBot, loop):
-    webhook.run_webhook(loop)
+async def create_app(webhook: TelegramBot, loop):
+    app = await webhook.run_webhook(loop)
     return app
 
 if __name__ == '__main__':
@@ -323,7 +326,7 @@ if __name__ == '__main__':
             loop.run_until_complete(main_bot.setup_webhook())
             
             # Register the webhook handler
-            app = create_app(main_bot, loop)
+            app = loop.run_until_complete(create_app(main_bot, loop))
             def run_fastapi():
                 port = int(os.environ.get("PORT", 8000))
                 config = uvicorn.Config(

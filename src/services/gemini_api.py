@@ -44,7 +44,7 @@ class GeminiAPI:
             "response_mime_type": "text/plain"
         }
         try:
-            self.vision_model = genai.GenerativeModel("gemini-2.0-flash-thinking-exp-01-21")
+            self.vision_model = genai.GenerativeModel("gemini-2.0-pro-exp-02-05")
             self.rate_limiter = RateLimiter(requests_per_minute=20)
             # Initialize MongoDB connection
             self.db, self.client = get_database()
