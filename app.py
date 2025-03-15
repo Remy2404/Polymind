@@ -87,10 +87,6 @@ class TelegramBot:
             .persistence(PicklePersistence(filepath='conversation_states.pickle'))
             .http_version('1.1')
             .get_updates_http_version('1.1')
-            .read_timeout(None)     
-            .write_timeout(None)    
-            .connect_timeout(None)  
-            .pool_timeout(None)     
             .connection_pool_size(128)  # Increased connection pool size
             .build()
         )
