@@ -14,24 +14,29 @@ FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
-# Install runtime dependencies including curl for healthcheck
+# Install runtime dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy and install wheels - simplified approach
-# Copy wheels from the builder
+# Copy wheels and install dependencies
 COPY --from=builder /app/wheels /app/wheels
+RUN pip install --no-cache-dir --no-index --find-links=/app/wheels /app/wheels/* && \
+    rm -rf /app/wheels
 
-# Install wheels from /app/wheels folder and remove them after installation
-RUN pip install --no-cache-dir --no-index --find-links=/app/wheels /app/wheels/* && rm -rf /app/wheels
-
-# Copy application code - exclude unnecessary files
-COPY src/ /app/src/
-COPY app.py requirements.txt ./
+# Copy application code
+COPY . /app/
 
 # Set environment variables
 ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+ENV DEV_SERVER=uvicorn
+
+# Use proper entrypoint for production
+ENTRYPOINT ["python", "-m", "uvicorn"]
+CMD ["app:application", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
