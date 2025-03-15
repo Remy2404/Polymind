@@ -32,11 +32,4 @@ ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 ENV DEV_SERVER=uvicorn
-
-# Use proper entrypoint for production
-ENTRYPOINT ["python", "-m", "uvicorn"]
-CMD ["app:application", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
-
-# Add healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+CMD ["app:application", "--host", "0.0.0.0", "--port", "8000"]
