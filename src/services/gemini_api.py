@@ -1,27 +1,38 @@
 import logging
 import google.generativeai as genai
-# from google import genai as genai_client
-from typing import Optional, List, Dict, BinaryIO
+# from google import genai_client
+from typing import Optional, List, Dict, Any
 import asyncio
 import datetime
 import sys
 import os
-from PIL import Image, UnidentifiedImageError
-import io
-from services.rate_limiter import RateLimiter
+from PIL import UnidentifiedImageError
+# import io
+
+from pyparsing import Any
+from services.rate_limiter import RateLimiter, rate_limit
 from utils.telegramlog import telegram_logger
 from dotenv import load_dotenv
 from services.image_processing import ImageProcessor
 from database.connection import get_database, get_image_cache_collection
-import httpx
+# import httpx
 import time
-# Load environment variables
-load_dotenv()
+import aiohttp
+import traceback
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from google.auth.exceptions import TransportError
+from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable, GoogleAPIError
+
+load_dotenv() 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
     telegram_logger.log_error("GEMINI_API_KEY not found in environment variables.", 0)
     sys.exit(1)
+
+def safe_get(d: Optional[Dict], key: str, default: Any = None) -> Any:
+    """Safely get a value from a dictionary."""
+    return d.get(key, default) if d else default
 
 class GeminiAPI:
     def __init__(self, vision_model, rate_limiter: RateLimiter):
@@ -66,6 +77,46 @@ class GeminiAPI:
         self.image_analysis_last_failure = 0
         self.circuit_breaker_threshold = 5  # Number of failures before opening circuit
         self.circuit_breaker_timeout = 300  # Seconds to keep circuit open (5 minutes)
+
+        self.session = None
+        self._initialize_session_lock = asyncio.Lock()
+        self._connection_errors = 0
+        self._last_error_time = 0
+        self._consecutive_failures = 0
+        self._backoff_time = 1.0  # Initial backoff in seconds
+
+        # Add conversation history storage
+        self.conversation_history = {}
+
+    async def ensure_session(self):
+        """Create or reuse aiohttp session"""
+        if self.session is None or self.session.closed:
+            async with self._initialize_session_lock:
+                if self.session is None or self.session.closed:
+                    # Use optimized connection pooling settings
+                    tcp_connector = aiohttp.TCPConnector(
+                        limit=100,  # Connection limit
+                        limit_per_host=20,  # Connections per host 
+                        force_close=False,  # Keep connections alive
+                        enable_cleanup_closed=True,  # Clean up closed connections
+                        keepalive_timeout=60,  # Keepalive timeout in seconds
+                    )
+                    
+                    # Create session with retry options
+                    self.session = aiohttp.ClientSession(
+                        connector=tcp_connector,
+                        timeout=aiohttp.ClientTimeout(total=60, connect=10)
+                    )
+                    self.logger.debug("Created new aiohttp session for Gemini API")
+        
+        return self.session
+    
+    async def close(self):
+        """Close the aiohttp session"""
+        if self.session and not self.session.closed:
+            await self.session.close()
+            self.logger.info("Closed Gemini API aiohttp session")
+            self.session = None
 
     async def call_with_circuit_breaker(self, api_name, api_function, *args, **kwargs):
         """Call API with circuit breaker pattern to prevent cascading failures."""
@@ -151,9 +202,6 @@ class GeminiAPI:
             telegram_logger.log_error(f"Image analysis error: {str(e)}", 0)
             return "I'm sorry, I encountered an error processing your image. Please try again with a different image."
     
-
-    
-    
     async def generate_image(self, prompt: str) -> Optional[bytes]:
         """
         Generate an image based on the provided text prompt using the Gemini API.
@@ -186,9 +234,11 @@ class GeminiAPI:
             # Check if the response contains an image
             if response and response.parts and response.parts[0].images:
                 image_bytes = response.parts[0].images[0].to_bytes()
-
                 cache_document = {
-                    "prompt": prompt,
+                "prompt": prompt,
+                "image_data": image_bytes,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc),
+                "prompt": prompt,
                     "image_data": image_bytes,
                     "timestamp": datetime.datetime.utcnow()
                 }
@@ -214,7 +264,7 @@ class GeminiAPI:
         Returns the image as bytes.
         """
         await self.rate_limiter.acquire()
-        
+            # import json
         try:
             # Use a proper configuration for image generation
             import httpx
@@ -261,8 +311,8 @@ class GeminiAPI:
                 response_data = response.json()
                 
                 # Extract the image data from the response
-                if 'candidates' in response_data and response_data['candidates']:
-                    for part in response_data['candidates'][0]['content']['parts']:
+                    # mime_type = part['inline_data']['mime_type']
+                for part in response_data['candidates'][0]['content']['parts']:
                         if 'inline_data' in part:  # Note: changed from 'inlineData' to 'inline_data'
                             # Extract base64 encoded image
                             mime_type = part['inline_data']['mime_type']
@@ -288,32 +338,7 @@ class GeminiAPI:
         except Exception as e:
             self.logger.error(f"Imagen 3 generation error: {str(e)}")
             return None
-    async def _get_response_guidelines(self) -> str:
-            """Load response style guidelines from dataset file."""
-            try:
-                guidelines_path = os.path.join(os.path.dirname(__file__), '..', 'doc', 'dataset.md')
-                
-                # Read file synchronously as it's a small file
-                with open(guidelines_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    
-                # Extract the core guidelines (first two rules from each main section)
-                guidelines = [
-                    "# RESPONSE STYLE GUIDELINES:",
-                    "- Use straightforward language and explain technical terms",
-                    "- Keep explanations direct and focused on essential information",
-                    "- Structure responses with clear headings and organized lists",
-                    "- Include examples for programming or technical explanations",
-                    "- Use a professional yet conversational tone",
-                    "- End complex responses with a follow-up question",
-                    "- Reference previous interactions and shared images when relevant",
-                    "- Provide relevant command suggestions when appropriate"
-                ]
-                
-                return "\n".join(guidelines)
-            except Exception as e:
-                self.logger.error(f"Failed to load response guidelines: {str(e)}")
-                return ""  # Return empty string if file can't be loaded
+
     async def generate_response(self, prompt: str, context: List[Dict] = None, image_context: str = None, document_context: str = None) -> Optional[str]:
         """Generate a text response with circuit breaker protection."""
         try:
@@ -326,23 +351,17 @@ class GeminiAPI:
             self.logger.error(f"Failed to generate response: {str(e)}")
             return "I'm sorry, I'm having trouble processing your request. Please try again later."
         
-# Move your current implementation to a private method
+    # Move your current implementation to a private method
     async def _generate_response_impl(self, prompt: str, context: List[Dict] = None, image_context: str = None, document_context: str = None) -> Optional[str]:
-        # Your existing generate_response code here
+        """Implementation of generate_response with proper error handling and context management."""
         await self.rate_limiter.acquire()
-        # ... rest of the current implementation
+        
         try:
             # Prepare the conversation history
             conversation = []
             
-            # Get response style guidelines
-            guidelines = await self._get_response_guidelines()
-            
-            # Add bot identification and style guidelines at the start of the conversation
-            system_message = (
-                "You are DeepGem, an AI assistant that can help with various tasks. "
-                f"{guidelines}"
-            )
+            # Simplified system message without guidelines
+            system_message = "You are DeepGem, an AI assistant that can help with various tasks."
             
             conversation.append(genai.types.ContentDict(
                 role="user",
@@ -359,20 +378,43 @@ class GeminiAPI:
                 parts=[memory_context]
             ))
             
+            # Add image context if provided
+            if image_context:
+                conversation.append(genai.types.ContentDict(
+                    role="user",
+                    parts=[f"Image context: {image_context}"]
+                ))
+                
+            # Add document context if provided
+            if document_context:
+                conversation.append(genai.types.ContentDict(
+                    role="user",
+                    parts=[f"Document context: {document_context}"]
+                ))
+            
             # Add conversation context
             if context:
-                for message in context:
-                    conversation.append(genai.types.ContentDict(
-                        role="user" if message['role'] == "user" else "model",
-                        parts=[message['content']]
-                    ))
+                # Safely handle context - ensure it's a list and entries are dictionaries
+                if isinstance(context, list):
+                    for message in context:
+                        if isinstance(message, dict) and 'role' in message and 'content' in message:
+                            role = message.get('role')
+                            content = message.get('content')
+                            if role and content:
+                                conversation.append(genai.types.ContentDict(
+                                    role="user" if role == "user" else "model",
+                                    parts=[content]
+                                ))
+                        else:
+                            self.logger.warning(f"Invalid context message format: {message}")
             
             # Add the current prompt to the conversation
             conversation.append(genai.types.ContentDict(
                 role="user",
                 parts=[prompt]
             ))
-            # Generate the response
+            
+            # Generate the response with safety settings
             response = await asyncio.to_thread(
                 self.vision_model.generate_content,
                 conversation,
@@ -385,29 +427,150 @@ class GeminiAPI:
                 ]
             )
 
-            if response.text:
+            # Process response
+            if response and hasattr(response, 'text'):
                 return response.text
+            else:
+                self.logger.warning("Empty or invalid response received from Gemini API")
+                return None
         
         except Exception as e:
-            self.logger.error(f"Error generating response: {str(e)}")
-        
-        return None
+            self.logger.error(f"Error generating response in _generate_response_impl: {str(e)}")
+            # Log the traceback for debugging
+            self.logger.error(traceback.format_exc())
+            return None
 
-    async def generate_content(self, content, generation_config, max_retries=5):
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((ResourceExhausted, ServiceUnavailable, TransportError)),
+        reraise=True
+    )
+    @rate_limit
+    async def generate_content(self, prompt: str, image_data: List = None) -> Dict[str, Any]:
+        """
+        Generate content from prompt with optional image
+        
+        Args:
+            prompt: The text prompt 
+            image_data: Optional list of image data
+        
+        Returns:
+            Dictionary with response content
+        """
+        try:
+            # Ensure we have a session
+            await self.ensure_session()
+            
+            start_time = time.time()
+            model = self.vision_model
+            
+            # Prepare the content parts
+            content_parts = [prompt]
+            
+            if image_data:
+                for img in image_data:
+                    content_parts.append(img)
+            
+            # Generate the content with timeout protection
+            response = await asyncio.wait_for(
+                model.generate_content_async(
+                    content_parts,
+                    generation_config=self.generation_config,
+                    safety_settings=[
+                        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
+                        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
+                        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
+                        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
+                    ]
+                ),
+                timeout=45.0  # 45 second timeout
+            )
+            
+            # Reset error counters on successful request
+            self._consecutive_failures = 0
+            self._backoff_time = 1.0
+            
+            # Process response
+            time_taken = time.time() - start_time
+            self.logger.debug(f"Gemini API request completed in {time_taken:.2f}s")
+            
+            if not hasattr(response, "candidates") or not response.candidates:
+                return {
+                    "status": "error",
+                    "message": "No response from Gemini API",
+                    "content": None
+                }
+            
+            result = {
+                "status": "success",
+                "content": response.text,
+                "prompt_feedback": getattr(response, "prompt_feedback", None),
+                "usage_metadata": getattr(response, "usage_metadata", None)
+            }
+            
+            return result
+            
+        except (ResourceExhausted, ServiceUnavailable, TransportError) as e:
+            # Handle rate limiting and server errors with exponential backoff
+            self._consecutive_failures += 1
+            self.logger.warning(f"Gemini API temporary error (attempt {self._consecutive_failures}): {str(e)}")
+            
+            # Apply increasingly longer backoff for consecutive failures
+            backoff = min(60, self._backoff_time * (2 ** (self._consecutive_failures - 1)))
+            self._backoff_time = backoff
+            
+            await asyncio.sleep(backoff)
+            raise  # Let the retry decorator handle it
+            
+        except asyncio.TimeoutError:
+            self.logger.error("Gemini API request timed out after 45 seconds")
+            return {
+                "status": "error",
+                "message": "Request to Gemini API timed out",
+                "content": None
+            }
+            
+        except GoogleAPIError as e:
+            self.logger.error(f"Google API error: {str(e)}")
+            return {
+                "status": "error", 
+                "message": f"Google API error: {str(e)}",
+                "content": None
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in generate_content: {str(e)}")
+            self.logger.error(traceback.format_exc())
+            return {
+                "status": "error",
+                "message": f"Unexpected error: {str(e)}",
+                "content": None
+            }
+
+    async def generate_content_with_retry(self, content, generation_config, max_retries=5):
+        """Generate content with automatic retries and exponential backoff"""
         retry_delay = 1  # Start with 1 second
 
         for attempt in range(max_retries):
             async with self.rate_limiter:
                 try:
-                    response = await genai.generate_content(content, generation_config=generation_config)
+                    # Use to_thread for synchronous API calls
+                    response = await asyncio.to_thread(
+                        self.vision_model.generate_content,
+                        content, 
+                        generation_config=generation_config
+                    )
                     return response
                 except Exception as e:
-                    if "RATE_LIMIT_EXCEEDED" in str(e).upper():
-                        self.logger.warning(f"Rate limit exceeded. Retrying in {retry_delay} seconds...")
-                        await asyncio.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
+                    if attempt < max_retries - 1:  # Don't sleep on the last attempt
+                        if "RATE_LIMIT_EXCEEDED" in str(e).upper():
+                            self.logger.warning(f"Rate limit exceeded. Retrying in {retry_delay} seconds...")
+                            await asyncio.sleep(retry_delay)
+                            retry_delay *= 2  # Exponential backoff
+                        else:
+                            self.logger.error(f"Error generating content: {e}")
+                            raise
                     else:
-                        self.logger.error(f"Error generating content: {e}")
-                        raise
-        self.logger.error("Max retries exceeded. Unable to generate content.")
-        raise Exception("Service is currently unavailable. Please try again later.")
+                        self.logger.error(f"Max retries ({max_retries}) exceeded. Unable to generate content.")
+                        raise Exception("Service is currently unavailable. Please try again later.")

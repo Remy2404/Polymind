@@ -12,322 +12,281 @@ from telegram.ext import MessageHandler, filters
 import datetime
 from services.gemini_api import GeminiAPI
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, Any, Optional, List, Union
+from functools import partial
+import traceback
+import gc
+import time
+import weakref
+from telegram import Update, Message, Document
+from telegram.ext import (
+    MessageHandler, 
+    filters, 
+    ContextTypes, 
+    CallbackContext
+)
+from src.services.gemini_api import GeminiAPI
+from src.services.user_data_manager import user_data_manager
+from src.utils.telegramlog import TelegramLogger
+from src.services.document_processing import DocumentProcessor
+from src.handlers.text_handlers import TextHandler
 
+logger = logging.getLogger(__name__)
 
 class MessageHandlers:
-    def __init__(self, gemini_api, user_data_manager, telegram_logger , document_processor ,text_handler):
+    def __init__(
+        self, 
+        gemini_api: GeminiAPI, 
+        user_data_manager: user_data_manager,
+        telegram_logger: TelegramLogger,
+        document_processor: DocumentProcessor,
+        text_handler: TextHandler
+    ):
+        """Initialize the MessageHandlers with required services."""
         self.gemini_api = gemini_api
-        self.text_handler = text_handler
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
         self.document_processor = document_processor
-        self.logger = logging.getLogger(__name__)
-
-
-    async def _handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-                """Handle incoming text messages."""
-                try:
-                    if update.message is None and update.callback_query is None:
-                        self.logger.error("Received update with no message or callback query")
-                        return
-
-                    if update.callback_query:
-                        user_id = update.callback_query.from_user.id
-                        message_text = update.callback_query.data
-                        await update.callback_query.answer()
-                    else:
-                        user_id = update.effective_user.id
-                        message_text = update.message.text
-
-                    self.logger.info(f"Received text message from user {user_id}: {message_text}")
-
-                    # Check if the bot is mentioned
-                    bot_username = "@Gemini_AIAssistBot"
-                    if bot_username in message_text:
-                        self.logger.info(f"Bot mentioned by user {user_id}")
-                        if update.callback_query:
-                            await update.callback_query.edit_message_text("Hello! How can I assist you today?")
-                        else:
-                            await update.message.reply_text("Hello! How can I assist you today?")
-
-                    # Initialize user data if not already initialized
-                    self.user_data_manager.initialize_user(user_id)
-
-                    # Create text handler instance
-                    text_handler = TextHandler(self.gemini_api, self.user_data_manager)
-
-                    # Process the message
-                    await text_handler.handle_text_message(update, context)
-                    await self.user_data_manager.update_user_stats(user_id, {'text_messages': 1, 'total_messages': 1})
-                except Exception as e:
-                    self.logger.error(f"Error processing text message: {str(e)}")
-                    await self._error_handler(update, context)
-                self.user_data_manager.update_stats(user_id, text_message=True)
-    async def _handle_image_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle incoming image messages."""
-        try:
-            user_id = update.effective_user.id
-            self.telegram_logger.log_message(user_id, "Received image message")
-
-            # Check if the bot is mentioned in the image caption
-            bot_username = "@Gemini_AIAssistBot"
-            if update.message.caption and bot_username in update.message.caption:
-                self.logger.info(f"Bot mentioned by user {user_id} in image caption")
-                await update.message.reply_text("I see you sent an image mentioning me. How can I assist you?")
-
-            # Initialize user data if not already initialized
-            self.user_data_manager.initialize_user(user_id)
+        self.text_handler = text_handler
+        
+        # Use a thread pool for CPU-bound operations
+        self.executor = ThreadPoolExecutor(max_workers=4)
+        
+        # Active requests tracking with weak references to avoid memory leaks
+        self.active_requests = weakref.WeakSet()
+        self.request_limiter = asyncio.Semaphore(20)  # Limit concurrent requests
+        
+        logger.info("MessageHandlers initialized with optimized concurrency settings")
+        
+    async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle document uploads with improved memory management."""
+        if not update.message or not update.message.document:
+            return
             
-            # Create text handler instance (which also handles images)
-            text_handler = TextHandler(self.gemini_api, self.user_data_manager)
-
-            # Process the image
-            await text_handler.handle_image(update, context)
-            await self.user_data_manager.update_user_stats(user_id, {'images': 1, 'total_messages': 1})
-        except Exception as e:
-            self.logger.error(f"Error processing image message: {str(e)}")
-            await self._error_handler(update, context)
-        self.user_data_manager.update_stats(user_id, image=True)
-            
-
-    async def _handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle incoming voice messages."""
         user_id = update.effective_user.id
-        self.telegram_logger.log_message(user_id, "Received voice message")
+        self.telegram_logger.log_message(f"Document received: {update.message.document.file_name}", user_id)
         
-        try:
-            await update.message.reply_text("I'm processing your voice message. Please wait...")
-        
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Download the voice file
-                file = await context.bot.get_file(update.message.voice.file_id)
-                ogg_file_path = os.path.join(temp_dir, f"{user_id}_voice.ogg")
-                await file.download_to_drive(ogg_file_path)
-        
-                # Convert OGG to WAV
-                wav_file_path = os.path.join(temp_dir, f"{user_id}_voice.wav")
-                audio = AudioSegment.from_ogg(ogg_file_path)
-                audio.export(wav_file_path, format="wav")
-        
-                # Convert the voice file to text
-                recognizer = sr.Recognizer()
-                with sr.AudioFile(wav_file_path) as source:
-                    audio_data = recognizer.record(source)
-                    text = recognizer.recognize_google(audio_data)
-        
-                # Log the transcribed text
-                self.telegram_logger.log_message(user_id, f"Transcribed text: {text}")
-        
-                # Initialize user data if not already initialized
-                self.user_data_manager.initialize_user(user_id)
-        
-                # Create text handler instance
-                text_handler = TextHandler(self.gemini_api, self.user_data_manager)
-        
-                # Create a new Update object with the transcribed text
-                new_update = Update.de_json({
-                    'update_id': update.update_id,
-                    'message': {
-                        'message_id': update.message.message_id,
-                        'date': update.message.date.timestamp(),
-                        'chat': update.message.chat.to_dict(),
-                        'from': update.message.from_user.to_dict(),
-                        'text': text
-                    }
-                }, context.bot)
-        
-                # Process the transcribed text as if it were a regular text message
-                await text_handler.handle_text_message(new_update, context)
-                await self.user_data_manager.update_user_stats(user_id, {'voice_messages': 1, 'total_messages': 1})
-    
-        except sr.UnknownValueError:
-            await update.message.reply_text("Sorry, I couldn't understand the audio. Could you please try again?")
-        except sr.RequestError as e:
-            self.logger.error(f"Could not request results from Google Speech Recognition service; {e}")
-            await update.message.reply_text("Sorry, there was an error processing your voice message. Please try again later.")
-        except Exception as e:
-            self.logger.error(f"Error processing voice message: {str(e)}")
-            await self._error_handler(update, context)
-
-    async def _handle_document_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle incoming document messages."""
-        user_id = update.effective_user.id
-        self.logger.info(f"Processing document for user: {user_id}")
-
-        try:
-            document = update.message.document
-            file = await context.bot.get_file(document.file_id)
-            file_extension = document.file_name.split('.')[-1]
-
-            response = await self.document_processor.process_document_from_file(
-                file=await file.download_as_bytearray(),
-                file_extension=file_extension,
-                prompt="Analyze this document."
-            )
-
-            formatted_response = await self.text_handler.format_telegram_markdown(response)
-            await update.message.reply_text(
-                formatted_response,
-                parse_mode='MarkdownV2',
-                disable_web_page_preview=True
-            )
-
-            self.user_data_manager.update_stats(user_id, document=True)
-            self.telegram_logger.log_message("Document processed successfully.", user_id)
-
-        except Exception as e:
-            self.logger.error(f"Error processing document: {e}")
-            if "RATE_LIMIT_EXCEEDED" in str(e).upper():
-                await update.message.reply_text(
-                    "The service is currently experiencing high demand. Please try again later."
-                )
-            else:
-                await self._error_handler(update, context)
-
-    async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-        self.telegram_logger.log_message("Processing document", user_id)
-
-        try:
-            # Check if the message is in a group chat
-            if update.effective_chat.type in ['group', 'supergroup']:
-                # Process only if the bot is mentioned in the caption
-                bot_username = '@' + context.bot.username
-                caption = update.message.caption or ""
-                if bot_username not in caption:
-                    return
-                else:
-                    # Remove bot mention
-                    caption = caption.replace(bot_username, '').strip()
-            else:
-                caption = update.message.caption or "Please analyze this document."
-            
-            # Get basic document information
-            document = update.message.document
-            file_name = document.file_name
-            file_id = document.file_id
-            file_extension = os.path.splitext(file_name)[1][1:] if '.' in file_name else ''
-            
-            # Send typing action and status message
-            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-            status_message = await update.message.reply_text(
-                f"Processing your {file_extension.upper()} document... This might take a moment."
-            )
-            
-            # Download and process the document
-            document_file = await context.bot.get_file(file_id)
-            file_content = await document_file.download_as_bytearray()
-            document_file_obj = io.BytesIO(file_content)
-            
-            # Default prompt if caption is empty
-            prompt = caption or f"Please analyze this {file_extension.upper()} file and provide a detailed summary."
-            
-            # Use enhanced document processing for PDFs
-            if file_extension.lower() == 'pdf':
-                response = await self.document_processor.process_document_enhanced(
-                    file=document_file_obj,
-                    file_extension=file_extension,
-                    prompt=prompt
-                )
-            else:
-                response = await self.document_processor.process_document_from_file(
-                    file=document_file_obj,
-                    file_extension=file_extension,
-                    prompt=prompt
-                )
-            
-            # Delete status message
-            await status_message.delete()
-            
-            if response:
-                # Split long messages
-                response_chunks = await self.text_handler.split_long_message(response)
-                sent_messages = []
-                
-                # Send each chunk
-                for chunk in response_chunks:
+        async def process_document():
+            try:
+                # Acquire semaphore to limit concurrent processing
+                async with self.request_limiter:
+                    # Set typing status
+                    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+                    
+                    # First send acknowledgment message
+                    status_message = await update.message.reply_text("Processing your document...")
+                    
+                    # Process document in background with timeout protection
                     try:
-                        formatted_chunk = await self.text_handler.format_telegram_markdown(chunk)
-                        sent_message = await update.message.reply_text(
-                            formatted_chunk,
-                            parse_mode='MarkdownV2',
-                            disable_web_page_preview=True
+                        document = update.message.document
+                        start_time = time.time()
+                        
+                        # Download file with timeout
+                        file = await asyncio.wait_for(
+                            context.bot.get_file(document.file_id),
+                            timeout=30.0
                         )
-                        sent_messages.append(sent_message.message_id)
-                    except Exception as markdown_error:
-                        self.logger.warning(f"Markdown formatting failed: {markdown_error}")
-                        sent_message = await update.message.reply_text(chunk, parse_mode=None)
-                        sent_messages.append(sent_message.message_id)
+                        
+                        # Process document
+                        file_bytes = await file.download_as_bytearray()
+                        
+                        # Get document content using the document processor
+                        content = await self.document_processor.process_document(
+                            file_bytes, 
+                            document.file_name,
+                            document.mime_type
+                        )
+                        
+                        processing_time = time.time() - start_time
+                        logger.info(f"Document processed in {processing_time:.2f}s: {document.file_name}")
+                        
+                        if content:
+                            # Save document to user's history
+                            await self.user_data_manager.save_document_to_history(
+                                user_id, 
+                                document.file_name, 
+                                document.file_unique_id, 
+                                document.mime_type, 
+                                content[:1000]  # Store truncated preview
+                            )
+                            
+                            # Send summary and generate response
+                            await status_message.edit_text(f"📄 Document '{document.file_name}' processed successfully!")
+                            
+                            # Let the user know document content is available via history
+                            instruction_msg = (
+                                "I've saved your document content. You can now ask me questions about it, "
+                                "and I'll analyze its contents."
+                            )
+                            await update.message.reply_text(instruction_msg)
+                            
+                        else:
+                            await status_message.edit_text(
+                                f"❌ Sorry, I couldn't process '{document.file_name}'. "
+                                "The file may be too large, corrupted, or in an unsupported format."
+                            )
+                    except asyncio.TimeoutError:
+                        await status_message.edit_text("⏱️ Document processing timed out. The file may be too large.")
+                        logger.warning(f"Document processing timed out for user {user_id}: {document.file_name}")
+            except Exception as e:
+                error_message = f"Error processing document: {str(e)}"
+                logger.error(error_message)
+                logger.error(traceback.format_exc())
+                self.telegram_logger.log_error(e, user_id)
                 
-                # Store document info in user context
-                self.user_data_manager.add_to_context(
-                    user_id, 
-                    {"role": "user", "content": f"[Document: {file_name} with prompt: {prompt}]"}
-                )
-                self.user_data_manager.add_to_context(
-                    user_id, 
-                    {"role": "assistant", "content": response}
-                )
-                
-                # Store document reference in user data (NEW)
-                if 'document_history' not in context.user_data:
-                    context.user_data['document_history'] = []
-    
-                # Store document info in user data (OLD)
-                context.user_data['document_history'].append({
-                    'timestamp': datetime.datetime.now().isoformat(),
-                    'file_id': file_id,
-                    'file_name': file_name, 
-                    'file_extension': file_extension,
-                    'prompt': prompt,
-                    'summary': response[:300] + "..." if len(response) > 300 else response,
-                    'full_response': response,  # Critical for follow-up questions
-                    'message_id': update.message.message_id,
-                    'response_message_ids': [msg.message_id for msg in sent_messages]
-                })
-                
-                # Update user stats
-                if self.user_data_manager:
-                    self.user_data_manager.update_stats(user_id, document=True)
-                
-                self.telegram_logger.log_message(f"Document analysis completed successfully", user_id)
-            else:
-                await update.message.reply_text("Sorry, I couldn't analyze the document. Please try again.")
+                try:
+                    await update.message.reply_text(
+                        "Sorry, I couldn't process your document. Please try a different format or a smaller file."
+                    )
+                except Exception:
+                    pass
+            finally:
+                # Force garbage collection to free memory from large documents
+                gc.collect()
         
-        except ValueError as ve:
-            await update.message.reply_text(f"Error: {str(ve)}")
-        except Exception as e:
-            self.logger.error(f"Error processing document: {str(e)}")
-            await update.message.reply_text(
-                "Sorry, I couldn't process your document. Please ensure it's in a supported format."
-            )
-
-    async def _error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle errors occurring in the dispatcher."""
-        self.logger.error(f"Update {update} caused error: {context.error}")
-        if update and update.effective_message:
-            await update.effective_message.reply_text(
-                "An error occurred while processing your request. Please try again later."
-            )
-
-
-    async def _error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle errors occurring in the dispatcher."""
-        self.logger.error(f"Update {update} caused error: {context.error}")
-        if update and update.effective_message:
-            await update.effective_message.reply_text(
-                "An error occurred while processing your request. Please try again later."
-            )
-    def register_handlers(self, application):
-        """Register message handlers with the application."""
+        # Create background task for processing
+        task = asyncio.create_task(process_document())
+        self.active_requests.add(task)
+        
+    async def handle_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle image messages with improved error handling and memory management."""
+        if not update.message or not update.message.photo:
+            return
+            
+        user_id = update.effective_user.id
+        self.telegram_logger.log_message("Image received", user_id)
+        
+        async def process_image():
+            try:
+                async with self.request_limiter:
+                    # Set typing action
+                    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+                    
+                    # Get the highest resolution image
+                    photo = update.message.photo[-1]
+                    
+                    # Extract caption or use default prompt
+                    caption = update.message.caption or "Analyze this image in detail"
+                    
+                    # Get image file with timeout
+                    try:
+                        file = await asyncio.wait_for(
+                            context.bot.get_file(photo.file_id),
+                            timeout=15.0  # 15 second timeout for file retrieval
+                        )
+                        
+                        # Download image as bytes
+                        image_bytes = await file.download_as_bytearray()
+                        
+                        # Process the image and generate a response with the gemini_api
+                        response = await asyncio.wait_for(
+                            self.gemini_api.analyze_image(image_bytes, caption),
+                            timeout=45.0  # 45 second timeout for processing
+                        )
+                        
+                        if response:
+                            # Send response in chunks if needed
+                            if len(response) > 4000:
+                                for i in range(0, len(response), 4000):
+                                    chunk = response[i:i+4000]
+                                    await update.message.reply_text(chunk)
+                            else:
+                                await update.message.reply_text(response)
+                                
+                            # Save interaction to user history
+                            await self.user_data_manager.save_image_analysis_to_history(
+                                user_id,
+                                photo.file_unique_id,
+                                caption,
+                                response[:500]  # Save truncated response
+                            )
+                        else:
+                            await update.message.reply_text(
+                                "Sorry, I couldn't analyze this image. Please try a different image."
+                            )
+                            
+                    except asyncio.TimeoutError:
+                        await update.message.reply_text("The operation timed out. Please try again with a smaller image.")
+                        
+            except Exception as e:
+                error_message = f"Error processing image: {str(e)}"
+                logger.error(error_message)
+                logger.error(traceback.format_exc())
+                self.telegram_logger.log_error(e, user_id)
+                
+                try:
+                    await update.message.reply_text("Sorry, there was an error processing your image.")
+                except Exception:
+                    pass
+            finally:
+                # Clean up resources
+                gc.collect()
+                
+        # Create background task for processing
+        task = asyncio.create_task(process_image())
+        self.active_requests.add(task)
+        
+    async def _error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle errors with detailed logging and graceful user communication."""
         try:
-            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text_message))
-            application.add_handler(MessageHandler(filters.PHOTO, self._handle_image_message))
-            application.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
-            application.add_handler(MessageHandler(filters.Document.ALL, self._handle_document_message))
-
-            application.add_error_handler(self._error_handler)
-            self.logger.info("Message handlers registered successfully")
+            if update and isinstance(update, Update) and update.effective_chat:
+                user_id = update.effective_user.id if update.effective_user else 0
+                chat_id = update.effective_chat.id
+                
+                # Log the error
+                logger.error(f"Error for user {user_id}: {context.error}")
+                logger.error(traceback.format_exc())
+                self.telegram_logger.log_error(context.error, user_id)
+                
+                # Send user-friendly error message
+                try:
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text="Sorry, something went wrong processing your request. Please try again later."
+                    )
+                except Exception as send_error:
+                    logger.error(f"Failed to send error message: {send_error}")
+            else:
+                logger.error(f"Update caused error without chat context: {context.error}")
+                logger.error(traceback.format_exc())
+                
         except Exception as e:
-            self.logger.error(f"Failed to register message handlers: {str(e)}")
-            raise Exception("Failed to register message handlers") from e
+            logger.error(f"Error in error handler: {e}")
+            logger.error(traceback.format_exc())
+            
+    def register_handlers(self, application) -> None:
+        """Register all message handlers with the application."""
+        # Handle documents (PDFs, DOCs, etc.)
+        application.add_handler(MessageHandler(
+            filters.Document.ALL & ~filters.COMMAND, 
+            self.handle_document
+        ))
+        
+        # Handle images
+        application.add_handler(MessageHandler(
+            filters.PHOTO & ~filters.COMMAND, 
+            self.handle_image
+        ))
+        
+    async def cleanup(self):
+        """Clean up resources and cancel pending requests."""
+        try:
+            # Cancel all active tasks
+            active_tasks = list(self.active_requests)
+            if active_tasks:
+                logger.info(f"Cancelling {len(active_tasks)} pending message handler tasks")
+                for task in active_tasks:
+                    if not task.done():
+                        task.cancel()
+                        
+                # Wait for tasks to be cancelled
+                await asyncio.gather(*active_tasks, return_exceptions=True)
+                
+            # Shutdown thread pool
+            self.executor.shutdown(wait=False)
+            logger.info("Message handlers cleaned up successfully")
+            
+        except Exception as e:
+            logger.error(f"Error during message handler cleanup: {e}")
+            logger.error(traceback.format_exc())

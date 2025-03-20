@@ -1,6 +1,7 @@
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Keeping this in case it's needed in future extensions
 from pymongo.collection import Collection
 from database.connection import get_database
 from datetime import datetime, timedelta
@@ -16,7 +17,18 @@ class user_data_manager:
         :param db: MongoDB database instance
         """
         self.db = db
-        self.users_collection: Collection = self.db.users
+        # Check if db is None and handle appropriately
+        if self.db is None:
+            self.users_collection = None
+            self.conversation_history = None
+            self.document_history = None
+            self.image_analysis_history = None
+            logging.warning("Database connection is None. Running with limited functionality.")
+        else:
+            self.users_collection = self.db.users
+            self.conversation_history = self.db.conversation_history
+            self.document_history = self.db.document_history
+            self.image_analysis_history = self.db.image_analysis_history
         self.logger = logging.getLogger(__name__)
 
     async def initialize_user(self, user_id: int) -> None:
@@ -35,10 +47,13 @@ class user_data_manager:
         except Exception as e:
             self.logger.error(f"Error initializing user {user_id}: {str(e)}")
             raise
-
     def update_stats(self, user_id: int, message: bool = False, image: bool = False, image_generation: bool = False, document: bool = False):
         """Update user statistics."""
         try:
+            if self.db is None:
+                self.logger.error("Cannot update stats: Database connection is None")
+                return
+                
             users_collection = self.db.get_collection("users")
             
             # Create update dictionary
@@ -46,6 +61,7 @@ class user_data_manager:
                 "$set": {"last_active": datetime.now()},
                 "$inc": {}
             }
+
             
             # Increment message count if applicable
             if message:
@@ -157,6 +173,9 @@ class user_data_manager:
         :return: List of context messages for the user
         """
         user_data = await self.get_user_data(user_id)
+        # Add null check before attempting to use .get()
+        if user_data is None:
+            return []
         return user_data.get("contexts", [])
     
     async def get_conversation_history(self, user_id: str) -> List[str]:
