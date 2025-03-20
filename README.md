@@ -90,6 +90,10 @@ TOGETHER_API_KEY=your_together_api_key
 BOT_MODE=webhook  # or polling
 WEBHOOK_URL=your_webhook_url  # if using webhook mode
 PORT=8000
+DEV_MODE=true
+IGNORE_DB_ERROR=true
+LOG_LEVEL=INFO
+LOGS_DIR=logs
 ADMIN_USER_ID=your_telegram_id
 ```
 
