@@ -29,6 +29,7 @@ class DeepSeekLLM:
         
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
         self.client = Together(api_key=self.api_key) if self.api_key else None
+        self.recent_conversations = {}  # Add conversation storage
         logger.info(f"Initialized DeepSeekLLM with model '{self.model_name}'")
 
     def _remove_thinking_tags(self, text: str) -> str:
@@ -78,7 +79,9 @@ class DeepSeekLLM:
         max_tokens: int = 1024,
         top_p: float = 0.9,
         frequency_penalty: float = 0.0,
-        presence_penalty: float = 0.0
+        presence_penalty: float = 0.0,
+        user_id: Optional[int] = None,
+        user_data_manager = None
     ) -> Optional[str]:
         """Generate text from a prompt."""
         messages = []
@@ -87,10 +90,30 @@ class DeepSeekLLM:
         if system_message:
             messages.append({"role": "system", "content": system_message})
             
+        # Retrieve conversation history if user_id is provided
+        if user_id is not None and user_data_manager is not None:
+            try:
+                # Get conversation history
+                history = await self.get_conversation_context(user_data_manager, user_id, limit=10)
+                
+                # Add conversation history to messages
+                for msg in history:
+                    if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
+                        role = msg['role']
+                        # Map 'assistant' role to 'assistant' (Together API format)
+                        if role == 'assistant':
+                            role = 'assistant'
+                        messages.append({"role": role, "content": msg['content']})
+                
+                logger.info(f"Added {len(history)} previous messages to conversation context")
+            except Exception as e:
+                logger.error(f"Error retrieving conversation history: {e}")
+            
         # Add user prompt
         messages.append({"role": "user", "content": prompt})
         
-        return await self.generate_chat_response(
+        # Generate response with full conversation history
+        response = await self.generate_chat_response(
             messages, 
             temperature=temperature,
             max_tokens=max_tokens,
@@ -98,6 +121,18 @@ class DeepSeekLLM:
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty
         )
+        
+        # Store conversation entry if user_id provided
+        if user_id is not None and response and user_data_manager is not None:
+            try:
+                # Add user message to context
+                if hasattr(user_data_manager, 'add_to_context') and callable(user_data_manager.add_to_context):
+                    await user_data_manager.add_to_context(user_id, {"role": "user", "content": prompt})
+                    await user_data_manager.add_to_context(user_id, {"role": "assistant", "content": response})
+            except Exception as e:
+                logger.error(f"Error updating conversation history: {e}")
+        
+        return response
     
     async def generate_chat_response(
         self, 

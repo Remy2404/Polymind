@@ -129,8 +129,18 @@ class CommandHandlers:
         self.telegram_logger.log_message(update.effective_user.id, "Help command requested")
     async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
+        
+        # Get personal info before resetting
+        personal_info = await self.user_data_manager.get_user_personal_info(user_id)
+        
+        # Reset conversation history
         await self.user_data_manager.reset_conversation(user_id)
-        await update.message.reply_text("Conversation history has been reset!")
+        
+        # If there was personal information, confirm we remember it
+        if personal_info and 'name' in personal_info:
+            await update.message.reply_text(f"Conversation history has been reset, {personal_info['name']}! I'll still remember your personal details.")
+        else:
+            await update.message.reply_text("Conversation history has been reset!")
 
     async def settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         try:

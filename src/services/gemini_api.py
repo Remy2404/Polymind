@@ -87,6 +87,9 @@ class GeminiAPI:
 
         # Add conversation history storage
         self.conversation_history = {}
+        
+        # Add user information cache to maintain persistent memory across interactions
+        self.user_info_cache = {}
 
     async def ensure_session(self):
         """Create or reuse aiohttp session"""
@@ -351,7 +354,6 @@ class GeminiAPI:
             self.logger.error(f"Failed to generate response: {str(e)}")
             return "I'm sorry, I'm having trouble processing your request. Please try again later."
         
-    # Move your current implementation to a private method
     async def _generate_response_impl(self, prompt: str, context: List[Dict] = None, image_context: str = None, document_context: str = None) -> Optional[str]:
         """Implementation of generate_response with proper error handling and context management."""
         await self.rate_limiter.acquire()
@@ -371,7 +373,8 @@ class GeminiAPI:
             # Add system context about memory capabilities
             memory_context = ("You have the ability to remember previous conversations including "
                             "descriptions of images and documents the user has shared. When answering, "
-                            "consider text conversations, image descriptions, and document content in your context.")
+                            "consider text conversations, image descriptions, and document content in your context. "
+                            "Reference relevant previous discussions when answering the user's current question.")
                             
             conversation.append(genai.types.ContentDict(
                 role="user",
@@ -392,11 +395,21 @@ class GeminiAPI:
                     parts=[f"Document context: {document_context}"]
                 ))
             
-            # Add conversation context
+            # Add conversation context - improved handling
             if context:
-                # Safely handle context - ensure it's a list and entries are dictionaries
-                if isinstance(context, list):
-                    for message in context:
+                # Ensure context isn't too long by taking the most recent entries
+                max_context_entries = 15  # Increased from previous value
+                recent_context = context[-max_context_entries:] if len(context) > max_context_entries else context
+                
+                # Add a reminder about conversation length
+                if len(context) > max_context_entries:
+                    conversation.append(genai.types.ContentDict(
+                        role="user", 
+                        parts=[f"Note: There are {len(context) - max_context_entries} earlier messages in our conversation that aren't shown here."]
+                    ))
+                
+                # Process each context message
+                for message in recent_context:
                         if isinstance(message, dict) and 'role' in message and 'content' in message:
                             role = message.get('role')
                             content = message.get('content')
@@ -405,9 +418,7 @@ class GeminiAPI:
                                     role="user" if role == "user" else "model",
                                     parts=[content]
                                 ))
-                        else:
-                            self.logger.warning(f"Invalid context message format: {message}")
-            
+                                    
             # Add the current prompt to the conversation
             conversation.append(genai.types.ContentDict(
                 role="user",
