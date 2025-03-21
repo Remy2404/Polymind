@@ -192,15 +192,12 @@ class TextHandler:
             
             preferred_model = await self.user_data_manager.get_user_preference(user_id, "preferred_model", default="gemini")
             
-            # Apply response style guidelines
-            enhanced_prompt_with_guidelines = await self._apply_response_guidelines(enhanced_prompt, preferred_model)
-            
             try:
                 if preferred_model == "deepseek":
                     system_message = "You are an AI assistant that helps users with tasks and answers questions helpfully, accurately, and ethically."
                     response = await asyncio.wait_for(
                         deepseek_llm.generate_text(
-                            prompt=enhanced_prompt_with_guidelines,  # Use the prompt with guidelines
+                            prompt=enhanced_prompt,  # Use the original prompt
                             system_message=system_message,
                             temperature=0.7,
                             max_tokens=4000,
@@ -212,7 +209,7 @@ class TextHandler:
                 else:
                     response = await asyncio.wait_for(
                         self.gemini_api.generate_response(
-                            prompt=enhanced_prompt_with_guidelines,  # Use the prompt with guidelines
+                            prompt=enhanced_prompt,  # Use the original prompt
                             context=user_context[-self.max_context_length:]
                         ),
                         timeout=60.0
@@ -495,40 +492,6 @@ class TextHandler:
             return True, image_prompt
         
         return False, ""
-
-    async def _apply_response_guidelines(self, prompt: str, preferred_model: str) -> str:
-        """Apply appropriate response style guidelines based on the selected model."""
-        try:
-            guidelines_path = os.path.join(os.path.dirname(__file__), '..', 'doc', 'dataset.md')
-            async with aiofiles.open(guidelines_path, 'r', encoding='utf-8') as file:
-                content = await file.read()
-                
-            # Select appropriate guidelines based on model
-            if preferred_model == "deepseek":
-                style_instruction = """
-                Please follow these guidelines for your response:
-                - Provide detailed analytical responses
-                - Include code examples for programming questions
-                - Use logical organization with headers
-                - Start with the most important information
-                - End complex responses with a follow-up question
-                """
-            else:  # gemini
-                style_instruction = """
-                Please follow these guidelines for your response:
-                - Use straightforward language and explain technical terms
-                - Focus on essential information first
-                - Include code examples for programming questions
-                - Use a professional yet conversational tone
-                - End with a follow-up question when appropriate
-                """
-                
-            # Add the style instruction to the beginning of the prompt
-            enhanced_prompt = f"{style_instruction}\n\nUser query: {prompt}"
-            return enhanced_prompt
-        except Exception as e:
-            self.logger.error(f"Error applying response guidelines: {str(e)}")
-            return prompt  # Return original prompt if there was an error
 
     def get_handlers(self):
         return [
