@@ -3,12 +3,14 @@ import sys
 import logging
 import asyncio
 import time
-from fastapi import BackgroundTasks, FastAPI, Request
+import aiohttp
+from concurrent.futures import ThreadPoolExecutor
+from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
+from fastapi.middleware.gzip import GZipMiddleware
 from dotenv import load_dotenv
 from telegram import Update
 import traceback
-import signal
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -37,11 +39,10 @@ from src.services.document_processing import DocumentProcessor
 from src.database.connection import get_database
 from src.services.user_data_manager import user_data_manager
 from src.services.text_to_video import text_to_video_generator
-from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 
-# Configure logging
+# Configure logging efficiently
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -53,14 +54,11 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI with performance optimizations
 app = FastAPI()
-from fastapi.middleware.gzip import GZipMiddleware
-
 app.add_middleware(
     GZipMiddleware, minimum_size=1000
 )  # Compress responses to reduce network latency
+
 # Create thread pool for CPU-bound tasks
-
-
 thread_pool = ThreadPoolExecutor(max_workers=4)
 
 
@@ -119,7 +117,7 @@ async def test_webhook(request: Request):
 
 class TelegramBot:
     def __init__(self):
-        """Initialize the Telegram Bot with necessary services"""
+        # Initialize only essential services at startup
         self.logger = logging.getLogger(__name__)
 
         # More efficient caching strategy
@@ -165,19 +163,9 @@ class TelegramBot:
         for attempt in range(max_retries):
             try:
                 self.db, self.client = get_database()
-
-                # If DEV_MODE and IGNORE_DB_ERROR are enabled, the get_database function
-                # will return a mock database that won't cause errors
-                if (
-                    self.db is None
-                    and os.getenv("DEV_MODE", "false").lower() != "true"
-                    and os.getenv("IGNORE_DB_ERROR", "false").lower() != "true"
-                ):
+                if self.db is None:
                     raise ConnectionError("Failed to connect to the database")
-
-                self.logger.info(
-                    "Database connection established or mock DB initialized"
-                )
+                self.logger.info("Connected to MongoDB successfully")
                 return
             except Exception as e:
                 if attempt < max_retries - 1:
@@ -185,13 +173,13 @@ class TelegramBot:
                         f"Database connection attempt {attempt+1} failed, retrying..."
                     )
                     time.sleep(retry_delay)
-                    retry_delay *= 2
+                    retry_delay *= 2  # Exponential backoff
                 else:
                     self.logger.error(f"All database connection attempts failed: {e}")
                     raise
 
     def _init_services(self):
-        """Initialize services with proper error handling"""
+        # Initialize services with proper error handling
         try:
             # Use a more efficient model if available
             model_name = "gemini-2.5-pro-exp-03-25"
@@ -207,10 +195,8 @@ class TelegramBot:
             self.user_data_manager = user_data_manager(self.db)
             self.telegram_logger = telegram_logger
         except Exception as e:
-            self.logger.error(f"Error initializing core services: {e}")
-            self.logger.error(traceback.format_exc())
-            if os.getenv("DEV_MODE", "false").lower() != "true":
-                raise
+            self.logger.error(f"Error initializing services: {e}")
+            raise
 
         self.text_handler = TextHandler(self.gemini_api, self.user_data_manager)
         self.command_handler = CommandHandlers(
@@ -273,26 +259,19 @@ class TelegramBot:
 
         # Remove any existing error handlers before adding new one
         self.application.error_handlers.clear()
+        # Add error handler last
         self.application.add_error_handler(self.message_handlers._error_handler)
         self.application.run_webhook = self.run_webhook
 
     async def setup_webhook(self):
-        """Set up webhook for Telegram updates"""
+        """Set up webhook with proper update processing."""
         webhook_path = f"/webhook/{self.token}"
-        webhook_url = os.getenv("WEBHOOK_URL")
+        webhook_url = f"{os.getenv('WEBHOOK_URL')}{webhook_path}"
 
-        if not webhook_url:
-            self.logger.warning(
-                "WEBHOOK_URL not set in environment. Using localhost for development."
-            )
-            webhook_url = "https://localhost:8000"
-
-        webhook_url = f"{webhook_url}{webhook_path}"
-
-        # Delete existing webhook and clear pending updates
+        # First, delete existing webhook and get pending updates
         await self.application.bot.delete_webhook(drop_pending_updates=True)
 
-        # Webhook configuration
+        # Optimized webhook configuration
         webhook_config = {
             "url": webhook_url,
             "allowed_updates": [
@@ -306,15 +285,14 @@ class TelegramBot:
 
         self.logger.info(f"Setting webhook to: {webhook_url}")
 
-        # Initialize application if needed
         if not self.application.running:
             await self.application.initialize()
             await self.application.start()
 
-        # Set webhook
+        # Set up webhook with new configuration
         await self.application.bot.set_webhook(**webhook_config)
 
-        # Verify webhook status
+        # Log webhook info for verification
         webhook_info = await self.application.bot.get_webhook_info()
         self.logger.info(f"Webhook status: {webhook_info}")
 
@@ -325,11 +303,9 @@ class TelegramBot:
             self.logger.info("Application is already running. Skipping start.")
 
     async def process_update(self, update_data: dict):
-        """Process updates received from webhook"""
+        """Process updates received from webhook without timeout."""
         try:
-            # Initialize application if not running
             if not self.application.running:
-                self.logger.info("Application not initialized yet, initializing now...")
                 await self.application.initialize()
                 await self.application.start()
 
@@ -349,16 +325,14 @@ class TelegramBot:
 
     # Update the webhook handler in run_webhook method
     def run_webhook(self, loop):
-        """Configure webhook handler for FastAPI"""
-
         @app.post(f"/webhook/{self.token}")
-        async def webhook_handler(request: Request):
+        async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             try:
                 # Extract data with a timeout
                 update_data = await asyncio.wait_for(request.json(), timeout=None)
 
                 # Process update in background without timeout
-                BackgroundTasks.add_task(self.process_update, update_data)
+                background_tasks.add_task(self.process_update, update_data)
 
                 # Return immediate response
                 return JSONResponse(
@@ -401,7 +375,6 @@ async def keep_alive(self):
 
 
 def create_app(webhook: TelegramBot, loop):
-    """Create and configure FastAPI application"""
     webhook.run_webhook(loop)
     return app
 
@@ -463,7 +436,8 @@ if __name__ == "__main__":
 
 
 def get_application():
-    """Create and configure the application for uvicorn"""
+    """Create and configure the application for uvicorn without creating a new event loop"""
+    # Set the environment variable so our code knows we're using uvicorn
     os.environ["DEV_SERVER"] = "uvicorn"
 
     # Initialize the bot
