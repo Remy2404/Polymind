@@ -20,14 +20,16 @@ class TextHandler:
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
         self.max_context_length = 9
-        
+
         # Update MemoryManager initialization with more appropriate settings
         self.memory_manager = MemoryManager(
-            db=user_data_manager.db if hasattr(user_data_manager, 'db') else None,
-            max_history_size=15  # Slightly larger than max_context_length for better history management
+            db=user_data_manager.db if hasattr(user_data_manager, "db") else None,
+            max_history_size=15,  # Slightly larger than max_context_length for better history management
         )
         # Configure token limit based on the model you're using
-        self.memory_manager.token_limit = 8192  # Adjust based on your model's capabilities
+        self.memory_manager.token_limit = (
+            8192  # Adjust based on your model's capabilities
+        )
 
     async def format_telegram_markdown(self, text: str) -> str:
         try:
@@ -67,7 +69,7 @@ class TextHandler:
         user_id = update.effective_user.id
         message = update.message or update.edited_message
         message_text = message.text
-        
+
         # Define a unique conversation ID for this user
         conversation_id = f"user_{user_id}"
 
@@ -142,7 +144,7 @@ class TextHandler:
             formatted_history = self.memory_manager.get_formatted_history(
                 conversation_id, max_messages=self.max_context_length
             )
-            
+
             # Also get user context from existing system for backward compatibility
             user_context = await self.user_data_manager.get_user_context(user_id)
 
@@ -225,15 +227,15 @@ class TextHandler:
                         # Store the response in both storage systems
                         # Add to MemoryManager
                         await self.memory_manager.add_user_message(
-                            conversation_id, 
-                            f"Generate an image of: {image_prompt}", 
-                            str(user_id)
+                            conversation_id,
+                            f"Generate an image of: {image_prompt}",
+                            str(user_id),
                         )
                         await self.memory_manager.add_assistant_message(
-                            conversation_id, 
-                            f"Here's the image I generated of {image_prompt}."
+                            conversation_id,
+                            f"Here's the image I generated of {image_prompt}.",
                         )
-                        
+
                         # Also add to existing system for backward compatibility
                         self.user_data_manager.add_to_context(
                             user_id,
@@ -377,10 +379,10 @@ class TextHandler:
                 await self.memory_manager.add_assistant_message(
                     conversation_id, response
                 )
-                
+
                 # Optionally manage context window to ensure we stay within token limits
                 await self.memory_manager._maybe_manage_context_window(conversation_id)
-                
+
                 # Also add to existing system for backward compatibility
                 self.user_data_manager.add_to_context(
                     user_id, {"role": "user", "content": message_text}
@@ -435,6 +437,11 @@ class TextHandler:
 
             photo = update.message.photo[-1]
             image_file = await context.bot.get_file(photo.file_id)
+            if image_file is None:
+                await update.message.reply_text(
+                    "Failed to retrieve image file. Please try again."
+                )
+                return
             image_bytes = await image_file.download_as_bytearray()
 
             # Use the updated analyze_image method
@@ -470,18 +477,15 @@ class TextHandler:
                 # Store the image interaction in both systems
                 # Add to MemoryManager
                 await self.memory_manager.add_user_message(
-                    conversation_id, 
-                    f"[Image with caption: {caption}]", 
-                    str(user_id)
+                    conversation_id, f"[Image with caption: {caption}]", str(user_id)
                 )
                 await self.memory_manager.add_assistant_message(
-                    conversation_id, 
-                    response
+                    conversation_id, response
                 )
-                
+
                 # Optionally manage context window
                 await self.memory_manager._maybe_manage_context_window(conversation_id)
-                
+
                 # Also store in legacy system
                 await self.user_data_manager.add_to_context(
                     user_id,
@@ -532,17 +536,19 @@ class TextHandler:
     ) -> None:
         user_id = update.effective_user.id
         conversation_id = f"user_{user_id}"
-        
+
         # Get messages from MemoryManager
         messages = self.memory_manager.get_messages(conversation_id)
-        
+
         if not messages:
             # Fall back to legacy system if no memory manager history
             legacy_history = await self.user_data_manager.get_user_context(user_id)
             if not legacy_history:
-                await update.message.reply_text("You don't have any conversation history yet.")
+                await update.message.reply_text(
+                    "You don't have any conversation history yet."
+                )
                 return
-            
+
             # Display legacy history
             history_text = "Your conversation history:\n\n"
             for entry in legacy_history:
@@ -722,17 +728,19 @@ class TextHandler:
             MessageHandler(filters.PHOTO, self.handle_image),
         ]
 
-    async def reset_conversation(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def reset_conversation(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         """Reset a user's conversation history in both memory systems."""
         user_id = update.effective_user.id
         conversation_id = f"user_{user_id}"
-        
+
         # Clear conversation in MemoryManager
         self.memory_manager.clear_conversation(conversation_id)
-        
+
         # Also clear in the older system for backward compatibility
         await self.user_data_manager.clear_history(str(user_id))
-        
+
         # Clear other context data in user_data
         if "image_history" in context.user_data:
             context.user_data["image_history"] = []
@@ -740,6 +748,6 @@ class TextHandler:
             context.user_data["document_history"] = []
         if "bot_messages" in context.user_data:
             context.user_data["bot_messages"] = {}
-            
+
         await update.message.reply_text("✅ Your conversation history has been reset.")
         telegram_logger.log_message(f"Conversation history cleared", user_id)

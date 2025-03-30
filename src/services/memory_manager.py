@@ -87,17 +87,44 @@ class MemoryManager:
         content: str,
         user_id: str = None,
         timestamp: float = None,
+        **metadata,
     ) -> None:
-        """Add a user message to the conversation."""
+        """Add a user message to the conversation with extended metadata support.
+
+        Args:
+            conversation_id: Unique ID for the conversation
+            content: The actual message content
+            user_id: Optional ID of the user
+            timestamp: Optional timestamp for the message
+            **metadata: Any additional metadata to store with the message,
+                       such as language, message_type, etc.
+        """
         conversation = self.get_or_create_conversation(conversation_id)
-        metadata = {"user_id": user_id} if user_id else {}
+
+        # Build metadata dictionary
+        msg_metadata = {}
+        if user_id:
+            msg_metadata["user_id"] = user_id
         if timestamp:
-            metadata["timestamp"] = timestamp
-        conversation.add_message("user", content, **metadata)
+            msg_metadata["timestamp"] = timestamp
+
+        # Add any additional metadata passed as keyword arguments
+        msg_metadata.update(metadata)
+
+        # Add the message with all metadata
+        conversation.add_message("user", content, **msg_metadata)
 
         # Trim history if needed
         if len(conversation.messages) > self.max_history_size:
             conversation.messages = conversation.messages[-self.max_history_size :]
+
+        # Save to database if available
+        if self.db is not None:
+            try:
+                await self._safe_save_conversation(conversation_id)
+            except Exception as e:
+                logger.error(f"Error saving conversation to database: {str(e)}")
+                # Continue even if saving fails
 
     async def add_assistant_message(
         self, conversation_id: str, content: str, timestamp: float = None
@@ -277,52 +304,71 @@ class MemoryManager:
 
     async def _safe_save_conversation(self, conversation_id: str) -> None:
         """Safely save conversation to database with multiple approaches."""
-        if not self.db or conversation_id not in self.conversations:
+        if self.db is None or conversation_id not in self.conversations:
             return
 
         try:
             conv_data = self.conversations[conversation_id].to_dict()
 
             # Try different approaches to save based on database interface
+            try:
+                # Approach 1: MongoDB collection direct usage - most common pattern
+                if hasattr(self.db, "conversations"):
+                    collection = self.db.conversations
+                    if hasattr(collection, "update_one") and callable(
+                        getattr(collection, "update_one")
+                    ):
+                        # Use find_one_and_update or update_one as appropriate
+                        await asyncio.to_thread(
+                            collection.update_one,
+                            {"id": conversation_id},
+                            {"$set": conv_data},
+                            upsert=True,
+                        )
+                        logger.info(
+                            f"Successfully saved conversation {conversation_id} using MongoDB collection"
+                        )
+                        return
 
-            # Approach 1: Direct method call
-            if hasattr(self.db, "save_conversation") and callable(
-                getattr(self.db, "save_conversation")
-            ):
-                await asyncio.to_thread(
-                    self.db.save_conversation, conversation_id, conv_data
-                )
-                return
+                # Approach 2: Direct method call on database
+                if hasattr(self.db, "save_conversation") and callable(
+                    getattr(self.db, "save_conversation")
+                ):
+                    # This is a custom method defined in the database class
+                    result = self.db.save_conversation(conversation_id, conv_data)
+                    # Handle both sync and async implementations
+                    if asyncio.iscoroutine(result):
+                        await result
+                    logger.info(
+                        f"Successfully saved conversation {conversation_id} using custom method"
+                    )
+                    return
 
-            # Approach 2: MongoDB collection
-            if hasattr(self.db, "conversations"):
-                collection = self.db.conversations
-                if hasattr(collection, "update_one") and callable(
-                    getattr(collection, "update_one")
+                # Approach 3: Simple insert/update_one at database level
+                if hasattr(self.db, "update_one") and callable(
+                    getattr(self.db, "update_one")
                 ):
                     await asyncio.to_thread(
-                        collection.update_one,
+                        self.db.update_one,
                         {"id": conversation_id},
                         {"$set": conv_data},
                         upsert=True,
                     )
+                    logger.info(
+                        f"Successfully saved conversation {conversation_id} using db.update_one"
+                    )
                     return
 
-            # Approach 3: Direct update_one
-            if hasattr(self.db, "update_one") and callable(
-                getattr(self.db, "update_one")
-            ):
-                await asyncio.to_thread(
-                    self.db.update_one,
-                    {"id": conversation_id},
-                    {"$set": conv_data},
-                    upsert=True,
+                # If all approaches failed but no exception was raised
+                logger.warning(
+                    f"Could not find a suitable method to save conversation {conversation_id}. "
+                    f"DB type: {type(self.db)}, has conversations: {hasattr(self.db, 'conversations')}"
                 )
-                return
-
-            logger.warning(
-                f"Could not find a suitable method to save conversation {conversation_id}"
-            )
+            except Exception as db_error:
+                logger.error(
+                    f"Database operation error for conversation {conversation_id}: {str(db_error)}"
+                )
+                # Continue execution despite database error
         except Exception as e:
             logger.error(f"Failed to save conversation {conversation_id}: {str(e)}")
 
