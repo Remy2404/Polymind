@@ -97,8 +97,16 @@ class TextHandler:
                     return
                 else:
                     # Remove all mentions of bot_username from the message text
+<<<<<<< HEAD
                     message_text = message_text.replace(bot_username, "").strip()
 
+=======
+                    message_text = message_text.replace(bot_username, '').strip()
+                    
+            # NEW: Extract and store personal information from the message
+            extracted_info = await self.user_data_manager.extract_personal_info_from_message(user_id, message_text)
+            
+>>>>>>> b6ce3f4bf02c0e1b6e292a535d84a30b2f904dff
             # Check if user is referring to images or documents
             image_related_keywords = [
                 "image",
@@ -135,6 +143,7 @@ class TextHandler:
 
             # Send initial "thinking" message
             thinking_message = await message.reply_text("Thinking...🧠")
+<<<<<<< HEAD
             await context.bot.send_chat_action(
                 chat_id=update.effective_chat.id, action=ChatAction.TYPING
             )
@@ -152,6 +161,26 @@ class TextHandler:
             enhanced_prompt = message_text
             context_added = False
 
+=======
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+            
+            # Get user context
+            user_context = await self.user_data_manager.get_user_context(user_id)
+            
+            # NEW: Get user personal info and add to context
+            user_personal_info = await self.user_data_manager.get_user_personal_info(user_id)
+            
+            # Build enhanced prompt with relevant context
+            enhanced_prompt = message_text
+            context_added = False
+            
+            # Add personal info to the prompt if available
+            if user_personal_info:
+                personal_context = "User's personal information: " + ", ".join([f"{key}: {value}" for key, value in user_personal_info.items()])
+                enhanced_prompt = f"{personal_context}\n\nUser's message: {message_text}"
+                context_added = True
+            
+>>>>>>> b6ce3f4bf02c0e1b6e292a535d84a30b2f904dff
             # Add image context if relevant
             if (
                 referring_to_image
@@ -159,9 +188,18 @@ class TextHandler:
                 and context.user_data["image_history"]
             ):
                 image_context = await self.get_image_context(user_id, context)
+<<<<<<< HEAD
                 enhanced_prompt = f"The user is referring to previously shared images. Here's the context of those images:\n\n{image_context}\n\nUser's question: {message_text}"
                 context_added = True
 
+=======
+                if context_added:
+                    enhanced_prompt += f"\n\nThe user is referring to previously shared images. Image context: {image_context}"
+                else:
+                    enhanced_prompt = f"The user is referring to previously shared images. Here's the context of those images:\n\n{image_context}\n\nUser's question: {message_text}"
+                    context_added = True
+                
+>>>>>>> b6ce3f4bf02c0e1b6e292a535d84a30b2f904dff
             # Add document context if relevant
             if (
                 referring_to_document
@@ -187,12 +225,17 @@ class TextHandler:
                 document_context = await self.get_document_context(user_id, context)
                 enhanced_prompt = f"The user wants more information about the previously analyzed document. Here's the document context:\n\n{document_context}\n\nProvide more detailed analysis focusing on aspects not covered in the initial response."
                 context_added = True
-
+            
             # Check if this is an image generation request
+<<<<<<< HEAD
             is_image_request, image_prompt = await self.detect_image_generation_request(
                 message_text
             )
 
+=======
+            is_image_request, image_prompt = await self.detect_image_generation_request(message_text)
+            
+>>>>>>> b6ce3f4bf02c0e1b6e292a535d84a30b2f904dff
             if is_image_request and image_prompt:
                 # Delete the thinking message first
                 await thinking_message.delete()
@@ -264,6 +307,7 @@ class TextHandler:
                     self.logger.error(f"Error generating image: {e}")
                     await status_message.edit_text(
                         "Sorry, there was an error generating your image. Please try again later."
+<<<<<<< HEAD
                     )
 
             preferred_model = await self.user_data_manager.get_user_preference(
@@ -275,15 +319,30 @@ class TextHandler:
                 enhanced_prompt, preferred_model
             )
 
+=======
+                    ) 
+            
+            preferred_model = await self.user_data_manager.get_user_preference(user_id, "preferred_model", default="gemini")
+            
+>>>>>>> b6ce3f4bf02c0e1b6e292a535d84a30b2f904dff
             try:
                 if preferred_model == "deepseek":
                     system_message = "You are an AI assistant that helps users with tasks and answers questions helpfully, accurately, and ethically."
                     response = await asyncio.wait_for(
                         deepseek_llm.generate_text(
+<<<<<<< HEAD
                             prompt=enhanced_prompt_with_guidelines,
                             system_message=system_message,
                             temperature=0.7,
                             max_tokens=4000,
+=======
+                            prompt=enhanced_prompt,  # Use the original prompt
+                            system_message=system_message,
+                            temperature=0.7,
+                            max_tokens=4000,
+                            user_id=user_id,  # Pass user_id for conversation history
+                            user_data_manager=self.user_data_manager  # Pass user_data_manager
+>>>>>>> b6ce3f4bf02c0e1b6e292a535d84a30b2f904dff
                         ),
                         timeout=300.0,
                     )
@@ -291,8 +350,13 @@ class TextHandler:
                     # Use the formatted history from MemoryManager instead of user_context
                     response = await asyncio.wait_for(
                         self.gemini_api.generate_response(
+<<<<<<< HEAD
                             prompt=enhanced_prompt_with_guidelines,
                             context=formatted_history,  # Use formatted history from MemoryManager
+=======
+                            prompt=enhanced_prompt,  # Use the original prompt
+                            context=user_context[-self.max_context_length:]
+>>>>>>> b6ce3f4bf02c0e1b6e292a535d84a30b2f904dff
                         ),
                         timeout=60.0,
                     )
@@ -372,6 +436,7 @@ class TextHandler:
 
             # Update user context in both systems if response was successful
             if response:
+<<<<<<< HEAD
                 # Add to MemoryManager
                 await self.memory_manager.add_user_message(
                     conversation_id, message_text, str(user_id)
@@ -390,6 +455,19 @@ class TextHandler:
                 self.user_data_manager.add_to_context(
                     user_id, {"role": "assistant", "content": response}
                 )
+=======
+                # Store both the original message and the analyzed personal info in context
+                user_message_with_analysis = {"role": "user", "content": message_text}
+                
+                # If personal info was extracted, add an internal note about it
+                if extracted_info:
+                    info_note = f"Personal info extracted: {', '.join([f'{k}={v}' for k, v in extracted_info.items()])}"
+                    self.logger.info(f"User {user_id}: {info_note}")
+                    # We don't add this note to the context, just log it
+                
+                self.user_data_manager.add_to_context(user_id, user_message_with_analysis)
+                self.user_data_manager.add_to_context(user_id, {"role": "assistant", "content": response})
+>>>>>>> b6ce3f4bf02c0e1b6e292a535d84a30b2f904dff
 
                 # Store the message IDs in context for future editing
                 if "bot_messages" not in context.user_data:
@@ -684,6 +762,7 @@ class TextHandler:
 
         return False, ""
 
+<<<<<<< HEAD
     async def _apply_response_guidelines(
         self, prompt: str, preferred_model: str
     ) -> str:
@@ -722,11 +801,14 @@ class TextHandler:
             self.logger.error(f"Error applying response guidelines: {str(e)}")
             return prompt  # Return original prompt if there was an error
 
+=======
+>>>>>>> b6ce3f4bf02c0e1b6e292a535d84a30b2f904dff
     def get_handlers(self):
         return [
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text_message),
             MessageHandler(filters.PHOTO, self.handle_image),
         ]
+<<<<<<< HEAD
 
     async def reset_conversation(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -751,3 +833,5 @@ class TextHandler:
 
         await update.message.reply_text("✅ Your conversation history has been reset.")
         telegram_logger.log_message(f"Conversation history cleared", user_id)
+=======
+>>>>>>> b6ce3f4bf02c0e1b6e292a535d84a30b2f904dff

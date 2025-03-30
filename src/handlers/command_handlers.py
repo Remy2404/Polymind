@@ -65,19 +65,26 @@ class CommandHandlers:
 
         user_id = update.effective_user.id
         welcome_message = (
-            "👋 Welcome to GemBot! I'm your AI assistant powered by Gemini.\n\n"
+            "👋 Welcome to DeepGem! I'm your AI assistant powered by Gemini-2.0-flash & Deepseek-R1 .\n\n"
             "I can help you with:\n"
             "🤖 General conversations\n"
             "📝 Code assistance\n"
             "🗣️ Voice to text conversion\n"
-            "🖼️ Image analysis\n\n"
+            "🖼️ Image generation and analysis\n"
+            "🎬 Video generation\n"
+            "📊 Statistics tracking\n\n"
+            "Available commands:\n"
+            "/generate_image - Create images from text\n"
+            "/genvid - Generate videos from descriptions\n"
+            "/genimg - Generate images with Together AI\n"
+            "/switchmodel - Switch between AI models\n\n"
             "Feel free to start chatting or use /help to learn more!"
         )
 
         keyboard = [
             [
-                InlineKeyboardButton("Help 📚", callback_data='help'),
-                InlineKeyboardButton("Settings ⚙️", callback_data='preferences')
+                InlineKeyboardButton("Help 📚", callback_data='help'), 
+                InlineKeyboardButton("Settings ⚙️", callback_data='settings')
             ],
             [InlineKeyboardButton("Support Channel 📢", url='https://t.me/GemBotAI')]
         ]
@@ -98,60 +105,86 @@ class CommandHandlers:
             "/help - Show this help message\n"
             "/reset - Reset conversation history\n"
             "/settings - Configure bot settings\n"
-            "/stats - Show bot statistics\n\n"
-            "/generate_image <prompt> - Generate an image from text\n"
-            "/export - Export conversation history\n"
+            "/stats - Show bot statistics\n"
+            "/generate_image - Create images from text\n"
+            "/genvid - Generate videos from descriptions\n"
+            "/genimg - Generate images with Together AI\n"
+            "/switchmodel - Switch between AI models\n"
+            "/export - Export conversation history\n\n"
             "💡 Features\n"
-            "• Send text messages for general conversation\n"
-            "• Send images for analysis\n"
+            "• General conversations with AI\n"
+            "• Code assistance\n"
+            "• Voice to text conversion\n"
+            "• Image generation and analysis\n"
+            "• Video generation\n"
+            "• Statistics tracking\n"
             "• Supports markdown formatting\n\n"
-            "Need more help? Join our support channel!"
+            "Need help? Join our support channel @GemBotAI!"
         )
         if update.callback_query:
             await update.callback_query.message.reply_text(help_text)
         else:
-            await update.message.reply_text(help_text)
-
+            await update.message.reply_text(help_text)   
+            await update.callback_query.message.reply_text(help_text)
+        self.telegram_logger.log_message(update.effective_user.id, "Help command requested")
     async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
+        
+        # Get personal info before resetting
+        personal_info = await self.user_data_manager.get_user_personal_info(user_id)
+        
+        # Reset conversation history
         await self.user_data_manager.reset_conversation(user_id)
-        await update.message.reply_text("Conversation history has been reset!")
+        
+        # If there was personal information, confirm we remember it
+        if personal_info and 'name' in personal_info:
+            await update.message.reply_text(f"Conversation history has been reset, {personal_info['name']}! I'll still remember your personal details.")
+        else:
+            await update.message.reply_text("Conversation history has been reset!")
 
     async def settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        user_id = update.effective_user.id
-        settings = await self.user_data_manager.get_user_settings(user_id)
-    
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    f"{'🔵' if settings.get('markdown_enabled', True) else '⚪'} Markdown Mode",
-                    callback_data='toggle_markdown'
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    f"{'🔵' if settings.get('code_suggestions', True) else '⚪'} Code Suggestions",
-                    callback_data='toggle_code_suggestions'
-                )
+        try:
+            user_id = update.effective_user.id
+            settings = await self.user_data_manager.get_user_settings(user_id)
+        
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        f"{'🔵' if settings.get('markdown_enabled', True) else '⚪'} Markdown Mode",
+                        callback_data='toggle_markdown'
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        f"{'🔵' if settings.get('code_suggestions', True) else '⚪'} Code Suggestions",
+                        callback_data='toggle_code_suggestions'
+                    )
+                ]
             ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-    
-        settings_text = "⚙️ *Bot Settings*\nCustomize your interaction preferences:"
-    
-        if update.callback_query:
-            await update.callback_query.message.reply_text(
-                settings_text,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
-        else:
-            await update.message.reply_text(
-                settings_text,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
-        self.telegram_logger.log_message(user_id, "Opened settings menu")
+            reply_markup = InlineKeyboardMarkup(keyboard)
+        
+            settings_text = "⚙️ *Bot Settings*\nCustomize your interaction preferences:"
+        
+            if update.callback_query:
+                await update.callback_query.message.reply_text(
+                    settings_text,
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text(
+                    settings_text,
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+            self.telegram_logger.log_message(user_id, "Opened settings menu")
+        except Exception as e:
+            error_message = "An error occurred while processing your request. Please try again later."
+            if update.callback_query:
+                await update.callback_query.message.reply_text(error_message)
+            else:
+                await update.message.reply_text(error_message)
+            self.telegram_logger.log_error(user_id, f"Settings error: {str(e)}")
     async def handle_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
         user_data = await self.user_data_manager.get_user_data(user_id)
@@ -210,13 +243,14 @@ class CommandHandlers:
     async def handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
         await query.answer()
-
+    
         data = query.data
-        if data.startswith('model_'):
-           return
-
-        if data == 'help_command':
+        self.logger.info(f"Handling callback query with data: {data}")
+    
+        if data == 'help':  # Changed from 'help_command' to match button callback
             await self.help_command(update, context)
+        elif data == 'preferences':  # Add handler for preferences button
+            await self.handle_preferences(update, context)
         elif data == 'settings':
             await self.settings(update, context)
         elif data in ['toggle_markdown', 'toggle_code_suggestions']:
@@ -228,7 +262,7 @@ class CommandHandlers:
                 status = 'enabled' if not current_value else 'disabled'
                 await query.edit_message_text(f"Markdown Mode has been {status}.")
             elif data == 'toggle_code_suggestions':
-                current_value =  await self.user_data_manager.get_user_settings(user_id).get('code_suggestions', True)
+                current_value = await self.user_data_manager.get_user_settings(user_id).get('code_suggestions', True)
                 await self.user_data_manager.set_user_setting(user_id, 'code_suggestions', not current_value)
                 status = 'enabled' if not current_value else 'disabled'
                 await query.edit_message_text(f"Code Suggestions have been {status}.")
@@ -237,7 +271,9 @@ class CommandHandlers:
         elif data.startswith('pref_'):
             await self.handle_user_preferences(update, context, data)
         else:
-            await query.edit_message_text("Unknown action.")
+            # Add logging to see which callback data is causing issues
+            self.logger.warning(f"Unhandled callback data: {data}")
+            await query.edit_message_text(f"Unknown action: {data}. Please try again.")
 
     async def generate_image_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id

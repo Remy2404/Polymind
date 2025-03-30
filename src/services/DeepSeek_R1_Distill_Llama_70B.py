@@ -29,6 +29,7 @@ class DeepSeekLLM:
         
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
         self.client = Together(api_key=self.api_key) if self.api_key else None
+        self.recent_conversations = {}  # Add conversation storage
         logger.info(f"Initialized DeepSeekLLM with model '{self.model_name}'")
 
     def _remove_thinking_tags(self, text: str) -> str:
@@ -78,7 +79,9 @@ class DeepSeekLLM:
         max_tokens: int = 1024,
         top_p: float = 0.9,
         frequency_penalty: float = 0.0,
-        presence_penalty: float = 0.0
+        presence_penalty: float = 0.0,
+        user_id: Optional[int] = None,
+        user_data_manager = None
     ) -> Optional[str]:
         """Generate text from a prompt."""
         messages = []
@@ -87,10 +90,30 @@ class DeepSeekLLM:
         if system_message:
             messages.append({"role": "system", "content": system_message})
             
+        # Retrieve conversation history if user_id is provided
+        if user_id is not None and user_data_manager is not None:
+            try:
+                # Get conversation history
+                history = await self.get_conversation_context(user_data_manager, user_id, limit=10)
+                
+                # Add conversation history to messages
+                for msg in history:
+                    if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
+                        role = msg['role']
+                        # Map 'assistant' role to 'assistant' (Together API format)
+                        if role == 'assistant':
+                            role = 'assistant'
+                        messages.append({"role": role, "content": msg['content']})
+                
+                logger.info(f"Added {len(history)} previous messages to conversation context")
+            except Exception as e:
+                logger.error(f"Error retrieving conversation history: {e}")
+            
         # Add user prompt
         messages.append({"role": "user", "content": prompt})
         
-        return await self.generate_chat_response(
+        # Generate response with full conversation history
+        response = await self.generate_chat_response(
             messages, 
             temperature=temperature,
             max_tokens=max_tokens,
@@ -98,6 +121,18 @@ class DeepSeekLLM:
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty
         )
+        
+        # Store conversation entry if user_id provided
+        if user_id is not None and response and user_data_manager is not None:
+            try:
+                # Add user message to context
+                if hasattr(user_data_manager, 'add_to_context') and callable(user_data_manager.add_to_context):
+                    await user_data_manager.add_to_context(user_id, {"role": "user", "content": prompt})
+                    await user_data_manager.add_to_context(user_id, {"role": "assistant", "content": response})
+            except Exception as e:
+                logger.error(f"Error updating conversation history: {e}")
+        
+        return response
     
     async def generate_chat_response(
         self, 
@@ -115,12 +150,8 @@ class DeepSeekLLM:
             
         logger.info(f"Generating response using {self.model_name}")
         
-        # Add response style guidelines to system prompt
-        modified_messages = await self._add_guidelines(messages)
-        
         # Add instruction to prevent thinking tags
-        modified_messages = self._add_anti_thinking_instruction(modified_messages)
-        
+        modified_messages = self._add_anti_thinking_instruction(messages)
         
         async with self.semaphore:
             try:
@@ -228,50 +259,36 @@ class DeepSeekLLM:
     async def get_conversation_context(self, user_data_manager, user_id: int, limit: int = 10) -> List[Dict[str, str]]:
         """Get conversation history for a user to maintain context."""
         try:
-            context = user_data_manager.get_user_context(user_id, limit)
-            return context
+            # Make sure to await the async method
+            if hasattr(user_data_manager, 'get_user_context') and callable(user_data_manager.get_user_context):
+                if asyncio.iscoroutinefunction(user_data_manager.get_user_context):
+                    context = await user_data_manager.get_user_context(user_id)
+                else:
+                    # If it's not async, run it in a thread
+                    context = await asyncio.to_thread(user_data_manager.get_user_context, user_id, limit)
+                
+                # Return an empty list if context is None
+                if context is None:
+                    return []
+                
+                # Make sure we have a valid list to work with
+                if not isinstance(context, list):
+                    logger.warning(f"Invalid context type: {type(context)}, expected list")
+                    return []
+                    
+                # Limit the number of context items
+                return context[-limit:] if len(context) > limit else context
+            else:
+                # Fallback to local history if get_user_context is not available
+                return self.recent_conversations.get(user_id, [])[-limit:] if user_id in self.recent_conversations else []
         except Exception as e:
             logger.error(f"Error retrieving conversation context: {e}")
             return []
         
     async def _add_guidelines(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
         """Add response style guidelines to the messages."""
-        try:
-            # Create a copy to avoid modifying the original
-            modified_messages = messages.copy()
-            
-            # Load guidelines
-            guidelines_path = os.path.join(os.path.dirname(__file__), '..', 'doc', 'dataset.md')
-            with open(guidelines_path, 'r', encoding='utf-8') as file:
-                content = file.read()
-                # Extract DeepSeek specific guidelines
-                deepseek_guidelines = """
-                Follow these response guidelines:
-                - Provide detailed analytical responses for complex questions
-                - Avoid using <think> tags in final output
-                - Use straightforward language and explain technical terms
-                - Include relevant examples, especially for code
-                - Maintain professional yet conversational tone
-                """
-                
-            # Find system message if it exists
-            system_message_idx = -1
-            for i, msg in enumerate(modified_messages):
-                if msg["role"] == "system":
-                    system_message_idx = i
-                    break
-            
-            if system_message_idx >= 0:
-                # Append to existing system message
-                modified_messages[system_message_idx]["content"] += f"\n\n{deepseek_guidelines}"
-            else:
-                # Add new system message at the beginning
-                modified_messages.insert(0, {"role": "system", "content": deepseek_guidelines})
-                
-            return modified_messages
-        except Exception as e:
-            logger.error(f"Error adding guidelines: {str(e)}")
-            return messages
+        # Simply return the original messages without adding guidelines
+        return messages.copy()
 
 # Initialize the DeepSeekLLM instance
 deepseek_llm = DeepSeekLLM()

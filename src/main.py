@@ -104,9 +104,55 @@ class TelegramBot:
         self.language_manager = LanguageManager()
         self._setup_handlers()
 
-    def   shutdown(self):
-        close_database_connection(self.client)
-        logger.info("Shutdown complete. Database connection closed.")
+    async def shutdown(self):
+        """Properly clean up resources on shutdown"""
+        try:
+            # Cancel any pending tasks first
+            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+            if tasks:
+                self.logger.info(f"Cancelling {len(tasks)} pending tasks...")
+                # Give tasks a chance to complete gracefully
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Perform specific cleanup operations
+            if hasattr(self, 'application') and self.application.running:
+                self.logger.info("Stopping PTB application...")
+                await self.application.stop()
+                
+            if hasattr(self, 'reminder_manager') and hasattr(self.reminder_manager, 'reminder_check_task'):
+                self.logger.info("Stopping reminder manager...")
+                await self.reminder_manager.stop()
+                
+            # Close external service connections if they exist
+            services_to_close = [
+                ('text_to_video_generator', 'session'),
+                ('flux_lora_image_generator', 'session'),
+                ('gemini_api', 'session')
+            ]
+            
+            for service_name, attr_name in services_to_close:
+                if hasattr(self, service_name) and hasattr(getattr(self, service_name), attr_name):
+                    service = getattr(self, service_name)
+                    if hasattr(service, 'close') and callable(service.close):
+                        self.logger.info(f"Closing {service_name}...")
+                        await service.close()
+                    else:
+                        # Just set to None to help garbage collection
+                        setattr(service, attr_name, None)
+            
+            # Close database connection last
+            if hasattr(self, 'client') and self.client:
+                self.logger.info("Closing database connection...")
+                close_database_connection(self.client)
+                self.client = None
+                self.db = None
+                
+            self.logger.info("Shutdown complete")
+        except Exception as e:
+            self.logger.error(f"Error during shutdown: {e}")
+            self.logger.error(traceback.format_exc())
 
     def _setup_handlers(self):
         self.command_handler.register_handlers(self.application)

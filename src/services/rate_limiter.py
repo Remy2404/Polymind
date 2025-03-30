@@ -1,84 +1,100 @@
-import asyncio
 import time
+import asyncio
 from collections import deque
 import logging
+from functools import wraps
+
+logger = logging.getLogger(__name__)
 
 class RateLimiter:
-    def __init__(self, requests_per_minute: int):
+    """Enhanced rate limiter with bursty traffic handling capabilities"""
+    
+    def __init__(self, requests_per_minute=10, burst_size=None):
         """
-        Initialize rate limiter with a sliding window approach.
+        Initialize the rate limiter
+        
+        Args:
+            requests_per_minute: Maximum number of requests allowed per minute
+            burst_size: Optional burst size to allow occasional traffic spikes
         """
         self.rate = requests_per_minute
-        self.window_size = 60  # Window size in seconds
-        self.max_tokens = requests_per_minute
-        self.tokens = self.max_tokens
-        self.requests = deque()
+        self.interval = 60.0 / self.rate  # Time between requests in seconds
+        self.last_check = time.monotonic()
+        self.tokens = 0
+        self.max_tokens = burst_size or requests_per_minute
         self.lock = asyncio.Lock()
-        self.last_update = time.time()
+        self.timestamps = deque(maxlen=requests_per_minute)
         
-        # Burst handling
-        self.burst_size = min(10, requests_per_minute // 2)  # Allow burst up to 10 requests
-        self.burst_tokens = self.burst_size
+        # Initialize with full burst capacity
+        self.tokens = self.max_tokens
+        logger.info(f"Rate limiter initialized: {requests_per_minute} rpm, {self.interval:.2f}s interval, "
+                   f"burst capacity: {self.max_tokens}")
 
     async def acquire(self):
         """
-        Acquire a token for making a request, with optimized waiting.
+        Acquire permission to proceed, waiting if necessary.
+        Uses the token bucket algorithm for better handling of bursty traffic.
         """
         async with self.lock:
-            now = time.time()
+            # Add tokens based on time passed
+            now = time.monotonic()
+            time_passed = now - self.last_check
+            self.last_check = now
             
-            # Clean up old requests
-            while self.requests and self.requests[0] <= now - self.window_size:
-                self.requests.popleft()
+            # Calculate new tokens based on time elapsed
+            new_tokens = time_passed * self.rate / 60.0
+            self.tokens = min(self.max_tokens, self.tokens + new_tokens)
             
-            # Check if we can use burst capacity
-            if len(self.requests) < self.rate:
-                if self.burst_tokens > 0:
-                    self.burst_tokens -= 1
-                    self.requests.append(now)
-                    return
+            # If we have at least one token, consume it and proceed
+            if self.tokens >= 1:
+                self.tokens -= 1
+                self.timestamps.append(now)
+                return 0  # No wait needed
             
-            # Calculate wait time if needed
-            if len(self.requests) >= self.rate:
-                wait_time = self.requests[0] + self.window_size - now
-                if wait_time > 0:
-                    # Split wait time into smaller chunks for more responsive cancellation
-                    chunk_size = 0.1  # 100ms chunks
-                    chunks = int(wait_time / chunk_size)
-                    
-                    for _ in range(chunks):
-                        await asyncio.sleep(chunk_size)
-                        # Could add cancellation check here if needed
-                    
-                    # Wait remaining time
-                    remaining = wait_time - (chunks * chunk_size)
-                    if remaining > 0:
-                        await asyncio.sleep(remaining)
+            # Calculate required wait time
+            if self.timestamps:
+                # Calculate time until next token is available
+                expected_wait = 60.0 / self.rate - (now - self.timestamps[0])
+                wait_time = max(0, expected_wait)
+            else:
+                wait_time = self.interval
             
-            # Add current request to the window
-            self.requests.append(now)
-            
-            # Replenish burst tokens periodically
-            time_since_update = now - self.last_update
-            if time_since_update >= 60:  # Replenish every minute
-                self.burst_tokens = min(
-                    self.burst_size, 
-                    self.burst_tokens + int(time_since_update / 60) * self.burst_size
-                )
-                self.last_update = now
+            return wait_time
 
-    async def get_current_capacity(self) -> float:
-        """
-        Get current available capacity as a percentage.
-        """
-        async with self.lock:
-            now = time.time()
-            # Clean up old requests
-            while self.requests and self.requests[0] <= now - self.window_size:
-                self.requests.popleft()
+    async def wait(self):
+        """Wait until we're allowed to proceed"""
+        wait_time = await self.acquire()
+        
+        if wait_time > 0:
+            logger.debug(f"Rate limit reached, waiting for {wait_time:.2f}s")
+            await asyncio.sleep(wait_time)
+            # Reacquire after waiting to ensure we have capacity
+            await self.acquire()
+
+def rate_limit(f=None, *, rate_limiter=None):
+    """
+    Decorator to apply rate limiting to a function
+    
+    Can be used as @rate_limit or @rate_limit(rate_limiter=my_limiter)
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            nonlocal rate_limiter
             
-            used_capacity = len(self.requests)
-            return (self.rate - used_capacity) / self.rate * 100
+            # If no rate limiter specified, try to get from self
+            if rate_limiter is None and len(args) > 0 and hasattr(args[0], 'rate_limiter'):
+                rate_limiter = args[0].rate_limiter
+            
+            if rate_limiter is not None:
+                await rate_limiter.wait()
+                
+            return await func(*args, **kwargs)
+        return wrapper
+    
+    if f is None:
+        return decorator
+    return decorator(f)
 
 class UserRateLimiter:
     def __init__(self, requests_per_hour: int):
@@ -100,7 +116,7 @@ class UserRateLimiter:
             
             limiter = self.user_limiters[user_id]
         
-        await limiter.acquire()
+        await limiter.wait()
 
     async def get_user_capacity(self, user_id: int) -> float:
         """
@@ -118,7 +134,7 @@ class GlobalRateLimiter:
         self.rate_limiter = RateLimiter(requests_per_minute)
 
     async def acquire_global(self):
-        await self.rate_limiter.acquire()
+        await self.rate_limiter.wait()
 
     async def get_global_capacity(self) -> float:
         return await self.rate_limiter.get_current_capacity()
