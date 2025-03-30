@@ -180,6 +180,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("remind", self.reminder_manager.set_reminder))
         self.application.add_handler(CommandHandler("language", self.language_manager.set_language))
         self.application.add_handler(CommandHandler("history", self.text_handler.show_history))
+        self.application.add_handler(CommandHandler("reset", self.text_handler.reset_conversation))
         self.application.add_handler(CommandHandler("documents", self.command_handler.show_document_history))
         
         # Remove any existing error handlers before adding new one
