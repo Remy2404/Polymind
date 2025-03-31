@@ -21,3 +21,5 @@ pydantic==2.10.2
 telegramify-markdown==0.1.17
 aiofiles===23.2.1
 tenacity==9.0.0
+reportlab>=3.6.12
+python-docx>=0.8.11

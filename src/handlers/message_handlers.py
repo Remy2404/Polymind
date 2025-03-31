@@ -3,7 +3,7 @@ import re
 import tempfile
 import logging
 import speech_recognition as sr
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 from pydub import AudioSegment
@@ -62,6 +62,31 @@ class MessageHandlers:
             else:
                 user_id = update.effective_user.id
                 message_text = update.message.text
+
+            # Check if we're waiting for document content
+            if update.message and await self.handle_awaiting_doc_text(update, context):
+                # The message was handled as document text input, stop further processing
+                return
+
+            # Check if we're waiting for AI document topic
+            if update.message and context.user_data.get("awaiting_aidoc_topic"):
+                # Clear the flag
+                context.user_data["awaiting_aidoc_topic"] = False
+                # Store the topic
+                context.user_data["aidoc_prompt"] = update.message.text
+                # Show format selection
+                from handlers.command_handlers import CommandHandlers
+
+                command_handler = CommandHandlers(
+                    self.gemini_api,
+                    self.user_data_manager,
+                    self.telegram_logger,
+                    None,  # flux_lora_image_generator not needed here
+                )
+                await command_handler._show_ai_document_format_selection(
+                    update, context
+                )
+                return
 
             self.logger.info(
                 f"Received text message from user {user_id}: {message_text}"
@@ -354,18 +379,17 @@ class MessageHandlers:
                     # Initialize user data if not already initialized
                     await self.user_data_manager.initialize_user(user_id)
 
-                    # Get text handler instance
-                    text_handler = self.text_handler
+                    # Create a new text_handler instance instead of trying to use self.text_handler
+                    # This fixes the 'MessageHandlers' object has no attribute 'text_handler' error
+                    text_handler = TextHandler(self.gemini_api, self.user_data_manager)
 
                     # Store voice message in MemoryManager with language metadata
                     try:
-                        # Only add to memory manager if it exists and is properly initialized
+                        # Only add to memory manager if it's properly initialized
                         if (
-                            text_handler is not None
-                            and hasattr(text_handler, "memory_manager")
+                            hasattr(text_handler, "memory_manager")
                             and text_handler.memory_manager is not None
                         ):
-
                             # Use proper language label
                             language_label = "km" if is_khmer else lang.split("-")[0]
 
@@ -766,3 +790,39 @@ class MessageHandlers:
         except Exception as e:
             self.logger.error(f"Failed to register message handlers: {str(e)}")
             raise Exception("Failed to register message handlers") from e
+
+    async def handle_awaiting_doc_text(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> bool:
+        """Process text when awaiting document content"""
+        if context.user_data.get("awaiting_doc_text"):
+            # Clear the flag
+            context.user_data["awaiting_doc_text"] = False
+
+            # Get the text
+            content = update.message.text
+
+            # Store for document generation
+            context.user_data["doc_export_text"] = content
+
+            # Offer format selection
+            format_options = [
+                [
+                    InlineKeyboardButton(
+                        "📄 PDF Format", callback_data="export_format_pdf"
+                    ),
+                    InlineKeyboardButton(
+                        "📝 DOCX Format", callback_data="export_format_docx"
+                    ),
+                ]
+            ]
+            format_markup = InlineKeyboardMarkup(format_options)
+
+            await update.message.reply_text(
+                "Your text has been received. Please select the document format you want to export to:",
+                reply_markup=format_markup,
+            )
+
+            return True  # Handled
+
+        return False  # Not handled
