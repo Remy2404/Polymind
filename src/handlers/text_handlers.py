@@ -15,16 +15,25 @@ from services.memory_manager import MemoryManager
 
 
 class TextHandler:
-    def __init__(self, gemini_api: GeminiAPI, user_data_manager: user_data_manager):
+    def __init__(
+        self,
+        gemini_api: GeminiAPI,
+        user_data_manager: user_data_manager,
+        openrouter_api=None,
+    ):
         self.logger = logging.getLogger(__name__)
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
+        self.openrouter_api = openrouter_api
         self.max_context_length = 9
 
-        # Update MemoryManager initialization with more appropriate settings
+        # Update MemoryManager initialization with correct parameters
         self.memory_manager = MemoryManager(
             db=user_data_manager.db if hasattr(user_data_manager, "db") else None,
-            max_history_size=15,  # Slightly larger than max_context_length for better history management
+        )
+        # Set attributes after initialization
+        self.memory_manager.short_term_limit = (
+            15  # Slightly larger than max_context_length for better history management
         )
         # Configure token limit based on the model you're using
         self.memory_manager.token_limit = (
@@ -334,13 +343,16 @@ class TextHandler:
 
             # Apply response style guidelines
             enhanced_prompt_with_guidelines = await self._apply_response_guidelines(
-                enhanced_prompt, preferred_model
+                enhanced_prompt, preferred_model, context
             )
 
             try:
                 # Get the model handler for the preferred model
+                # Use the class's OpenRouter API instance directly
                 model_handler = ModelHandlerFactory.get_model_handler(
-                    preferred_model, gemini_api=self.gemini_api
+                    preferred_model,
+                    gemini_api=self.gemini_api,
+                    openrouter_api=self.openrouter_api,
                 )
 
                 # Generate response using the model handler
@@ -353,7 +365,11 @@ class TextHandler:
                         temperature=0.7,
                         max_tokens=4000,
                     ),
-                    timeout=300.0 if preferred_model == "deepseek" else 60.0,
+                    timeout=(
+                        300.0
+                        if preferred_model in ["deepseek", "quasar_alpha"]
+                        else 60.0
+                    ),
                 )
             except asyncio.TimeoutError:
                 await thinking_message.delete()
@@ -750,7 +766,7 @@ class TextHandler:
         return False, ""
 
     async def _apply_response_guidelines(
-        self, prompt: str, preferred_model: str
+        self, prompt: str, preferred_model: str, context=None
     ) -> str:
         """Apply appropriate response style guidelines based on the selected model."""
         try:
@@ -761,8 +777,11 @@ class TextHandler:
                 content = await file.read()
 
             # Get the model handler for the preferred model
+            # Use the class's OpenRouter API instance directly
             model_handler = ModelHandlerFactory.get_model_handler(
-                preferred_model, gemini_api=self.gemini_api
+                preferred_model,
+                gemini_api=self.gemini_api,
+                openrouter_api=self.openrouter_api,
             )
 
             # Get system message from the model handler

@@ -165,6 +165,11 @@ class CommandHandlers:
                     "🔍 Use DeepSeek", callback_data="aidoc_model_deepseek"
                 ),
             ],
+            [
+                InlineKeyboardButton(
+                    "🌀 Use Quasar Alpha", callback_data="aidoc_model_quasar_alpha"
+                )
+            ],
         ]
         reply_markup = InlineKeyboardMarkup(format_options)
 
@@ -174,7 +179,11 @@ class CommandHandlers:
         prompt = context.user_data.get("aidoc_prompt", "")
 
         # Ensure model name reflects the actual models available
-        model_name = "Gemini-2.5-Pro" if model == "gemini" else "DeepSeek 70B"
+        model_name = (
+            "Gemini-2.5-Pro"
+            if model == "gemini"
+            else "DeepSeek 70B" if model == "deepseek" else "Quasar Alpha"
+        )
 
         message = (
             f"🤖 *AI Document Generator*\n\n"
@@ -316,12 +325,46 @@ class CommandHandlers:
                 )
                 doc_io.name = f"{sanitized_title}_{datetime.now().strftime('%Y%m%d')}.{output_format}"
 
+                # Format the caption to escape ALL Markdown special characters
+                model_display_name = model.capitalize()
+                if model == "quasar_alpha":
+                    model_display_name = "Quasar Alpha"
+
+                # Make sure to escape ALL special characters for MarkdownV2
+                special_chars = [
+                    "_",
+                    "*",
+                    "[",
+                    "]",
+                    "(",
+                    ")",
+                    "~",
+                    "`",
+                    ">",
+                    "#",
+                    "+",
+                    "-",
+                    "=",
+                    "|",
+                    "{",
+                    "}",
+                    ".",
+                    "!",
+                ]
+                safe_title = title
+                for char in special_chars:
+                    safe_title = safe_title.replace(char, f"\\{char}")
+
+                caption = (
+                    f"📄 {safe_title}\n\nGenerated using {model_display_name} model"
+                )
+
                 await context.bot.send_document(
                     chat_id=update.effective_chat.id,
                     document=doc_io,
                     filename=doc_io.name,
-                    caption=f"📄 *{title}*\n\nGenerated using {model.capitalize()} model",
-                    parse_mode="Markdown",
+                    caption=caption,
+                    parse_mode="MarkdownV2",
                 )
 
             # Log success
@@ -360,8 +403,6 @@ class CommandHandlers:
                     chat_id=update.effective_chat.id,
                     text="Sorry, there was an error generating your document and sending the details.",
                 )
-
-    # --- AI Document Generation Methods --- END ---
 
     async def start_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -1230,7 +1271,12 @@ class CommandHandlers:
             [
                 InlineKeyboardButton("gemini-2.5-Pro", callback_data="model_gemini"),
                 InlineKeyboardButton("DeepSeek 70B", callback_data="model_deepseek"),
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    "🌀 Quasar Alpha", callback_data="model_quasar_alpha"
+                )
+            ],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -1238,9 +1284,14 @@ class CommandHandlers:
         current_model = await self.user_data_manager.get_user_preference(
             user_id, "preferred_model", default="gemini"
         )
-        current_model_name = (
-            "Gemini-2.5-Pro" if current_model == "gemini" else "DeepSeek 70B"
-        )
+
+        # Map model code to display name
+        model_names = {
+            "gemini": "Gemini-2.5-Pro",
+            "deepseek": "DeepSeek 70B",
+            "quasar_alpha": "Quasar Alpha",
+        }
+        current_model_name = model_names.get(current_model, "Gemini-2.5-Pro")
 
         await update.message.reply_text(
             f"🔄 Your current model is: *{current_model_name}*\n\n"
@@ -1259,9 +1310,14 @@ class CommandHandlers:
         await query.answer()
 
         selected_model = query.data.replace("model_", "")
-        model_name = (
-            "Gemini 2.0 Flash" if selected_model == "gemini" else "DeepSeek 70B"
-        )
+        if selected_model == "gemini":
+            model_name = "Gemini 2.0 Flash"
+        elif selected_model == "deepseek":
+            model_name = "DeepSeek 70B"
+        elif selected_model == "quasar_alpha":
+            model_name = "Quasar Alpha"
+        else:
+            model_name = "Gemini 2.0 Flash"
 
         # Save user's model preference
         await self.user_data_manager.set_user_preference(
@@ -1438,12 +1494,31 @@ class CommandHandlers:
                 )
                 doc_io.name = f"{sanitized_title}_{datetime.now().strftime('%Y%m%d')}.{document_format}"
 
+                # Format the caption to escape Markdown special characters
+                model = context.user_data.get(
+                    "aidoc_model", "gemini"
+                )  # Default to gemini if not specified
+                model_display_name = model.capitalize()
+                if model == "quasar_alpha":
+                    model_display_name = "Quasar Alpha"
+
+                safe_title = (
+                    title.replace("*", "\\*")
+                    .replace("_", "\\_")
+                    .replace("`", "\\`")
+                    .replace("[", "\\[")
+                    .replace("]", "\\]")
+                )
+                caption = (
+                    f"📄 {safe_title}\n\nGenerated using {model_display_name} model"
+                )
+
                 await context.bot.send_document(
                     chat_id=update.effective_chat.id,
                     document=doc_io,
                     filename=doc_io.name,
-                    caption=f"📄 *{title}*\n\nGenerated using Gemini model",
-                    parse_mode="Markdown",
+                    caption=caption,
+                    parse_mode="MarkdownV2",
                 )
 
             # Log success

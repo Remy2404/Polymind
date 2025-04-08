@@ -44,6 +44,7 @@ class MessageHandlers:
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
         self.document_processor = document_processor
+        self.text_handler = text_handler  # Store the text_handler correctly
         self.logger = logging.getLogger(__name__)
 
     async def _handle_text_message(
@@ -393,12 +394,21 @@ class MessageHandlers:
                             # Use proper language label
                             language_label = "km" if is_khmer else lang.split("-")[0]
 
-                            # Store with clear language marking
+                            # Store with enhanced metadata to improve context retention
                             await text_handler.memory_manager.add_user_message(
                                 conversation_id,
                                 f"[Voice message in {language_label} language: {text}]",
                                 str(user_id),
                                 language=language_label,  # Add language metadata
+                                is_voice=True,  # Flag as voice message
+                                voice_duration=update.message.voice.duration,
+                                recognition_language=recognition_language,
+                                timestamp=datetime.datetime.now().timestamp(),
+                            )
+
+                            # Log successful memory storage
+                            self.logger.info(
+                                f"Voice message context stored in memory for user {user_id}"
                             )
                     except Exception as mem_error:
                         self.logger.error(
@@ -610,6 +620,7 @@ class MessageHandlers:
 
     async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
+        conversation_id = f"user_{user_id}"
         self.telegram_logger.log_message("Processing document", user_id)
 
         try:
@@ -704,6 +715,45 @@ class MessageHandlers:
                     user_id, {"role": "assistant", "content": response}
                 )
 
+                # Store in memory manager for long-term context
+                try:
+                    # Get memory manager from text_handler if it exists
+                    if (
+                        hasattr(self.text_handler, "memory_manager")
+                        and self.text_handler.memory_manager
+                    ):
+                        memory_manager = self.text_handler.memory_manager
+
+                        # Add document interaction to memory with metadata
+                        document_prompt = f"[Document submitted: {file_name}] {prompt}"
+                        await memory_manager.add_user_message(
+                            conversation_id,
+                            document_prompt,
+                            str(user_id),
+                            document_type=file_extension,
+                            document_name=file_name,
+                            is_document=True,
+                        )
+
+                        # Add AI's response to memory
+                        document_summary = (
+                            response[:500] + "..." if len(response) > 500 else response
+                        )
+                        document_response = (
+                            f"[Document analysis of {file_name}]: {document_summary}"
+                        )
+                        await memory_manager.add_assistant_message(
+                            conversation_id, document_response
+                        )
+
+                        self.logger.info(
+                            f"Document interaction stored in memory manager for user {user_id}"
+                        )
+                except Exception as memory_error:
+                    self.logger.error(
+                        f"Error storing document in memory manager: {str(memory_error)}"
+                    )
+
                 # Store document reference in user data (NEW)
                 if "document_history" not in context.user_data:
                     context.user_data["document_history"] = []
@@ -721,9 +771,7 @@ class MessageHandlers:
                         ),
                         "full_response": response,  # Critical for follow-up questions
                         "message_id": update.message.message_id,
-                        "response_message_ids": [
-                            msg.message_id for msg in sent_messages
-                        ],
+                        "response_message_ids": sent_messages,  # These are already message IDs
                     }
                 )
 
@@ -781,8 +829,9 @@ class MessageHandlers:
             application.add_handler(
                 MessageHandler(filters.VOICE, self._handle_voice_message)
             )
+            # Replace the document handler with the more comprehensive handle_document method
             application.add_handler(
-                MessageHandler(filters.Document.ALL, self._handle_document_message)
+                MessageHandler(filters.Document.ALL, self.handle_document)
             )
 
             application.add_error_handler(self._error_handler)
@@ -826,3 +875,23 @@ class MessageHandlers:
             return True  # Handled
 
         return False  # Not handled
+
+    async def handle_awaiting_doc_image(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> bool:
+        """Process image when awaiting document content"""
+        if context.user_data.get("awaiting_doc_image"):
+            # Clear the flag
+            context.user_data["awaiting_doc_image"] = False
+            # Get the image
+            image_file = update.message.photo[-1].get_file()
+            # Store for document generation
+            context.user_data["doc_export_image"] = image_file
+            # Offer format selection
+            format_options = [
+                [
+                    InlineKeyboardButton(
+                        "📄 PDF Format", callback_data="export_format_pdf"
+                    ),
+                ]
+            ]

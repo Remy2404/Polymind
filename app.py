@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.database.connection import get_database, close_database_connection
 from src.services.user_data_manager import UserDataManager
 from src.services.gemini_api import GeminiAPI
+from src.services.openrouter_api import OpenRouterAPI
 from src.handlers.command_handlers import CommandHandlers
 from src.handlers.text_handlers import TextHandler
 from src.handlers.message_handlers import (
@@ -191,6 +192,17 @@ class TelegramBot:
                 vision_model=vision_model, rate_limiter=rate_limiter
             )
 
+            # Initialize OpenRouter API for Quasar Alpha
+            openrouter_rate_limiter = RateLimiter(requests_per_minute=20)
+            self.openrouter_api = OpenRouterAPI(rate_limiter=openrouter_rate_limiter)
+
+            # Store API instances in application context instead of directly on bot
+            # The telegram library doesn't allow adding attributes to the bot object
+            if not hasattr(self.application, "bot_data"):
+                self.application.bot_data = {}
+            self.application.bot_data["gemini_api"] = self.gemini_api
+            self.application.bot_data["openrouter_api"] = self.openrouter_api
+
             # Other initializations
             self.user_data_manager = user_data_manager(self.db)
             self.telegram_logger = telegram_logger
@@ -198,15 +210,20 @@ class TelegramBot:
             self.logger.error(f"Error initializing services: {e}")
             raise
 
-        self.text_handler = TextHandler(self.gemini_api, self.user_data_manager)
+        # Pass the OpenRouterAPI instance to the TextHandler
+        self.text_handler = TextHandler(
+            gemini_api=self.gemini_api,
+            user_data_manager=self.user_data_manager,
+            openrouter_api=self.openrouter_api,
+        )
         self.command_handler = CommandHandlers(
             gemini_api=self.gemini_api,
             user_data_manager=self.user_data_manager,
             telegram_logger=self.telegram_logger,
             flux_lora_image_generator=flux_lora_image_generator,
         )
-        # Initialize DocumentProcessor
-        self.document_processor = DocumentProcessor()
+        # Initialize DocumentProcessor with the bot parameter
+        self.document_processor = DocumentProcessor(bot=self.application.bot)
         # Update MessageHandlers initialization with document_processor
         self.message_handlers = MessageHandlers(
             self.gemini_api,

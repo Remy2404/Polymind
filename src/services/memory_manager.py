@@ -71,399 +71,635 @@ class Conversation:
         return conv
 
 
+import logging
+import json
+import asyncio
+from typing import Dict, List, Any, Optional, Tuple, Union
+from datetime import datetime, timedelta
+import aiofiles
+import os
+import re
+from collections import defaultdict
+
+
 class MemoryManager:
-    def __init__(self, db=None, max_history_size: int = 10):
-        """Initialize the memory manager with limited history size"""
-        self.conversations = {}
-        self.max_history_size = max_history_size
-        self._locks = {}  # For thread-safe operations
-        self.db = db  # Database connection
-        self.token_limit = 4096  # Default token limit
-        self.tokenizer = None  # Will be set if using a specific tokenizer
+    """Manages conversation memory with a tiered approach for different time horizons"""
+
+    def __init__(self, db=None, storage_path="./data/memory"):
+        self.logger = logging.getLogger(__name__)
+        self.db = db
+        self.storage_path = storage_path
+
+        # Create storage directory if it doesn't exist
+        os.makedirs(storage_path, exist_ok=True)
+
+        # Initialize memory structures
+        self.short_term_memory = {}  # Most recent interactions (last 10)
+        self.medium_term_memory = {}  # Important context (last 50)
+        self.long_term_memory = {}  # Persistent user preferences and critical info
+
+        # Conversation memory limits
+        self.short_term_limit = 10
+        self.medium_term_limit = 50
+        self.conversation_expiry = timedelta(
+            hours=24
+        )  # When to move to long-term storage
+
+        # Setup message importance classification patterns
+        self._init_importance_patterns()
+
+    def _init_importance_patterns(self):
+        """Initialize patterns for detecting message importance"""
+        self.high_importance_patterns = [
+            # User preferences and personal info
+            r"\bmy name is\b|\bi am called\b|\bplease call me\b",
+            r"\bi prefer\b|\bi like\b|\bi want\b|\bi need\b",
+            r"\bremember that\b|\bdon\'t forget\b|\bmake sure\b",
+            # Professional or technical information
+            r"\btechnical specs\b|\bspecifications\b|\brequirements\b",
+            r"\bAPI key\b|\bpassword\b|\bcredentials\b|\btoken\b",
+            # Location or time context
+            r"\bi\'m in\b|\bi am in\b|\bmy location\b|\bi live in\b",
+            r"\btime zone\b|\bschedule\b|\bdeadline\b|\bdue date\b",
+            # Document context
+            r"\bdocument ID\b|\bfile reference\b|\breport number\b",
+            r"\bversion\b|\brelease\b|\bupdate\b|\bpatch\b",
+            # User intentions
+            r"\bmy goal is\b|\bi\'m trying to\b|\bi want to achieve\b",
+            r"\bproject\b|\btask\b|\bassignment\b|\bmission\b",
+        ]
 
     async def add_user_message(
         self,
         conversation_id: str,
-        content: str,
-        user_id: str = None,
-        timestamp: float = None,
+        message: str,
+        user_id: str,
+        message_type: str = "text",
         **metadata,
     ) -> None:
-        """Add a user message to the conversation with extended metadata support.
+        """Add a user message to memory with importance classification"""
+        timestamp = metadata.get("timestamp", datetime.now().timestamp())
 
-        Args:
-            conversation_id: Unique ID for the conversation
-            content: The actual message content
-            user_id: Optional ID of the user
-            timestamp: Optional timestamp for the message
-            **metadata: Any additional metadata to store with the message,
-                       such as language, message_type, etc.
-        """
-        conversation = self.get_or_create_conversation(conversation_id)
+        # Evaluate message importance
+        importance = self._evaluate_message_importance(message)
 
-        # Build metadata dictionary
-        msg_metadata = {}
-        if user_id:
-            msg_metadata["user_id"] = user_id
-        if timestamp:
-            msg_metadata["timestamp"] = timestamp
+        # Create message object
+        message_obj = {
+            "sender": "user",
+            "content": message,
+            "timestamp": timestamp,
+            "type": message_type,
+            "importance": importance,
+            "metadata": metadata,
+        }
 
-        # Add any additional metadata passed as keyword arguments
-        msg_metadata.update(metadata)
+        # Initialize conversation if needed
+        if conversation_id not in self.short_term_memory:
+            self.short_term_memory[conversation_id] = []
 
-        # Add the message with all metadata
-        conversation.add_message("user", content, **msg_metadata)
+        if conversation_id not in self.medium_term_memory:
+            self.medium_term_memory[conversation_id] = []
 
-        # Trim history if needed
-        if len(conversation.messages) > self.max_history_size:
-            conversation.messages = conversation.messages[-self.max_history_size :]
+        # Add to short-term memory
+        self.short_term_memory[conversation_id].append(message_obj)
 
-        # Save to database if available
-        if self.db is not None:
-            try:
-                await self._safe_save_conversation(conversation_id)
-            except Exception as e:
-                logger.error(f"Error saving conversation to database: {str(e)}")
-                # Continue even if saving fails
+        # Also add to medium-term memory if important
+        if importance >= 0.6:
+            self.medium_term_memory[conversation_id].append(message_obj)
 
-    async def add_assistant_message(
-        self, conversation_id: str, content: str, timestamp: float = None
+        # Add key information to long-term memory
+        if importance >= 0.8:
+            if user_id not in self.long_term_memory:
+                self.long_term_memory[user_id] = {
+                    "preferences": {},
+                    "facts": [],
+                    "contexts": {},
+                }
+
+            # Extract information for long-term memory
+            self._extract_long_term_info(user_id, message, message_obj)
+
+        # Trim memory if needed
+        self._trim_memory(conversation_id)
+
+        # Persist memory periodically (could be optimized with a periodic task)
+        await self._save_memory(conversation_id, user_id)
+
+    async def add_bot_message(
+        self,
+        conversation_id: str,
+        message: str,
+        user_id: str,
+        message_type: str = "text",
+        **metadata,
     ) -> None:
-        """Add an assistant message to the conversation."""
-        conversation = self.get_or_create_conversation(conversation_id)
-        metadata = {"timestamp": timestamp} if timestamp else {}
-        conversation.add_message("assistant", content, **metadata)
+        """Add a bot message to memory"""
+        timestamp = metadata.get("timestamp", datetime.now().timestamp())
 
-        # Trim history if needed
-        if len(conversation.messages) > self.max_history_size:
-            conversation.messages = conversation.messages[-self.max_history_size :]
+        # Create message object
+        message_obj = {
+            "sender": "bot",
+            "content": message,
+            "timestamp": timestamp,
+            "type": message_type,
+            "metadata": metadata,
+        }
 
-    def add_system_message(self, conversation_id: str, content: str) -> Message:
-        """Add a system message to the conversation."""
-        conversation = self.get_or_create_conversation(conversation_id)
-        return conversation.add_message("system", content)
+        # Initialize conversation if needed
+        if conversation_id not in self.short_term_memory:
+            self.short_term_memory[conversation_id] = []
 
-    def get_formatted_history(
-        self, conversation_id: str, max_messages: int = None
-    ) -> List[Dict[str, Any]]:
-        """Get formatted conversation history in a format compatible with LLM APIs."""
-        conversation = self.get_or_create_conversation(conversation_id)
-        messages = []
+        if conversation_id not in self.medium_term_memory:
+            self.medium_term_memory[conversation_id] = []
 
-        # Add system prompt if available
-        if conversation.system_prompt:
-            messages.append({"role": "system", "content": conversation.system_prompt})
+        # Add to short-term memory
+        self.short_term_memory[conversation_id].append(message_obj)
 
-        # Add conversation history, limiting to max_messages if specified
-        msg_list = conversation.messages
-        if max_messages is not None:
-            msg_list = msg_list[-max_messages:]
+        # Trim memory if needed
+        self._trim_memory(conversation_id)
 
-        for message in msg_list:
-            messages.append({"role": message.role, "content": message.content})
+        # Persist memory periodically
+        await self._save_memory(conversation_id, user_id)
 
-        return messages
+    def _evaluate_message_importance(self, message: str) -> float:
+        """Evaluate the importance of a message for memory retention (0.0 to 1.0)"""
+        # Basic importance score
+        importance = 0.5
 
-    def get_messages(self, conversation_id: str, limit: int = None) -> List[Message]:
-        """Get raw messages from the conversation."""
-        conversation = self.get_or_create_conversation(conversation_id)
-        if limit:
-            return conversation.messages[-limit:]
-        return conversation.messages
+        # Check for high importance patterns
+        for pattern in self.high_importance_patterns:
+            if re.search(pattern, message, re.IGNORECASE):
+                importance = min(importance + 0.2, 1.0)
 
-    def clear_conversation(self, conversation_id: str) -> None:
-        """Clear all messages from a conversation."""
-        if conversation_id in self.conversations:
-            self.conversations[conversation_id].messages = []
-            # Save empty conversation to database if configured
-            if self.db:
-                self._safe_save_conversation(conversation_id)
+        # Length-based importance (longer messages might contain more info)
+        if len(message) > 200:
+            importance = min(importance + 0.1, 1.0)
 
-    def delete_conversation(self, conversation_id: str) -> None:
-        """Delete a conversation completely."""
-        if conversation_id in self.conversations:
-            del self.conversations[conversation_id]
-            # Delete from database if configured
-            if self.db:
-                self._safe_delete_conversation(conversation_id)
-            # Clean up lock
-            if conversation_id in self._locks:
-                del self._locks[conversation_id]
+        # Question importance
+        if "?" in message:
+            importance = min(importance + 0.1, 1.0)
 
-    def count_tokens(self, text: str) -> int:
-        """Count tokens in text using tokenizer."""
-        if self.tokenizer:
-            return len(self.tokenizer.encode(text))
-        else:
-            # Fallback token counting (approximation)
-            return len(text.split())
+        # Check for code blocks or structured data
+        if "```" in message or re.search(r"\[.*?\]\(.*?\)", message):
+            importance = min(importance + 0.2, 1.0)
 
-    async def _maybe_manage_context_window(self, conversation_id: str) -> None:
-        """Check and potentially manage the context window if it exceeds the limit."""
-        conversation = self.conversations.get(conversation_id)
-        if not conversation:
-            return
+        return importance
 
-        # Count total tokens
-        total_tokens = self._calculate_conversation_tokens(conversation)
+    def _extract_long_term_info(
+        self, user_id: str, message: str, message_obj: Dict
+    ) -> None:
+        """Extract information for long-term memory"""
+        # Extract user preferences
+        preference_patterns = [
+            (r"I prefer (.*?)(?:\.|\n|$)", "preference"),
+            (r"I like (.*?)(?:\.|\n|$)", "preference"),
+            (r"I want (.*?)(?:\.|\n|$)", "preference"),
+            (r"I need (.*?)(?:\.|\n|$)", "need"),
+            (r"My favorite (.*?) is (.*?)(?:\.|\n|$)", "favorite"),
+            (r"I don\'t like (.*?)(?:\.|\n|$)", "dislike"),
+        ]
 
-        if total_tokens > self.token_limit:
-            await self._reduce_context(conversation_id, total_tokens)
+        for pattern, pref_type in preference_patterns:
+            matches = re.finditer(pattern, message, re.IGNORECASE)
+            for match in matches:
+                if pref_type == "favorite" and len(match.groups()) > 1:
+                    category = match.group(1).strip()
+                    value = match.group(2).strip()
+                    self.long_term_memory[user_id]["preferences"][
+                        f"favorite_{category}"
+                    ] = value
+                else:
+                    preference = match.group(1).strip()
+                    self.long_term_memory[user_id]["preferences"][
+                        pref_type
+                    ] = preference
 
-    def _calculate_conversation_tokens(self, conversation: Conversation) -> int:
-        """Calculate the total tokens in a conversation."""
-        total = 0
+        # Extract factual information
+        if message_obj.get("importance", 0) > 0.7:
+            # Only store high importance messages as facts
+            truncated_msg = message[:200] + "..." if len(message) > 200 else message
+            fact = {
+                "content": truncated_msg,
+                "timestamp": message_obj.get("timestamp", datetime.now().timestamp()),
+                "type": message_obj.get("type", "text"),
+            }
+            self.long_term_memory[user_id]["facts"].append(fact)
 
-        # Count system prompt
-        if conversation.system_prompt:
-            total += self.count_tokens(conversation.system_prompt)
-
-        # Count messages
-        for msg in conversation.messages:
-            total += self.count_tokens(msg.content)
-            # Add overhead for message format (role, formatting, etc.)
-            total += 4  # Approximation for message metadata overhead
-
-        return total
-
-    async def _reduce_context(self, conversation_id: str, current_tokens: int) -> None:
-        """Reduce the context window using various strategies."""
-        conversation = self.conversations.get(conversation_id)
-        if not conversation or len(conversation.messages) < 3:
-            return
-
-        # Strategy 1: Remove oldest messages until under limit
-        target_token_count = int(
-            self.token_limit * 0.7
-        )  # Target 70% of limit after reduction
-
-        # Keep at least the latest user-assistant exchange
-        keep_count = 2
-        preserve_messages = conversation.messages[-keep_count:]
-
-        # First try: Generate a summary of older messages if possible
-        if len(conversation.messages) > keep_count + 2:
-            summary = await self._generate_summary(conversation_id)
-            if summary:
-                # Replace old messages with summary
-                conversation.messages = [
-                    Message(
-                        role="system",
-                        content=f"Previous conversation summary: {summary}",
-                    )
-                ] + preserve_messages
-                return
-
-        # If we can't summarize or it failed, remove oldest messages one by one
-        while len(conversation.messages) > keep_count:
-            # Remove oldest message
-            conversation.messages.pop(0)
-
-            # Recalculate tokens
-            new_token_count = self._calculate_conversation_tokens(conversation)
-
-            if new_token_count <= target_token_count:
-                break
-
-    async def _generate_summary(self, conversation_id: str) -> Optional[str]:
-        """Generate a summary of the conversation using the assistant."""
-        try:
-            # This method would use the LLM to generate a summary
-            # For now, returning a simple concatenation summary
-            conversation = self.conversations.get(conversation_id)
-            if not conversation or len(conversation.messages) < 3:
-                return None
-
-            # Exclude most recent messages that we'll preserve
-            messages_to_summarize = conversation.messages[:-2]
-
-            # Create a simple summary by extracting key information
-            # In a real implementation, you'd call the LLM API here
-            summary_parts = []
-            for msg in messages_to_summarize:
-                if msg.role == "user":
-                    # Extract first sentence or portion of user queries
-                    content = msg.content.strip()
-                    if len(content) > 50:
-                        content = content[:50] + "..."
-                    summary_parts.append(f"User asked: {content}")
-                elif msg.role == "assistant" and len(msg.content) > 100:
-                    # For assistant responses, extract conclusion if possible
-                    lines = msg.content.split("\n")
-                    if len(lines) > 1:
-                        summary_parts.append(f"Assistant explained about: {lines[-1]}")
-
-            if not summary_parts:
-                return None
-
-            return " ".join(summary_parts)
-
-        except Exception as e:
-            logger.error(f"Error generating summary: {str(e)}")
-            return None
-
-    async def _safe_save_conversation(self, conversation_id: str) -> None:
-        """Safely save conversation to database with multiple approaches."""
-        if self.db is None or conversation_id not in self.conversations:
-            return
-
-        try:
-            conv_data = self.conversations[conversation_id].to_dict()
-
-            # Try different approaches to save based on database interface
-            try:
-                # Approach 1: MongoDB collection direct usage - most common pattern
-                if hasattr(self.db, "conversations"):
-                    collection = self.db.conversations
-                    if hasattr(collection, "update_one") and callable(
-                        getattr(collection, "update_one")
-                    ):
-                        # Use find_one_and_update or update_one as appropriate
-                        await asyncio.to_thread(
-                            collection.update_one,
-                            {"id": conversation_id},
-                            {"$set": conv_data},
-                            upsert=True,
-                        )
-                        logger.info(
-                            f"Successfully saved conversation {conversation_id} using MongoDB collection"
-                        )
-                        return
-
-                # Approach 2: Direct method call on database
-                if hasattr(self.db, "save_conversation") and callable(
-                    getattr(self.db, "save_conversation")
-                ):
-                    # This is a custom method defined in the database class
-                    result = self.db.save_conversation(conversation_id, conv_data)
-                    # Handle both sync and async implementations
-                    if asyncio.iscoroutine(result):
-                        await result
-                    logger.info(
-                        f"Successfully saved conversation {conversation_id} using custom method"
-                    )
-                    return
-
-                # Approach 3: Simple insert/update_one at database level
-                if hasattr(self.db, "update_one") and callable(
-                    getattr(self.db, "update_one")
-                ):
-                    await asyncio.to_thread(
-                        self.db.update_one,
-                        {"id": conversation_id},
-                        {"$set": conv_data},
-                        upsert=True,
-                    )
-                    logger.info(
-                        f"Successfully saved conversation {conversation_id} using db.update_one"
-                    )
-                    return
-
-                # If all approaches failed but no exception was raised
-                logger.warning(
-                    f"Could not find a suitable method to save conversation {conversation_id}. "
-                    f"DB type: {type(self.db)}, has conversations: {hasattr(self.db, 'conversations')}"
+            # Limit facts to most recent/important 50
+            if len(self.long_term_memory[user_id]["facts"]) > 50:
+                self.long_term_memory[user_id]["facts"].sort(
+                    key=lambda x: (x.get("importance", 0), x.get("timestamp", 0)),
+                    reverse=True,
                 )
-            except Exception as db_error:
-                logger.error(
-                    f"Database operation error for conversation {conversation_id}: {str(db_error)}"
+                self.long_term_memory[user_id]["facts"] = self.long_term_memory[
+                    user_id
+                ]["facts"][:50]
+
+    def _trim_memory(self, conversation_id: str) -> None:
+        """Trim memory to stay within limits"""
+        # Trim short-term memory
+        if conversation_id in self.short_term_memory:
+            if len(self.short_term_memory[conversation_id]) > self.short_term_limit:
+                # Keep the most recent messages
+                self.short_term_memory[conversation_id] = self.short_term_memory[
+                    conversation_id
+                ][-self.short_term_limit :]
+
+        # Trim medium-term memory
+        if conversation_id in self.medium_term_memory:
+            if len(self.medium_term_memory[conversation_id]) > self.medium_term_limit:
+                # Sort by importance and timestamp, keep most relevant
+                messages = self.medium_term_memory[conversation_id]
+                messages.sort(
+                    key=lambda x: (x.get("importance", 0), x.get("timestamp", 0)),
+                    reverse=True,
                 )
-                # Continue execution despite database error
-        except Exception as e:
-            logger.error(f"Failed to save conversation {conversation_id}: {str(e)}")
+                self.medium_term_memory[conversation_id] = messages[
+                    : self.medium_term_limit
+                ]
 
-    def _safe_delete_conversation(self, conversation_id: str) -> None:
-        """Safely delete conversation from database with multiple approaches."""
-        if not self.db:
-            return
+    async def get_conversation_context(
+        self,
+        conversation_id: str,
+        user_id: str,
+        limit: int = 10,
+        include_long_term: bool = True,
+    ) -> List[Dict]:
+        """Get the conversation context with tiered memory integration"""
+        # Load memory if not already loaded
+        await self._load_memory(conversation_id, user_id)
 
-        try:
-            # Try different approaches to delete based on database interface
+        # Combine contexts with priority to short-term
+        context = []
 
-            # Approach 1: Direct method call
-            if hasattr(self.db, "delete_conversation") and callable(
-                getattr(self.db, "delete_conversation")
+        # Add short-term memory (most recent conversations)
+        short_term = self.short_term_memory.get(conversation_id, [])
+        context.extend(short_term[-limit:])
+
+        # Add relevant medium-term memory not in short-term
+        medium_term = self.medium_term_memory.get(conversation_id, [])
+        # Only add medium-term messages not already in the context
+        short_term_timestamps = {msg.get("timestamp") for msg in context}
+        for msg in medium_term:
+            if (
+                msg.get("timestamp") not in short_term_timestamps
+                and msg.get("importance", 0) >= 0.7
             ):
-                self.db.delete_conversation(conversation_id)
-                return
+                context.append(msg)
 
-            # Approach 2: MongoDB collection
-            if hasattr(self.db, "conversations"):
-                collection = self.db.conversations
-                if hasattr(collection, "delete_one") and callable(
-                    getattr(collection, "delete_one")
-                ):
-                    collection.delete_one({"id": conversation_id})
-                    return
+                # Limit how many medium-term messages we add
+                if len(context) >= limit * 1.5:
+                    break
 
-            # Approach 3: Direct delete_one
-            if hasattr(self.db, "delete_one") and callable(
-                getattr(self.db, "delete_one")
-            ):
-                self.db.delete_one({"id": conversation_id})
-                return
+        # Add long-term memory context if requested
+        if include_long_term and user_id in self.long_term_memory:
+            long_term = self.long_term_memory[user_id]
 
-            logger.warning(
-                f"Could not find a suitable method to delete conversation {conversation_id}"
-            )
-        except Exception as e:
-            logger.error(f"Failed to delete conversation {conversation_id}: {str(e)}")
-
-    def _get_lock(self, conversation_id: str) -> asyncio.Lock:
-        """Get the lock for a conversation, creating it if necessary."""
-        if conversation_id not in self._locks:
-            self._locks[conversation_id] = asyncio.Lock()
-        return self._locks[conversation_id]
-
-    def get_conversation_summary(
-        self, conversation_id: str, max_length: int = 100
-    ) -> str:
-        """Get a short summary of the conversation for display purposes."""
-        conversation = self.get_or_create_conversation(conversation_id)
-
-        if not conversation.messages:
-            return "No messages"
-
-        # Get the most recent exchange
-        last_messages = (
-            conversation.messages[-2:]
-            if len(conversation.messages) >= 2
-            else conversation.messages
-        )
-
-        # Create a simple summary
-        summary_parts = []
-        for msg in last_messages:
-            content = msg.content.strip()
-            if len(content) > max_length:
-                content = content[:max_length] + "..."
-            summary_parts.append(
-                f"{'User' if msg.role == 'user' else 'Assistant'}: {content}"
-            )
-
-        return "\n".join(summary_parts)
-
-    def get_or_create_conversation(self, conversation_id: str) -> Conversation:
-        """Get an existing conversation or create a new one."""
-        if conversation_id not in self.conversations:
-            # Convert old format to new format if it exists in old format
-            old_messages = self.conversations.get(conversation_id, [])
-            conversation = Conversation(id=conversation_id)
-
-            # If there were messages in old format, convert them
-            for msg in old_messages:
-                conversation.add_message(
-                    role=msg["role"],
-                    content=msg["content"],
-                    timestamp=msg.get("timestamp", time.time()),
-                    **{
-                        k: v
-                        for k, v in msg.items()
-                        if k not in ["role", "content", "timestamp"]
+            # Add user preferences as context
+            if long_term.get("preferences"):
+                preferences = long_term["preferences"]
+                preference_text = "User preferences: " + ", ".join(
+                    [f"{k}: {v}" for k, v in preferences.items()]
+                )
+                context.insert(
+                    0,
+                    {
+                        "sender": "system",
+                        "content": preference_text,
+                        "type": "memory",
+                        "importance": 0.9,
                     },
                 )
 
-            self.conversations[conversation_id] = conversation
-            return conversation
+            # Add relevant facts from long-term memory
+            if long_term.get("facts"):
+                # Take the 3 most recent facts
+                recent_facts = sorted(
+                    long_term["facts"],
+                    key=lambda x: x.get("timestamp", 0),
+                    reverse=True,
+                )[:3]
 
-        return self.conversations[conversation_id]
+                for fact in recent_facts:
+                    context.insert(
+                        1,
+                        {  # Insert after preferences
+                            "sender": "system",
+                            "content": f"User previously mentioned: {fact['content']}",
+                            "type": "memory",
+                            "importance": 0.8,
+                        },
+                    )
+
+        # Sort by timestamp for chronological order
+        context.sort(key=lambda x: x.get("timestamp", 0))
+
+        return context
+
+    async def search_memory(
+        self, user_id: str, query: str, limit: int = 5
+    ) -> List[Dict]:
+        """Search memory for relevant messages using keyword matching"""
+        results = []
+        query_terms = set(query.lower().split())
+
+        # Find conversations for this user
+        user_conversations = set()
+        for conv_id, messages in self.medium_term_memory.items():
+            for message in messages:
+                message_user_id = message.get("metadata", {}).get("user_id")
+                if message_user_id == user_id:
+                    user_conversations.add(conv_id)
+                    break
+
+        # Search through medium-term memory for this user
+        for conv_id in user_conversations:
+            for message in self.medium_term_memory.get(conv_id, []):
+                content = message.get("content", "").lower()
+                score = 0
+
+                # Calculate simple relevance score
+                for term in query_terms:
+                    if term in content:
+                        score += 1
+
+                # Adjust for importance
+                score = score * (1 + message.get("importance", 0))
+
+                if score > 0:
+                    result = dict(message)
+                    result["relevance_score"] = score
+                    result["conversation_id"] = conv_id
+                    results.append(result)
+
+        # Sort by relevance and limit results
+        results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+
+        return results[:limit]
+
+    async def get_document_context(self, user_id: str, limit: int = 3) -> List[Dict]:
+        """Get recent document interactions for a user"""
+        document_contexts = []
+
+        # Find conversations for this user
+        user_conversations = set()
+        for conv_id, messages in self.medium_term_memory.items():
+            for message in messages:
+                message_user_id = message.get("metadata", {}).get("user_id")
+                if message_user_id == user_id:
+                    user_conversations.add(conv_id)
+                    break
+
+        # Collect document-related messages
+        for conv_id in user_conversations:
+            for message in self.medium_term_memory.get(conv_id, []):
+                if message.get("type") == "document" or "document" in message.get(
+                    "metadata", {}
+                ).get("type", ""):
+
+                    # Create document context entry
+                    doc_context = {
+                        "content": message.get("content", ""),
+                        "document_id": message.get("metadata", {}).get(
+                            "document_id", "unknown"
+                        ),
+                        "timestamp": message.get("timestamp", 0),
+                        "conversation_id": conv_id,
+                    }
+                    document_contexts.append(doc_context)
+
+        # Sort by timestamp (most recent first) and limit
+        document_contexts.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+
+        return document_contexts[:limit]
+
+    async def clear_conversation(self, conversation_id: str) -> bool:
+        """Clear a specific conversation from memory"""
+        try:
+            if conversation_id in self.short_term_memory:
+                del self.short_term_memory[conversation_id]
+
+            if conversation_id in self.medium_term_memory:
+                del self.medium_term_memory[conversation_id]
+
+            # Remove conversation file if exists
+            file_path = os.path.join(
+                self.storage_path, f"conversation_{conversation_id}.json"
+            )
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
+            return True
+        except Exception as e:
+            self.logger.error(
+                f"Error clearing conversation {conversation_id}: {str(e)}"
+            )
+            return False
+
+    async def clear_user_data(self, user_id: str) -> bool:
+        """Clear all data for a specific user"""
+        try:
+            # Clear from long-term memory
+            if user_id in self.long_term_memory:
+                del self.long_term_memory[user_id]
+
+            # Find and clear conversations for this user
+            user_conversations = set()
+            for conv_id, messages in list(self.medium_term_memory.items()):
+                for message in messages:
+                    message_user_id = message.get("metadata", {}).get("user_id")
+                    if message_user_id == user_id:
+                        user_conversations.add(conv_id)
+                        break
+
+            # Clear found conversations
+            for conv_id in user_conversations:
+                await self.clear_conversation(conv_id)
+
+            # Remove user file if exists
+            file_path = os.path.join(self.storage_path, f"user_{user_id}.json")
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
+            return True
+        except Exception as e:
+            self.logger.error(f"Error clearing user data {user_id}: {str(e)}")
+            return False
+
+    async def _save_memory(self, conversation_id: str, user_id: str) -> None:
+        """Save memory to persistent storage"""
+        try:
+            # Save conversation memory
+            if conversation_id:
+                conversation_data = {
+                    "short_term": self.short_term_memory.get(conversation_id, []),
+                    "medium_term": self.medium_term_memory.get(conversation_id, []),
+                    "last_updated": datetime.now().isoformat(),
+                }
+
+                file_path = os.path.join(
+                    self.storage_path, f"conversation_{conversation_id}.json"
+                )
+                async with aiofiles.open(file_path, "w") as f:
+                    await f.write(json.dumps(conversation_data, indent=2))
+
+            # Save user long-term memory
+            if user_id and user_id in self.long_term_memory:
+                file_path = os.path.join(self.storage_path, f"user_{user_id}.json")
+                async with aiofiles.open(file_path, "w") as f:
+                    await f.write(json.dumps(self.long_term_memory[user_id], indent=2))
+
+            # Save to database if available
+            if self.db is not None:
+                try:
+                    if conversation_id:
+                        conversation_data = {
+                            "conversation_id": conversation_id,
+                            "short_term": self.short_term_memory.get(
+                                conversation_id, []
+                            ),
+                            "medium_term": self.medium_term_memory.get(
+                                conversation_id, []
+                            ),
+                            "last_updated": datetime.now(),
+                        }
+
+                        await asyncio.to_thread(
+                            self.db.conversations.update_one,
+                            {"conversation_id": conversation_id},
+                            {"$set": conversation_data},
+                            upsert=True,
+                        )
+
+                    if user_id and user_id in self.long_term_memory:
+                        user_data = {
+                            "user_id": user_id,
+                            "long_term_memory": self.long_term_memory[user_id],
+                            "last_updated": datetime.now(),
+                        }
+
+                        await asyncio.to_thread(
+                            self.db.user_memory.update_one,
+                            {"user_id": user_id},
+                            {"$set": user_data},
+                            upsert=True,
+                        )
+                except Exception as db_error:
+                    self.logger.error(f"Failed to save to database: {str(db_error)}")
+
+        except Exception as e:
+            self.logger.error(f"Error saving memory: {str(e)}")
+
+    async def _load_memory(self, conversation_id: str, user_id: str) -> None:
+        """Load memory from persistent storage if not already loaded"""
+        try:
+            # Load conversation memory if not already loaded
+            if conversation_id and (
+                conversation_id not in self.short_term_memory
+                or conversation_id not in self.medium_term_memory
+            ):
+                # Try loading from file
+                file_path = os.path.join(
+                    self.storage_path, f"conversation_{conversation_id}.json"
+                )
+                if os.path.exists(file_path):
+                    async with aiofiles.open(file_path, "r") as f:
+                        conversation_data = json.loads(await f.read())
+
+                        self.short_term_memory[conversation_id] = conversation_data.get(
+                            "short_term", []
+                        )
+                        self.medium_term_memory[conversation_id] = (
+                            conversation_data.get("medium_term", [])
+                        )
+
+                        self.logger.info(
+                            f"Loaded conversation {conversation_id} from file storage"
+                        )
+
+                # If not found in file, try database
+                elif self.db is not None:
+                    conversation_doc = await asyncio.to_thread(
+                        self.db.conversations.find_one,
+                        {"conversation_id": conversation_id},
+                    )
+
+                    if conversation_doc:
+                        self.short_term_memory[conversation_id] = conversation_doc.get(
+                            "short_term", []
+                        )
+                        self.medium_term_memory[conversation_id] = conversation_doc.get(
+                            "medium_term", []
+                        )
+
+                        self.logger.info(
+                            f"Loaded conversation {conversation_id} from database"
+                        )
+
+            # Load user long-term memory if not already loaded
+            if user_id and user_id not in self.long_term_memory:
+                # Try loading from file
+                file_path = os.path.join(self.storage_path, f"user_{user_id}.json")
+                if os.path.exists(file_path):
+                    async with aiofiles.open(file_path, "r") as f:
+                        self.long_term_memory[user_id] = json.loads(await f.read())
+
+                        self.logger.info(
+                            f"Loaded user {user_id} memory from file storage"
+                        )
+
+                # If not found in file, try database
+                elif self.db is not None:
+                    user_doc = await asyncio.to_thread(
+                        self.db.user_memory.find_one, {"user_id": user_id}
+                    )
+
+                    if user_doc and "long_term_memory" in user_doc:
+                        self.long_term_memory[user_id] = user_doc["long_term_memory"]
+
+                        self.logger.info(f"Loaded user {user_id} memory from database")
+
+                # Initialize if not found anywhere
+                if user_id not in self.long_term_memory:
+                    self.long_term_memory[user_id] = {
+                        "preferences": {},
+                        "facts": [],
+                        "contexts": {},
+                    }
+
+        except Exception as e:
+            self.logger.error(f"Error loading memory: {str(e)}")
+            # Initialize with empty structure
+            if conversation_id:
+                self.short_term_memory[conversation_id] = []
+                self.medium_term_memory[conversation_id] = []
+
+            if user_id and user_id not in self.long_term_memory:
+                self.long_term_memory[user_id] = {
+                    "preferences": {},
+                    "facts": [],
+                    "contexts": {},
+                }
+
+    async def update_user_preference(self, user_id: str, key: str, value: Any) -> None:
+        """Update a user preference in long-term memory"""
+        if user_id not in self.long_term_memory:
+            self.long_term_memory[user_id] = {
+                "preferences": {},
+                "facts": [],
+                "contexts": {},
+            }
+
+        self.long_term_memory[user_id]["preferences"][key] = value
+
+        # Save the update
+        await self._save_memory("", user_id)
+
+    async def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
+        """Get all user preferences from long-term memory"""
+        # Ensure memory is loaded
+        await self._load_memory("", user_id)
+
+        if user_id in self.long_term_memory:
+            return self.long_term_memory[user_id].get("preferences", {})
+        return {}
