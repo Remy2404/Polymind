@@ -37,6 +37,10 @@ opencv-python==4.11.0.86
 scikit-image==0.25.2
 tifffile==2025.2.18
 
+# Natural language processing
+spacy==3.8.5
+langcodes==3.5.0
+
 # Utility dependencies
 httpx==0.28.0
 python-dateutil==2.9.0.post0
