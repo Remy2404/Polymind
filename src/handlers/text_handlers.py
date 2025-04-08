@@ -9,7 +9,7 @@ from services.user_data_manager import user_data_manager
 from typing import List
 import datetime
 import logging
-from services.DeepSeek_R1_Distill_Llama_70B import deepseek_llm
+from services.model_handlers.factory import ModelHandlerFactory
 import asyncio
 from services.memory_manager import MemoryManager
 
@@ -266,9 +266,71 @@ class TextHandler:
                         "Sorry, there was an error generating your image. Please try again later."
                     )
 
+            # Get the preferred model with multiple fallback mechanisms
             preferred_model = await self.user_data_manager.get_user_preference(
                 user_id, "preferred_model", default="gemini"
             )
+            self.logger.info(f"Preferred model for user {user_id}: {preferred_model}")
+
+            # Check for temporary flags from a recent model switch
+            if (
+                "just_switched_model" in context.user_data
+                and context.user_data["just_switched_model"]
+            ):
+                preferred_model = context.user_data.get(
+                    "switched_to_model", preferred_model
+                )
+                self.logger.info(
+                    f"Using recently switched model for user {user_id}: {preferred_model}"
+                )
+                # Clear the temporary flags after a few messages
+                if "model_switch_counter" not in context.user_data:
+                    context.user_data["model_switch_counter"] = 1
+                else:
+                    context.user_data["model_switch_counter"] += 1
+
+                # After 5 messages, we can trust the DB to have the correct preference
+                if context.user_data["model_switch_counter"] >= 5:
+                    context.user_data["just_switched_model"] = False
+                    context.user_data["model_switch_counter"] = 0
+                    self.logger.info(
+                        f"Cleared temporary model switch flags for user {user_id}"
+                    )
+
+            # Check the backup preference store only if we haven't recently switched models
+            if (
+                not context.user_data.get("just_switched_model", False)
+                and hasattr(self.user_data_manager, "preference_backup")
+                and user_id in self.user_data_manager.preference_backup
+            ):
+                backup_model = self.user_data_manager.preference_backup.get(
+                    user_id, {}
+                ).get("preferred_model")
+                if backup_model and preferred_model != backup_model:
+                    self.logger.warning(
+                        f"Preference mismatch for user {user_id}. DB: {preferred_model}, Backup: {backup_model}. Using DB value."
+                    )
+
+                    # Update the backup to match the DB instead of the other way around
+                    if hasattr(self.user_data_manager, "preference_backup"):
+                        if user_id in self.user_data_manager.preference_backup:
+                            self.user_data_manager.preference_backup[user_id][
+                                "preferred_model"
+                            ] = preferred_model
+                            self.logger.info(
+                                f"Updated backup preference for user {user_id} to {preferred_model}"
+                            )
+
+            # As a final fallback, check if we're in the middle of a DeepSeek conversation
+            last_message_indicator = context.user_data.get("last_message_indicator", "")
+            if "DeepSeek" in last_message_indicator and preferred_model == "gemini":
+                self.logger.warning(
+                    f"Last message was from DeepSeek but preference is gemini. Correcting to deepseek."
+                )
+                preferred_model = "deepseek"
+                await self.user_data_manager.set_user_preference(
+                    user_id, "preferred_model", preferred_model
+                )
 
             # Apply response style guidelines
             enhanced_prompt_with_guidelines = await self._apply_response_guidelines(
@@ -276,26 +338,23 @@ class TextHandler:
             )
 
             try:
-                if preferred_model == "deepseek":
-                    system_message = "You are an AI assistant that helps users with tasks and answers questions helpfully, accurately, and ethically."
-                    response = await asyncio.wait_for(
-                        deepseek_llm.generate_text(
-                            prompt=enhanced_prompt_with_guidelines,
-                            system_message=system_message,
-                            temperature=0.7,
-                            max_tokens=4000,
+                # Get the model handler for the preferred model
+                model_handler = ModelHandlerFactory.get_model_handler(
+                    preferred_model, gemini_api=self.gemini_api
+                )
+
+                # Generate response using the model handler
+                response = await asyncio.wait_for(
+                    model_handler.generate_response(
+                        prompt=enhanced_prompt_with_guidelines,
+                        context=(
+                            formatted_history if preferred_model == "gemini" else None
                         ),
-                        timeout=300.0,
-                    )
-                else:
-                    # Use the formatted history from MemoryManager instead of user_context
-                    response = await asyncio.wait_for(
-                        self.gemini_api.generate_response(
-                            prompt=enhanced_prompt_with_guidelines,
-                            context=formatted_history,  # Use formatted history from MemoryManager
-                        ),
-                        timeout=60.0,
-                    )
+                        temperature=0.7,
+                        max_tokens=4000,
+                    ),
+                    timeout=300.0 if preferred_model == "deepseek" else 60.0,
+                )
             except asyncio.TimeoutError:
                 await thinking_message.delete()
                 await message.reply_text(
@@ -326,9 +385,15 @@ class TextHandler:
 
             # Store the message IDs for potential editing
             sent_messages = []
-            model_indicator = (
-                "🧠 Gemini" if preferred_model == "gemini" else "🔮 DeepSeek"
+
+            # Get the model indicator from the model handler
+            model_handler = ModelHandlerFactory.get_model_handler(
+                preferred_model, gemini_api=self.gemini_api
             )
+            model_indicator = model_handler.get_model_indicator()
+
+            # Store the model indicator for model consistency checking in future messages
+            context.user_data["last_message_indicator"] = model_indicator
 
             for i, chunk in enumerate(message_chunks):
                 try:
@@ -695,28 +760,17 @@ class TextHandler:
             async with aiofiles.open(guidelines_path, "r", encoding="utf-8") as file:
                 content = await file.read()
 
-            # Select appropriate guidelines based on model
-            if preferred_model == "deepseek":
-                style_instruction = """
-                Please follow these guidelines for your response:
-                - Provide detailed analytical responses
-                - Include code examples for programming questions
-                - Use logical organization with headers
-                - Start with the most important information
-                - End complex responses with a follow-up question
-                """
-            else:  # gemini
-                style_instruction = """
-                Please follow these guidelines for your response:
-                - Use straightforward language and explain technical terms
-                - Focus on essential information first
-                - Include code examples for programming questions
-                - Use a professional yet conversational tone
-                - End with a follow-up question when appropriate
-                """
+            # Get the model handler for the preferred model
+            model_handler = ModelHandlerFactory.get_model_handler(
+                preferred_model, gemini_api=self.gemini_api
+            )
 
-            # Add the style instruction to the beginning of the prompt
-            enhanced_prompt = f"{style_instruction}\n\nUser query: {prompt}"
+            # Get system message from the model handler
+            system_message = model_handler.get_system_message()
+
+            # Create enhanced prompt with system message and user query
+            enhanced_prompt = f"{system_message}\n\nUser query: {prompt}"
+
             return enhanced_prompt
         except Exception as e:
             self.logger.error(f"Error applying response guidelines: {str(e)}")

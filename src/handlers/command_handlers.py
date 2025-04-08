@@ -1263,10 +1263,18 @@ class CommandHandlers:
             "Gemini 2.0 Flash" if selected_model == "gemini" else "DeepSeek 70B"
         )
 
-        # Save user's model preference - ADD await HERE
+        # Save user's model preference
         await self.user_data_manager.set_user_preference(
             user_id, "preferred_model", selected_model
         )
+
+        # Set flags in context.user_data to ensure next message uses the new model
+        # This helps address race conditions with database updates
+        context.user_data["just_switched_model"] = True
+        context.user_data["switched_to_model"] = selected_model
+
+        # Log the model change
+        self.logger.info(f"User {user_id} switched to model: {selected_model}")
 
         # Update the message
         await query.edit_message_text(

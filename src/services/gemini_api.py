@@ -431,9 +431,11 @@ class GeminiAPI:
             # Prepare the conversation history
             conversation = []
 
-            # Simplified system message without guidelines
+            # System message with clear identity
             system_message = (
-                "You are DeepGem, an AI assistant that can help with various tasks."
+                "You are Gemini, an AI assistant that can help with various tasks. "
+                "When introducing yourself, always refer to yourself as Gemini. "
+                "Do not introduce yourself as DeepGem or any other name."
             )
 
             conversation.append(
