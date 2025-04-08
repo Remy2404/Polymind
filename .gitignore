@@ -28,4 +28,5 @@ your_log_file.log
 .vercel
 bot.log
 .cursorrules
-.cursor 
+.cursor
+import_scan.txt

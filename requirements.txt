@@ -40,6 +40,7 @@ tifffile==2025.2.18
 # Natural language processing
 spacy==3.8.5
 langcodes==3.5.0
+scikit-learn==1.6.1
 
 # Utility dependencies
 httpx==0.28.0
@@ -48,6 +49,10 @@ regex==2024.11.6
 tqdm==4.67.1
 aiocache==0.12.3
 aiodns==3.0.0
+click==8.1.7
+cachetools==5.3.3
+beautifulsoup4==4.12.3
+requests==2.31.0
 
 # Machine learning
 numpy==2.2.3
