@@ -483,4 +483,4 @@ def get_application():
 
 
 # For uvicorn to import
-application = get_application()
+app = get_application()

@@ -104,6 +104,7 @@ class MemoryManager:
         self.conversation_expiry = timedelta(
             hours=24
         )  # When to move to long-term storage
+        self.token_limit = 8192  # Default token limit
 
         # Setup message importance classification patterns
         self._init_importance_patterns()
@@ -184,6 +185,135 @@ class MemoryManager:
 
         # Persist memory periodically (could be optimized with a periodic task)
         await self._save_memory(conversation_id, user_id)
+
+    async def add_assistant_message(
+        self,
+        conversation_id: str,
+        message: str,
+        message_type: str = "text",
+        **metadata,
+    ) -> None:
+        """Add an assistant message to memory"""
+        timestamp = metadata.get("timestamp", datetime.now().timestamp())
+
+        # Create message object
+        message_obj = {
+            "sender": "assistant",
+            "content": message,
+            "timestamp": timestamp,
+            "type": message_type,
+            "metadata": metadata,
+        }
+
+        # Initialize conversation if needed
+        if conversation_id not in self.short_term_memory:
+            self.short_term_memory[conversation_id] = []
+
+        # Add to short-term memory
+        self.short_term_memory[conversation_id].append(message_obj)
+
+        # Trim memory if needed
+        self._trim_memory(conversation_id)
+
+        # Persist memory periodically
+        await self._save_memory(
+            conversation_id, ""
+        )  # No user ID needed for assistant messages
+
+    # This is the missing method that's causing the error
+    def get_formatted_history(
+        self, conversation_id: str, max_messages: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Get conversation history formatted for AI model consumption.
+
+        Args:
+            conversation_id: The ID of the conversation to retrieve
+            max_messages: Maximum number of messages to include
+
+        Returns:
+            List of message dictionaries formatted for model context
+        """
+        formatted_history = []
+
+        # Get messages from short-term memory
+        messages = self.short_term_memory.get(conversation_id, [])
+
+        # Only take the most recent messages up to max_messages
+        recent_messages = (
+            messages[-max_messages:] if len(messages) > max_messages else messages
+        )
+
+        # Format the messages for the AI model
+        for msg in recent_messages:
+            sender = msg.get("sender", "")
+            content = msg.get("content", "")
+
+            # Map 'sender' to standard role names expected by AI models
+            role = "user" if sender == "user" else "assistant"
+
+            formatted_history.append({"role": role, "content": content})
+
+        return formatted_history
+
+    def get_messages(self, conversation_id: str) -> List[Message]:
+        """Get all messages for a conversation as Message objects"""
+        messages = []
+
+        # Get raw message data from memory
+        raw_messages = self.short_term_memory.get(conversation_id, [])
+
+        # Convert to Message objects
+        for msg in raw_messages:
+            role = "user" if msg.get("sender") == "user" else "assistant"
+            message = Message(
+                role=role,
+                content=msg.get("content", ""),
+                timestamp=msg.get("timestamp", time.time()),
+                metadata=msg.get("metadata", {}),
+            )
+            messages.append(message)
+
+        return messages
+
+    async def _maybe_manage_context_window(self, conversation_id: str) -> None:
+        """Check if context window is getting too large and trim if needed"""
+        if conversation_id not in self.short_term_memory:
+            return
+
+        # Estimate token count (very rough approximation)
+        total_tokens = sum(
+            len(msg.get("content", "").split()) * 1.3
+            for msg in self.short_term_memory[conversation_id]
+        )
+
+        # If approaching token limit, trim older messages
+        if total_tokens > self.token_limit * 0.8:
+            # Sort by importance first, then timestamp
+            messages = self.short_term_memory[conversation_id]
+            messages.sort(
+                key=lambda x: (x.get("importance", 0), x.get("timestamp", 0)),
+                reverse=True,
+            )
+
+            # Keep most important messages within token limit
+            kept_messages = []
+            token_count = 0
+
+            for msg in messages:
+                msg_tokens = len(msg.get("content", "").split()) * 1.3
+                if token_count + msg_tokens < self.token_limit * 0.7:
+                    kept_messages.append(msg)
+                    token_count += msg_tokens
+
+            # Sort back by timestamp
+            kept_messages.sort(key=lambda x: x.get("timestamp", 0))
+            self.short_term_memory[conversation_id] = kept_messages
+
+            # Log the context management action
+            self.logger.info(
+                f"Managed context window for {conversation_id}: Reduced from {total_tokens:.0f} to {token_count:.0f} tokens"
+            )
 
     async def add_bot_message(
         self,
