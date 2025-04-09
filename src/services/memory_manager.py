@@ -113,7 +113,7 @@ class MemoryManager:
         """Initialize patterns for detecting message importance"""
         self.high_importance_patterns = [
             # User preferences and personal info
-            r"\bmy name is\b|\bi am called\b|\bplease call me\b",
+            r"\bmy name is\b|\bi am called\b|\bplease call me\b|\bi'm (\w+)\b|\bI am (\w+)\b",
             r"\bi prefer\b|\bi like\b|\bi want\b|\bi need\b",
             r"\bremember that\b|\bdon\'t forget\b|\bmake sure\b",
             # Professional or technical information
@@ -128,7 +128,14 @@ class MemoryManager:
             # User intentions
             r"\bmy goal is\b|\bi\'m trying to\b|\bi want to achieve\b",
             r"\bproject\b|\btask\b|\bassignment\b|\bmission\b",
+            # Specific questions about the model's memory
+            r"\bdo you (?:know|remember) (?:my|me)\b",
         ]
+
+        # Add specific pattern for capturing names
+        self.name_pattern = re.compile(
+            r"\bmy name is\s+(\w+)|\bi am\s+(\w+)|\bcall me\s+(\w+)", re.IGNORECASE
+        )
 
     async def add_user_message(
         self,
@@ -389,6 +396,37 @@ class MemoryManager:
             (r"I don\'t like (.*?)(?:\.|\n|$)", "dislike"),
         ]
 
+        # Extract name information specifically - this is high priority
+        name_match = self.name_pattern.search(message)
+        if name_match:
+            # Get the first non-None group (the actual name)
+            name = next(
+                (group for group in name_match.groups() if group is not None), None
+            )
+            if (
+                name and len(name) > 1
+            ):  # Ensure it's a reasonable name (more than one character)
+                self.long_term_memory[user_id]["preferences"]["name"] = name
+                # Also add this as a high-importance fact
+                name_fact = {
+                    "content": f"The user's name is {name}",
+                    "timestamp": message_obj.get(
+                        "timestamp", datetime.now().timestamp()
+                    ),
+                    "type": "personal_info",
+                    "importance": 1.0,  # Maximum importance
+                }
+                # Add at the beginning of facts
+                self.long_term_memory[user_id]["facts"].insert(0, name_fact)
+                self.logger.info(f"Extracted user name '{name}' for user {user_id}")
+
+        # Check for direct questions about name, set a flag to remember these
+        if re.search(r"\bdo you (?:know|remember) my name\b", message, re.IGNORECASE):
+            self.long_term_memory[user_id]["context_flags"] = self.long_term_memory[
+                user_id
+            ].get("context_flags", {})
+            self.long_term_memory[user_id]["context_flags"]["asked_about_name"] = True
+
         for pattern, pref_type in preference_patterns:
             matches = re.finditer(pattern, message, re.IGNORECASE)
             for match in matches:
@@ -412,6 +450,7 @@ class MemoryManager:
                 "content": truncated_msg,
                 "timestamp": message_obj.get("timestamp", datetime.now().timestamp()),
                 "type": message_obj.get("type", "text"),
+                "importance": message_obj.get("importance", 0.7),
             }
             self.long_term_memory[user_id]["facts"].append(fact)
 
@@ -455,29 +494,45 @@ class MemoryManager:
         limit: int = 10,
         include_long_term: bool = True,
     ) -> List[Dict]:
-        """Get the conversation context with tiered memory integration"""
+        """Get the conversation context with tiered memory integration, highlighting recent questions."""
         # Load memory if not already loaded
         await self._load_memory(conversation_id, user_id)
 
         # Combine contexts with priority to short-term
         context = []
+        recent_user_questions = []  # Track recent questions
 
         # Add short-term memory (most recent conversations)
         short_term = self.short_term_memory.get(conversation_id, [])
-        context.extend(short_term[-limit:])
+        recent_short_term = short_term[-limit:]
+        context.extend(recent_short_term)
+
+        # Identify recent user questions from short-term memory
+        for msg in reversed(recent_short_term):  # Check most recent first
+            if msg.get("sender") == "user" and "?" in msg.get("content", ""):
+                recent_user_questions.append(msg.get("content"))
+                if (
+                    len(recent_user_questions) >= 2
+                ):  # Limit to last 2 questions for context summary
+                    break
+        recent_user_questions.reverse()  # Put them back in chronological order
 
         # Add relevant medium-term memory not in short-term
         medium_term = self.medium_term_memory.get(conversation_id, [])
         # Only add medium-term messages not already in the context
         short_term_timestamps = {msg.get("timestamp") for msg in context}
-        for msg in medium_term:
+        medium_term_added_count = 0
+        for msg in reversed(medium_term):  # Prioritize more recent medium-term
             if (
                 msg.get("timestamp") not in short_term_timestamps
                 and msg.get("importance", 0) >= 0.7
+                and medium_term_added_count
+                < (limit // 2)  # Limit medium-term additions
             ):
                 context.append(msg)
+                medium_term_added_count += 1
 
-                # Limit how many medium-term messages we add
+                # Limit how many medium-term messages we add overall
                 if len(context) >= limit * 1.5:
                     break
 
@@ -485,46 +540,183 @@ class MemoryManager:
         if include_long_term and user_id in self.long_term_memory:
             long_term = self.long_term_memory[user_id]
 
-            # Add user preferences as context
-            if long_term.get("preferences"):
-                preferences = long_term["preferences"]
-                preference_text = "User preferences: " + ", ".join(
-                    [f"{k}: {v}" for k, v in preferences.items()]
+            # First check if there are any critical personal information to include (like name)
+            personal_info = []
+            user_name = long_term.get("preferences", {}).get("name")
+
+            if user_name:
+                personal_info.append(f"User's name is {user_name}")
+
+            # Add any collected personal info at the top with high importance
+            if personal_info:
+                personal_info_text = "Important user information: " + "; ".join(
+                    personal_info
                 )
                 context.insert(
                     0,
                     {
                         "sender": "system",
-                        "content": preference_text,
-                        "type": "memory",
-                        "importance": 0.9,
+                        "content": personal_info_text,
+                        "type": "personal_info",
+                        "importance": 1.0,
+                        "timestamp": time.time() - 10,  # Ensure it sorts early
                     },
                 )
 
+            # Add user preferences as context
+            if long_term.get("preferences"):
+                preferences = long_term["preferences"]
+                if preferences:  # Only add if we have actual preferences
+                    preference_text = "User preferences: " + ", ".join(
+                        [
+                            f"{k}: {v}" for k, v in preferences.items() if k != "name"
+                        ]  # Exclude name, handled separately
+                    )
+                    if preference_text != "User preferences: ":  # Only add if not empty
+                        context.insert(
+                            (
+                                0 if not personal_info else 1
+                            ),  # Insert after personal info if it exists
+                            {
+                                "sender": "system",
+                                "content": preference_text,
+                                "type": "memory",
+                                "importance": 0.9,
+                                "timestamp": time.time() - 9,  # Ensure it sorts early
+                            },
+                        )
+
+            # Check for specific context flags
+            if long_term.get("context_flags", {}).get("asked_about_name"):
+                # The user has previously asked if we know their name, prioritize this information
+                if user_name:
+                    context.insert(
+                        0,
+                        {
+                            "sender": "system",
+                            "content": f"IMPORTANT: User asked if you know their name. Their name is {user_name}.",
+                            "type": "memory",
+                            "importance": 1.0,
+                            "timestamp": time.time() - 11,  # Ensure it sorts earliest
+                        },
+                    )
+                    # Reset this flag after it's been addressed once
+                    long_term["context_flags"]["asked_about_name"] = False
+                    await self._save_memory("", user_id)
+
             # Add relevant facts from long-term memory
             if long_term.get("facts"):
-                # Take the 3 most recent facts
-                recent_facts = sorted(
+                # Take the 5 most important facts, sorted by importance then recency
+                important_facts = sorted(
                     long_term["facts"],
-                    key=lambda x: x.get("timestamp", 0),
+                    key=lambda x: (x.get("importance", 0), x.get("timestamp", 0)),
                     reverse=True,
-                )[:3]
+                )[:5]
 
-                for fact in recent_facts:
+                fact_insert_index = 1  # Default insert index
+                if personal_info:
+                    fact_insert_index += 1
+                if (
+                    long_term.get("preferences")
+                    and preference_text != "User preferences: "
+                ):
+                    fact_insert_index += 1
+
+                for fact in important_facts:
+                    # Skip personal info facts if we've already added personal info
+                    if fact.get("type") == "personal_info" and personal_info:
+                        continue
+
                     context.insert(
-                        1,
-                        {  # Insert after preferences
+                        fact_insert_index,
+                        {
                             "sender": "system",
                             "content": f"User previously mentioned: {fact['content']}",
                             "type": "memory",
-                            "importance": 0.8,
+                            "importance": fact.get("importance", 0.8),
+                            "timestamp": fact.get(
+                                "timestamp", time.time() - 8
+                            ),  # Ensure it sorts early
                         },
                     )
 
-        # Sort by timestamp for chronological order
+        # Add a system message summarizing recent user questions if any were found
+        if recent_user_questions:
+            questions_summary = "\n".join([f'- "{q}"' for q in recent_user_questions])
+            context.insert(
+                0,  # Add near the beginning of the context
+                {
+                    "sender": "system",
+                    "content": f"Context: The user's previous questions in this conversation include:\n{questions_summary}",
+                    "type": "context_summary",
+                    "importance": 0.95,  # High importance
+                    "timestamp": time.time() - 5,  # Ensure it sorts relatively early
+                },
+            )
+
+        # Sort context primarily by timestamp, but keep system messages near the top if needed
+        # We added timestamps to system messages to help control sorting
         context.sort(key=lambda x: x.get("timestamp", 0))
 
-        return context
+        # Ensure the context doesn't exceed a reasonable limit (e.g., limit * 2)
+        final_context = context[-(limit * 2) :]
+
+        # Reformat for model consumption (role/content)
+        model_context = []
+        for msg in final_context:
+            role = "user" if msg.get("sender") == "user" else "assistant"
+            if msg.get("sender") == "system":
+                role = "system"  # Or potentially map to 'user' or 'assistant' depending on model needs
+
+            # Ensure content exists and is a string
+            content = msg.get("content", "")
+            if not isinstance(content, str):
+                content = str(content)  # Convert non-string content
+
+            # Skip empty messages
+            if not content.strip():
+                continue
+
+            model_context.append({"role": role, "content": content})
+
+        # Gemini specific formatting: alternate user/assistant roles, merge system prompts
+        formatted_model_context = []
+        system_prompts = []
+        last_role = None
+
+        for msg in model_context:
+            role = msg["role"]
+            content = msg["content"]
+
+            if role == "system":
+                system_prompts.append(content)
+                continue
+
+            # Merge consecutive messages from the same role if needed (optional, Gemini handles alternation well)
+            # if formatted_model_context and role == last_role:
+            #    formatted_model_context[-1]["content"] += "\n" + content
+            #    continue
+
+            # Add message
+            formatted_model_context.append({"role": role, "content": content})
+            last_role = role
+
+        # Prepend system prompts if any
+        if system_prompts:
+            # Gemini prefers system instructions at the start or potentially as part of the first user message
+            # Let's add it as a separate system message if the model supports it,
+            # otherwise prepend to the first user message or handle according to model docs.
+            # For now, let's assume a separate system message is okay or handled by the caller.
+            # We will return it separately or integrate based on the calling function's needs.
+            # This function's primary goal is context assembly.
+            # The calling function (`generate_response`) should handle final formatting for Gemini.
+
+            # Returning the raw context list including system messages.
+            # The calling code will format it for the specific model.
+            pass  # System messages are already included in model_context
+
+        # Return the assembled context, ready for final formatting by the caller
+        return model_context  # Return the list of dicts with role/content
 
     async def search_memory(
         self, user_id: str, query: str, limit: int = 5
@@ -833,3 +1025,208 @@ class MemoryManager:
         if user_id in self.long_term_memory:
             return self.long_term_memory[user_id].get("preferences", {})
         return {}
+
+    async def get_memory_text(self, user_id: str) -> str:
+        """
+        Generate a human-readable text summary of what the bot remembers about the user.
+        This is useful for when users ask what the bot knows/remembers about them.
+
+        Args:
+            user_id: The user ID to retrieve memory for
+
+        Returns:
+            Formatted text describing user memory
+        """
+        # Ensure memory is loaded
+        await self._load_memory("", user_id)
+
+        if user_id not in self.long_term_memory:
+            return "I don't have any specific information saved about you yet."
+
+        memory_text = []
+        user_memory = self.long_term_memory[user_id]
+
+        # Add name if it exists (most important)
+        if "name" in user_memory.get("preferences", {}):
+            name = user_memory["preferences"]["name"]
+            memory_text.append(
+                f"I remember your name is {name}."
+            )  # Changed phrasing slightly
+        else:
+            memory_text.append("I don't know your name yet.")
+
+        # Add other preferences
+        other_prefs = {}
+        for k, v in user_memory.get("preferences", {}).items():
+            if k != "name":  # Skip name, already added
+                other_prefs[k] = v
+
+        if other_prefs:
+            memory_text.append(
+                "\nRegarding your preferences, I remember:"
+            )  # Improved section header
+            for pref_type, value in other_prefs.items():
+                # Format the preference type for better readability
+                formatted_type = pref_type.replace("_", " ")
+                memory_text.append(
+                    f"- Your {formatted_type} preference is: {value}"
+                )  # Clearer phrasing
+
+        # Add important facts (up to 5)
+        important_facts = sorted(
+            user_memory.get("facts", []),
+            key=lambda x: (x.get("importance", 0), x.get("timestamp", 0)),
+            reverse=True,
+        )[:5]
+
+        if important_facts:
+            memory_text.append(
+                "\nI also recall these key details from our conversations:"
+            )  # Improved section header
+            for fact in important_facts:
+                # Skip facts that are just about the user's name if already mentioned
+                if (
+                    fact.get("type") == "personal_info"
+                    and "user's name is" in fact.get("content", "")
+                    and "name" in user_memory.get("preferences", {})
+                ):
+                    continue
+
+                content = fact.get("content", "").strip()
+                if content:
+                    # Remove quotes and normalize text
+                    content = content.strip("\"'")
+                    # Make it sound more like recalling a fact
+                    memory_text.append(f'- You mentioned: "{content}"')
+
+        # Handle case where we don't have much information beyond maybe the name
+        if not other_prefs and not important_facts:
+            if "name" in user_memory.get("preferences", {}):
+                memory_text.append(
+                    "\nBeyond your name, we haven't discussed specific preferences or details for me to remember yet."
+                )
+            else:
+                # This case is covered by the initial check, but added for robustness
+                memory_text = [
+                    "I don't have any specific information saved about you yet."
+                ]
+
+        return "\n".join(memory_text)
+
+    async def check_name_memory(
+        self, user_id: str, conversation_id: str, message: str
+    ) -> Optional[str]:
+        """
+        Special handler for when users ask if the bot knows their name.
+
+        Args:
+            user_id: The user ID
+            conversation_id: The conversation ID
+            message: The user's message
+
+        Returns:
+            Response about the user's name if pattern matches, None otherwise
+        """
+        # Check if this is a question about the bot knowing the user's name
+        name_question_patterns = [
+            r"(?:do you|can you|could you)?\s*(?:know|remember|recall)\s+my\s+name",
+            r"what(?:'s| is) my name",
+            r"who am i",
+        ]
+
+        is_name_question = any(
+            re.search(pattern, message, re.IGNORECASE)
+            for pattern in name_question_patterns
+        )
+
+        if is_name_question:
+            # Check if we have the user's name
+            await self._load_memory(conversation_id, user_id)
+
+            if user_id in self.long_term_memory:
+                name = self.long_term_memory[user_id].get("preferences", {}).get("name")
+
+                if name:
+                    # Set the flag so the model knows we've addressed this
+                    context_flags = self.long_term_memory[user_id].get(
+                        "context_flags", {}
+                    )
+                    self.long_term_memory[user_id]["context_flags"] = context_flags
+                    self.long_term_memory[user_id]["context_flags"][
+                        "asked_about_name"
+                    ] = False
+                    await self._save_memory("", user_id)
+
+                    return f"Yes, I remember your name is {name}!"
+                else:
+                    return "I don't know your name yet. Would you like to tell me?"
+
+        return None
+
+    async def handle_name_introduction(
+        self, user_id: str, conversation_id: str, message: str
+    ) -> Optional[str]:
+        """
+        Handle cases where user is introducing their name for the first time.
+
+        Args:
+            user_id: The user ID
+            conversation_id: The conversation ID
+            message: The user's message
+
+        Returns:
+            Confirmation response if name was extracted, None otherwise
+        """
+        # Extract name from introduction patterns
+        introduction_patterns = [
+            (
+                r"(?:my name is|i am|i'm|call me)\s+(\w+)(?:\.|\s|$)",
+                1,
+            ),  # Group 1 contains the name
+            (r"(?:i'm|i am)\s+called\s+(\w+)(?:\.|\s|$)", 1),
+            (r"(?:you can|please)\s+call\s+me\s+(\w+)(?:\.|\s|$)", 1),
+        ]
+
+        name = None
+        for pattern, group in introduction_patterns:
+            match = re.search(pattern, message, re.IGNORECASE)
+            if match and match.group(group):
+                name = match.group(group).strip()
+                # Capitalize first letter
+                name = name[0].upper() + name[1:] if len(name) > 1 else name.upper()
+                break
+
+        if name and len(name) > 1:  # Ensure it's a reasonable name
+            # Store the name
+            if user_id not in self.long_term_memory:
+                self.long_term_memory[user_id] = {
+                    "preferences": {},
+                    "facts": [],
+                    "contexts": {},
+                    "context_flags": {},
+                }
+
+            self.long_term_memory[user_id]["preferences"]["name"] = name
+
+            # Add as a high-importance fact
+            name_fact = {
+                "content": f"The user's name is {name}",
+                "timestamp": time.time(),
+                "type": "personal_info",
+                "importance": 1.0,  # Maximum importance
+            }
+
+            # Add or replace existing name fact
+            facts = self.long_term_memory[user_id].get("facts", [])
+            # Remove any existing name facts
+            facts = [f for f in facts if "user's name" not in f.get("content", "")]
+            # Add the new name fact at the beginning
+            facts.insert(0, name_fact)
+            self.long_term_memory[user_id]["facts"] = facts
+
+            # Save immediately
+            await self._save_memory(conversation_id, user_id)
+
+            return f"Nice to meet you, {name}! I'll remember your name."
+
+        return None

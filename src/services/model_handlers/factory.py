@@ -2,10 +2,10 @@ from typing import Dict, Type
 from services.model_handlers import ModelHandler
 from services.model_handlers.gemini_handler import GeminiHandler
 from services.model_handlers.deepseek_handler import DeepSeekHandler
-from services.model_handlers.claude_handler import ClaudeHandler
 from services.model_handlers.quasar_alpha_handler import QuasarAlphaHandler
 from services.gemini_api import GeminiAPI
 from services.openrouter_api import OpenRouterAPI
+from services.DeepSeek_R1_Distill_Llama_70B import DeepSeekLLM
 
 
 class ModelHandlerFactory:
@@ -18,7 +18,7 @@ class ModelHandlerFactory:
         cls,
         model_name: str,
         gemini_api: GeminiAPI = None,
-        claude_api=None,
+        deepseek_api: DeepSeekLLM = None,
         openrouter_api: OpenRouterAPI = None,
     ) -> ModelHandler:
         """
@@ -27,7 +27,7 @@ class ModelHandlerFactory:
         Args:
             model_name: The name of the model to get a handler for.
             gemini_api: An instance of GeminiAPI, required for Gemini model.
-            claude_api: An instance of Claude API client, required for Claude model.
+            deepseek_api: An instance of DeepSeekLLM, required for DeepSeek model.
             openrouter_api: An instance of OpenRouterAPI, required for Quasar Alpha model.
 
         Returns:
@@ -41,13 +41,11 @@ class ModelHandlerFactory:
                     )
                 cls._handlers[model_name] = GeminiHandler(gemini_api)
             elif model_name == "deepseek":
-                cls._handlers[model_name] = DeepSeekHandler()
-            elif model_name == "claude":
-                if claude_api is None:
+                if deepseek_api is None:
                     raise ValueError(
-                        "Claude API client is required for Claude model handler"
+                        "DeepSeekLLM instance is required for DeepSeek model handler"
                     )
-                cls._handlers[model_name] = ClaudeHandler(claude_api)
+                cls._handlers[model_name] = DeepSeekHandler(deepseek_api)
             elif model_name == "quasar_alpha":
                 if openrouter_api is None:
                     raise ValueError(
