@@ -17,7 +17,7 @@ from telegram.ext import (
     Application,
     InlineQueryHandler,
 )
-from services.user_data_manager import user_data_manager
+from services.user_data_manager import UserDataManager
 from services.gemini_api import GeminiAPI
 from utils.telegramlog import TelegramLogger as telegram_logger
 import logging
@@ -77,7 +77,7 @@ class CommandHandlers:
     def __init__(
         self,
         gemini_api: GeminiAPI,
-        user_data_manager: user_data_manager,
+        user_data_manager: UserDataManager,
         telegram_logger: telegram_logger,
         flux_lora_image_generator: flux_lora_image_generator,
     ):
