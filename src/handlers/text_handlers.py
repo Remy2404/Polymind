@@ -5,40 +5,39 @@ from telegram.ext import ContextTypes, MessageHandler, filters
 from telegram.constants import ChatAction
 from utils.telegramlog import telegram_logger
 from services.gemini_api import GeminiAPI
-from services.user_data_manager import user_data_manager
+from services.user_data_manager import UserDataManager
 from typing import List
 import datetime
 import logging
 from services.model_handlers.factory import ModelHandlerFactory
 import asyncio
 from services.memory_manager import MemoryManager
-
+from services.model_handlers.model_history_manager import ModelHistoryManager
 
 class TextHandler:
     def __init__(
         self,
         gemini_api: GeminiAPI,
-        user_data_manager: user_data_manager,
+        user_data_manager: UserDataManager,
         openrouter_api=None,
+        deepseek_api=None,
     ):
         self.logger = logging.getLogger(__name__)
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
         self.openrouter_api = openrouter_api
+        self.deepseek_api = deepseek_api
         self.max_context_length = 9
 
-        # Update MemoryManager initialization with correct parameters
+        # Initialize MemoryManager
         self.memory_manager = MemoryManager(
             db=user_data_manager.db if hasattr(user_data_manager, "db") else None,
         )
-        # Set attributes after initialization
-        self.memory_manager.short_term_limit = (
-            15  # Slightly larger than max_context_length for better history management
-        )
-        # Configure token limit based on the model you're using
-        self.memory_manager.token_limit = (
-            8192  # Adjust based on your model's capabilities
-        )
+        self.memory_manager.short_term_limit = 15
+        self.memory_manager.token_limit = 8192
+
+        # Instantiate the new ModelHistoryManager
+        self.model_history_manager = ModelHistoryManager(self.memory_manager)
 
     async def format_telegram_markdown(self, text: str) -> str:
         try:
@@ -148,14 +147,10 @@ class TextHandler:
                 chat_id=update.effective_chat.id, action=ChatAction.TYPING
             )
 
-            # Get user context using both systems for transition period
-            # Get formatted history from MemoryManager
-            formatted_history = self.memory_manager.get_formatted_history(
-                conversation_id, max_messages=self.max_context_length
+            # Get conversation history using the new manager
+            history_context = await self.model_history_manager.get_history(
+                user_id, max_messages=self.max_context_length
             )
-
-            # Also get user context from existing system for backward compatibility
-            user_context = await self.user_data_manager.get_user_context(user_id)
 
             # Build enhanced prompt with relevant context
             enhanced_prompt = message_text
@@ -348,20 +343,19 @@ class TextHandler:
 
             try:
                 # Get the model handler for the preferred model
-                # Use the class's OpenRouter API instance directly
+                # Use the class's API instances directly
                 model_handler = ModelHandlerFactory.get_model_handler(
                     preferred_model,
                     gemini_api=self.gemini_api,
                     openrouter_api=self.openrouter_api,
+                    deepseek_api=self.deepseek_api,
                 )
 
                 # Generate response using the model handler
                 response = await asyncio.wait_for(
                     model_handler.generate_response(
                         prompt=enhanced_prompt_with_guidelines,
-                        context=(
-                            formatted_history if preferred_model == "gemini" else None
-                        ),
+                        context=history_context,
                         temperature=0.7,
                         max_tokens=4000,
                     ),
@@ -404,7 +398,10 @@ class TextHandler:
 
             # Get the model indicator from the model handler
             model_handler = ModelHandlerFactory.get_model_handler(
-                preferred_model, gemini_api=self.gemini_api
+                preferred_model, 
+                gemini_api=self.gemini_api,
+                openrouter_api=self.openrouter_api,
+                deepseek_api=self.deepseek_api
             )
             model_indicator = model_handler.get_model_indicator()
 
@@ -451,25 +448,10 @@ class TextHandler:
                         )
                     sent_messages.append(last_message)
 
-            # Update user context in both systems if response was successful
+            # Save user message and assistant response using the new manager
             if response:
-                # Add to MemoryManager
-                await self.memory_manager.add_user_message(
-                    conversation_id, message_text, str(user_id)
-                )
-                await self.memory_manager.add_assistant_message(
-                    conversation_id, response
-                )
-
-                # Optionally manage context window to ensure we stay within token limits
-                await self.memory_manager._maybe_manage_context_window(conversation_id)
-
-                # Also add to existing system for backward compatibility
-                self.user_data_manager.add_to_context(
-                    user_id, {"role": "user", "content": message_text}
-                )
-                self.user_data_manager.add_to_context(
-                    user_id, {"role": "assistant", "content": response}
+                await self.model_history_manager.save_message_pair(
+                    user_id, message_text, response
                 )
 
                 # Store the message IDs in context for future editing
@@ -491,8 +473,8 @@ class TextHandler:
 
     async def handle_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
-        # Define conversation ID for this user
-        conversation_id = f"user_{user_id}"
+        # Define conversation ID for this user - Handled by ModelHistoryManager now
+        # conversation_id = f"user_{user_id}"
         telegram_logger.log_message("Processing an image", user_id)
 
         await context.bot.send_chat_action(
@@ -555,28 +537,12 @@ class TextHandler:
                         )
                         sent_messages.append(sent_message.message_id)
 
-                # Store the image interaction in both systems
-                # Add to MemoryManager
-                await self.memory_manager.add_user_message(
-                    conversation_id, f"[Image with caption: {caption}]", str(user_id)
-                )
-                await self.memory_manager.add_assistant_message(
-                    conversation_id, response
+                # Store the image interaction using ModelHistoryManager
+                await self.model_history_manager.save_image_interaction(
+                    user_id, caption, response
                 )
 
-                # Optionally manage context window
-                await self.memory_manager._maybe_manage_context_window(conversation_id)
-
-                # Also store in legacy system
-                await self.user_data_manager.add_to_context(
-                    user_id,
-                    {"role": "user", "content": f"[Image with caption: {caption}]"},
-                )
-                await self.user_data_manager.add_to_context(
-                    user_id, {"role": "assistant", "content": response}
-                )
-
-                # Store image reference in user data for future reference
+                # Store image reference in user data for future reference (non-history context)
                 if "image_history" not in context.user_data:
                     context.user_data["image_history"] = []
 
@@ -616,33 +582,23 @@ class TextHandler:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         user_id = update.effective_user.id
-        conversation_id = f"user_{user_id}"
+        # conversation_id = f"user_{user_id}" # Not needed directly
 
-        # Get messages from MemoryManager
-        messages = self.memory_manager.get_messages(conversation_id)
+        # Get messages using ModelHistoryManager
+        messages = await self.model_history_manager.get_history(user_id, max_messages=50) # Get more messages for display
 
         if not messages:
-            # Fall back to legacy system if no memory manager history
-            legacy_history = await self.user_data_manager.get_user_context(user_id)
-            if not legacy_history:
-                await update.message.reply_text(
-                    "You don't have any conversation history yet."
-                )
-                return
+            await update.message.reply_text(
+                "You don't have any conversation history yet."
+            )
+            return
 
-            # Display legacy history
-            history_text = "Your conversation history:\n\n"
-            for entry in legacy_history:
-                role = entry["role"].capitalize()
-                content = entry["content"]
-                history_text += f"{role}: {content}\n\n"
-        else:
-            # Build history text from memory manager
-            history_text = "Your conversation history:\n\n"
-            for msg in messages:
-                role = msg.role.capitalize()
-                content = msg.content
-                history_text += f"{role}: {content}\n\n"
+        # Build history text
+        history_text = "Your conversation history:"
+        for msg in messages:
+            role = msg.get("role", "unknown").capitalize()
+            content = msg.get("content", "")
+            history_text += f"{role}: {content}\n\n"
 
         # Split long messages
         message_chunks = await self.split_long_message(history_text)
@@ -777,11 +733,12 @@ class TextHandler:
                 content = await file.read()
 
             # Get the model handler for the preferred model
-            # Use the class's OpenRouter API instance directly
+            # Use the class's API instances directly
             model_handler = ModelHandlerFactory.get_model_handler(
                 preferred_model,
                 gemini_api=self.gemini_api,
                 openrouter_api=self.openrouter_api,
+                deepseek_api=self.deepseek_api,
             )
 
             # Get system message from the model handler
@@ -804,17 +761,14 @@ class TextHandler:
     async def reset_conversation(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Reset a user's conversation history in both memory systems."""
+        """Reset a user's conversation history using ModelHistoryManager."""
         user_id = update.effective_user.id
-        conversation_id = f"user_{user_id}"
+        # conversation_id = f"user_{user_id}" # Not needed directly
 
-        # Clear conversation in MemoryManager
-        self.memory_manager.clear_conversation(conversation_id)
+        # Clear conversation using ModelHistoryManager
+        await self.model_history_manager.clear_history(user_id)
 
-        # Also clear in the older system for backward compatibility
-        await self.user_data_manager.clear_history(str(user_id))
-
-        # Clear other context data in user_data
+        # Clear other non-history context data in user_data (this remains)
         if "image_history" in context.user_data:
             context.user_data["image_history"] = []
         if "document_history" in context.user_data:
@@ -824,3 +778,4 @@ class TextHandler:
 
         await update.message.reply_text("✅ Your conversation history has been reset.")
         telegram_logger.log_message(f"Conversation history cleared", user_id)
+        

@@ -11,7 +11,7 @@ import logging
 import warnings
 
 
-class user_data_manager:
+class UserDataManager:
     def __init__(self, db):
         """
         Initialize UserDataManager with a database connection.
@@ -121,23 +121,28 @@ class user_data_manager:
             self.logger.error(f"Error clearing history for user {user_id}: {str(e)}")
             raise
 
-    def add_message(self, user_id: str, message: str) -> None:
+    def add_message(self, user_id: str, message: Dict[str, str]) -> None:
         """
-        Add a message to the user's conversation history.
+        Add a message dictionary to the user's conversation history.
 
         :param user_id: Unique identifier for the user
-        :param message: Message to be added to the history
+        :param message: Message dictionary ({'role': 'user/assistant', 'content': '...'}) to be added
         """
         try:
+            # Ensure message is a dictionary with required keys
+            if not isinstance(message, dict) or 'role' not in message or 'content' not in message:
+                self.logger.error(f"Invalid message format for user {user_id}: {message}")
+                return
+                
             self.users_collection.update_one(
-                {"user_id": user_id}, {"$push": {"contexts": message}}
+                {"user_id": user_id}, {"$push": {"contexts": message}} # Push the dictionary
             )
             self.logger.debug(f"Added message to history for user: {user_id}")
         except Exception as e:
             self.logger.error(f"Error adding message for user {user_id}: {str(e)}")
             raise
 
-    def add_to_context(self, user_id: str, message: str) -> None:
+    def add_to_context(self, user_id: str, message: Dict[str, str]) -> None:
         warnings.warn(
             "add_to_context is deprecated, use add_message instead",
             DeprecationWarning,
@@ -174,28 +179,35 @@ class user_data_manager:
             self.logger.error(f"Error getting settings for user {user_id}: {str(e)}")
             raise
 
-    async def get_user_context(self, user_id: str) -> List[str]:
+    async def get_user_context(self, user_id: str) -> List[Dict[str, str]]:
         """
-        Retrieve the context for a specific user.
+        Retrieve the context (list of message dictionaries) for a specific user.
 
         :param user_id: Unique identifier for the user
-        :return: List of context messages for the user
+        :return: List of context message dictionaries for the user
         """
         user_data = await self.get_user_data(user_id)
         # Add null check before attempting to use .get()
         if user_data is None:
             return []
-        return user_data.get("contexts", [])
+        # Ensure the retrieved context is a list of dictionaries
+        context = user_data.get("contexts", [])
+        if not isinstance(context, list):
+             self.logger.warning(f"User {user_id} context is not a list: {type(context)}. Clearing.")
+             await self.clear_history(user_id) # Consider clearing invalid context
+             return []
+        # Optionally validate that elements are dictionaries (can add later if needed)
+        return context
 
-    async def get_conversation_history(self, user_id: str) -> List[str]:
+    async def get_conversation_history(self, user_id: str) -> List[Dict[str, str]]:
         """
         Retrieve the conversation history for a user.
 
         :param user_id: Unique identifier for the user
-        :return: List of conversation context messages
+        :return: List of conversation context message dictionaries
         """
-        user_data = await self.get_user_data(user_id)
-        return user_data.get("contexts", [])
+        # This method can now just call get_user_context
+        return await self.get_user_context(user_id)
 
     async def get_user_settings(self, user_id: str) -> Dict[str, Any]:
         """
@@ -462,4 +474,4 @@ class user_data_manager:
 
 
 db, client = get_database()
-UserDataManager = user_data_manager(db)
+user_data_manager = UserDataManager(db)

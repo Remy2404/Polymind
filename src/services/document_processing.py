@@ -87,7 +87,7 @@ class DocumentProcessor:
             raise ValueError("GEMINI_API_KEY not found or empty")
 
         genai.configure(api_key=GEMINI_API_KEY)
-        self.model = genai.GenerativeModel("gemini-1.5-pro")
+        self.model = genai.GenerativeModel("gemini-2.0-flash")
 
         self.generation_config = {
             "temperature": 0.7,

@@ -25,6 +25,7 @@ from src.services.gemini_api import GeminiAPI
 from src.services.openrouter_api import OpenRouterAPI
 from src.handlers.command_handlers import CommandHandlers
 from src.handlers.text_handlers import TextHandler
+from src.services.DeepSeek_R1_Distill_Llama_70B import DeepSeekLLM
 from src.handlers.message_handlers import (
     MessageHandlers,
 )  # Ensure this is your custom handler
@@ -38,7 +39,6 @@ from src.services.flux_lora_img import flux_lora_image_generator
 import uvicorn
 from src.services.document_processing import DocumentProcessor
 from src.database.connection import get_database
-from src.services.user_data_manager import user_data_manager
 from src.services.text_to_video import text_to_video_generator
 
 load_dotenv()
@@ -195,6 +195,9 @@ class TelegramBot:
             # Initialize OpenRouter API for Quasar Alpha
             openrouter_rate_limiter = RateLimiter(requests_per_minute=20)
             self.openrouter_api = OpenRouterAPI(rate_limiter=openrouter_rate_limiter)
+            
+            # Initialize DeepSeekLLM for DeepSeek model
+            self.deepseek_api = DeepSeekLLM()
 
             # Store API instances in application context instead of directly on bot
             # The telegram library doesn't allow adding attributes to the bot object
@@ -202,9 +205,10 @@ class TelegramBot:
                 self.application.bot_data = {}
             self.application.bot_data["gemini_api"] = self.gemini_api
             self.application.bot_data["openrouter_api"] = self.openrouter_api
+            self.application.bot_data["deepseek_api"] = self.deepseek_api
 
             # Other initializations
-            self.user_data_manager = user_data_manager(self.db)
+            self.user_data_manager = UserDataManager(self.db)
             self.telegram_logger = telegram_logger
         except Exception as e:
             self.logger.error(f"Error initializing services: {e}")
@@ -215,6 +219,7 @@ class TelegramBot:
             gemini_api=self.gemini_api,
             user_data_manager=self.user_data_manager,
             openrouter_api=self.openrouter_api,
+            deepseek_api=self.deepseek_api,
         )
         self.command_handler = CommandHandlers(
             gemini_api=self.gemini_api,
