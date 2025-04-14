@@ -757,7 +757,7 @@ class DocumentProcessor:
             raise ValueError("GEMINI_API_KEY not found or empty")
 
         genai.configure(api_key=GEMINI_API_KEY)
-        self.model = genai.GenerativeModel("gemini-1.5-pro")
+        self.model = genai.GenerativeModel("gemini-2.0-flash")
 
         self.generation_config = {
             "temperature": 0.7,
@@ -882,7 +882,7 @@ class DocumentProcessor:
             uploaded_file = await self.upload_file(file=file_io, mime_type=mime_type)
 
             # Generate a response using the appropriate model
-            model = genai.GenerativeModel("gemini-1.5-pro")
+            model = genai.GenerativeModel("gemini-2.0-flash")
             response = await asyncio.to_thread(
                 model.generate_content,
                 [uploaded_file, prompt],
@@ -1011,7 +1011,7 @@ class DocumentProcessor:
             """
 
             # Use Gemini 1.5 Pro for best document processing results
-            pro_model = genai.GenerativeModel("gemini-1.5-pro-exp-03-25")
+            pro_model = genai.GenerativeModel("gemini-2.0-flash")
 
             # Generate response with enhanced configuration
             response = await asyncio.to_thread(
@@ -1156,7 +1156,7 @@ class DocumentProcessor:
             uploaded_file = await self.upload_file(file=file_io, mime_type=mime_type)
 
             # Use Gemini for extraction with JSON output
-            pro_model = genai.GenerativeModel("gemini-1.5-pro")
+            pro_model = genai.GenerativeModel("gemini-2.0-flash")
 
             # Configure response to be in JSON format
             response = await asyncio.to_thread(

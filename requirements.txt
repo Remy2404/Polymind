@@ -1,11 +1,12 @@
 # Core dependencies
-fastapi==0.104.1
+fastapi==0.109.2  # Updated version for compatibility with anyio>=4.0.0
 python-telegram-bot==21.7
 uvicorn==0.24.0.post1
 python-dotenv==1.0.1
 pymongo==4.9.2
 dnspython==2.7.0
 google-generativeai==0.8.3
+google-genai==1.10.0
 together==1.4.1
 python-multipart==0.0.18
 aiohttp==3.11.8
@@ -43,7 +44,7 @@ langcodes==3.5.0
 scikit-learn==1.6.1
 
 # Utility dependencies
-httpx==0.28.0
+httpx==0.28.1  # Updated to be compatible with python-telegram-bot and google-genai
 python-dateutil==2.9.0.post0
 regex==2024.11.6
 tqdm==4.67.1

@@ -167,7 +167,7 @@ class CommandHandlers:
             ],
             [
                 InlineKeyboardButton(
-                    "🌀 Use Quasar Alpha", callback_data="aidoc_model_quasar_alpha"
+                    "🌀 Use Optimus Alpha", callback_data="aidoc_model_Optimus_Alpha"
                 )
             ],
         ]
@@ -182,7 +182,7 @@ class CommandHandlers:
         model_name = (
             "Gemini-2.5-Pro"
             if model == "gemini"
-            else "DeepSeek 70B" if model == "deepseek" else "Quasar Alpha"
+            else "DeepSeek 70B" if model == "deepseek" else "Optimus Alpha"
         )
 
         message = (
@@ -897,10 +897,10 @@ class CommandHandlers:
             await progress_message.delete()
 
         except asyncio.CancelledError:
-            await progress_message.edit_text("Image generation was cancelled.")
+            await progress_message.edit_message_text("Image generation was cancelled.")
         except Exception as e:
             self.logger.error(f"Error generating image: {e}")
-            await progress_message.edit_text(
+            await progress_message.edit_message_text(
                 "Sorry, I couldn't generate the image. Please try again later."
             )
 
@@ -1266,32 +1266,104 @@ class CommandHandlers:
         """Handle the /switchmodel command to let users select their preferred LLM."""
         user_id = update.effective_user.id
 
-        # Create inline keyboard with model options
-        keyboard = [
-            [
-                InlineKeyboardButton("gemini-2.5-Pro", callback_data="model_gemini"),
-                InlineKeyboardButton("DeepSeek 70B", callback_data="model_deepseek"),
-            ],
-            [
-                InlineKeyboardButton(
-                    "🌀 Quasar Alpha", callback_data="model_quasar_alpha"
+        # Get the model registry from the application
+        model_registry = None
+        user_model_manager = None
+
+        if hasattr(context.application, "bot_data"):
+            model_registry = context.application.bot_data.get("model_registry")
+            user_model_manager = context.application.bot_data.get("user_model_manager")
+
+        # If we found the model registry, use it to build dynamic buttons
+        if model_registry:
+            # Get all available models
+            available_models = model_registry.get_all_models()
+
+            # Get current model from UserModelManager if available, otherwise fallback
+            if user_model_manager:
+                current_model = user_model_manager.get_user_model(user_id)
+                current_model_config = model_registry.get_model_config(current_model)
+                current_model_name = (
+                    current_model_config.display_name
+                    if current_model_config
+                    else "Unknown"
                 )
-            ],
-        ]
+            else:
+                # Fallback to user_data_manager preferences
+                current_model = await self.user_data_manager.get_user_preference(
+                    user_id, "preferred_model", default="gemini"
+                )
+                # Map model code to display name using registry if possible
+                model_config = model_registry.get_model_config(current_model)
+                current_model_name = (
+                    model_config.display_name if model_config else "Unknown"
+                )
+
+            # Build dynamic keyboard from available models
+            keyboard = []
+            row = []
+
+            # Group models in rows of 2
+            for i, (model_id, model_config) in enumerate(available_models.items()):
+                # Create button with emoji if available
+                button_text = (
+                    f"{model_config.indicator_emoji} {model_config.display_name}"
+                )
+                button = InlineKeyboardButton(
+                    button_text, callback_data=f"model_{model_id}"
+                )
+
+                row.append(button)
+
+                # Add row after every 2 buttons or at the end
+                if (i + 1) % 2 == 0 or i == len(available_models) - 1:
+                    keyboard.append(row)
+                    row = []
+
+        else:  # Fallback to hardcoded models if registry not available
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        "gemini-2.5-Pro", callback_data="model_gemini"
+                    ),
+                    InlineKeyboardButton(
+                        "DeepSeek 70B", callback_data="model_deepseek"
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🌀 Optimus Alpha", callback_data="model_optimus_alpha"
+                    ),
+                    InlineKeyboardButton(
+                        "🧑‍💻 DeepCoder", callback_data="model_deepcoder"
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🦙 Llama-4 Maverick", callback_data="model_llama4_maverick"
+                    )
+                ],
+            ]
+
+            # Get current model using old method
+            current_model = await self.user_data_manager.get_user_preference(
+                user_id, "preferred_model", default="gemini"
+            )
+
+            # Map model code to display name
+            model_names = {
+                "gemini": "Gemini-2.5-Pro",
+                "deepseek": "DeepSeek 70B",
+                "optimus_alpha": "🌀 Optimus Alpha",  # Match button text/callback
+                "deepcoder": "🧑‍💻 DeepCoder",  # Match button text/callback
+                "llama4_maverick": "🦙 Llama-4 Maverick",  # Match button text/callback
+            }
+            # Use the model ID from preferences to get the display name
+            current_model_name = model_names.get(
+                current_model, "Unknown"
+            )  # Default to Unknown if not found
+
         reply_markup = InlineKeyboardMarkup(keyboard)
-
-        # Get current model - ADD await HERE
-        current_model = await self.user_data_manager.get_user_preference(
-            user_id, "preferred_model", default="gemini"
-        )
-
-        # Map model code to display name
-        model_names = {
-            "gemini": "Gemini-2.5-Pro",
-            "deepseek": "DeepSeek 70B",
-            "quasar_alpha": "Quasar Alpha",
-        }
-        current_model_name = model_names.get(current_model, "Gemini-2.5-Pro")
 
         await update.message.reply_text(
             f"🔄 Your current model is: *{current_model_name}*\n\n"
@@ -1309,35 +1381,105 @@ class CommandHandlers:
 
         await query.answer()
 
-        selected_model = query.data.replace("model_", "")
-        if selected_model == "gemini":
-            model_name = "Gemini 2.0 Flash"
-        elif selected_model == "deepseek":
-            model_name = "DeepSeek 70B"
-        elif selected_model == "quasar_alpha":
-            model_name = "Quasar Alpha"
+        selected_model_from_callback = query.data.replace("model_", "")
+
+        # --- Fix for model ID inconsistency ---
+        # Convert the callback format (e.g., optimus_alpha) to the format expected by the factory/registry (e.g., optimus-alpha)
+        if selected_model_from_callback == "optimus_alpha":
+            selected_model_id_for_backend = "optimus-alpha"
+        elif selected_model_from_callback == "llama4_maverick":
+            # Ensure consistency if backend expects hyphenated version
+            # Based on factory, it expects 'llama4_maverick' (underscore), so no change needed here usually.
+            # However, let's keep the variable distinct for clarity.
+            selected_model_id_for_backend = "llama4_maverick"
         else:
-            model_name = "Gemini 2.0 Flash"
+            # For other models like gemini, deepseek, deepcoder, the callback format matches the expected ID
+            selected_model_id_for_backend = selected_model_from_callback
+        # --- End of fix ---
 
-        # Save user's model preference
-        await self.user_data_manager.set_user_preference(
-            user_id, "preferred_model", selected_model
+        # Get model registry and user model manager if available
+        model_registry = None
+        user_model_manager = None
+
+        if hasattr(context.application, "bot_data"):
+            model_registry = context.application.bot_data.get("model_registry")
+            user_model_manager = context.application.bot_data.get("user_model_manager")
+
+        # Use the new UserModelManager if available
+        model_switched = False
+        model_name = (
+            selected_model_id_for_backend  # Use the corrected ID for display fallback
         )
 
-        # Set flags in context.user_data to ensure next message uses the new model
-        # This helps address race conditions with database updates
+        if user_model_manager and model_registry:
+            # Set model using UserModelManager with the CORRECTED ID
+            model_switched = user_model_manager.set_user_model(
+                user_id, selected_model_id_for_backend
+            )
+
+            # Get display name from model config using the CORRECTED ID
+            model_config = model_registry.get_model_config(
+                selected_model_id_for_backend
+            )
+            if model_config:
+                model_name = model_config.display_name
+
+            # Log the model change
+            self.logger.info(
+                f"User {user_id} switched to model: {selected_model_id_for_backend} ({model_name}) using UserModelManager"
+            )
+        else:
+            # Fallback to legacy method
+            model_switched = True
+            # Get display name from hardcoded mapping using the ORIGINAL callback value for lookup
+            fallback_model_names = {
+                "gemini": "Gemini-2.5-Pro",
+                "deepseek": "DeepSeek 70B",
+                "optimus_alpha": "🌀 Optimus Alpha",  # Use underscore version from callback for lookup
+                "deepcoder": "🧑‍💻 DeepCoder",
+                "llama4_maverick": "🦙 Llama-4 Maverick",
+            }
+            model_name = fallback_model_names.get(
+                selected_model_from_callback, selected_model_from_callback.capitalize()
+            )
+
+            # Save the CORRECTED ID to user preferences if using legacy
+            await self.user_data_manager.set_user_preference(
+                user_id, "preferred_model", selected_model_id_for_backend
+            )
+
+            # Log the model change
+            self.logger.info(
+                f"User {user_id} switched to model: {selected_model_id_for_backend} (display: {model_name}) using legacy method"
+            )
+
+        # Set flags in context.user_data using the CORRECTED ID
         context.user_data["just_switched_model"] = True
-        context.user_data["switched_to_model"] = selected_model
+        context.user_data["switched_to_model"] = selected_model_id_for_backend
+        context.user_data["model_switch_counter"] = 0  # Reset counter
 
-        # Log the model change
-        self.logger.info(f"User {user_id} switched to model: {selected_model}")
+        # Create a more descriptive success message
+        if model_switched:
+            # Get model features from registry if available
+            features_text = ""
+            if model_registry:
+                model_config = model_registry.get_model_config(
+                    selected_model_id_for_backend
+                )
+                if model_config:
+                    capabilities = [cap.value for cap in model_config.capabilities]
+                    features_text = f"\n\nFeatures: {', '.join(capabilities)}"
 
-        # Update the message
-        await query.edit_message_text(
-            f"✅ Model switched successfully!\n\nYou're now using *{model_name}*.\n\n"
-            f"You can change this anytime with /switchmodel",
-            parse_mode="Markdown",
-        )
+            await query.edit_message_text(
+                f"✅ Model switched successfully!\n\nYou're now using *{model_name}*{features_text}\n\n"
+                f"You can change this anytime with /switchmodel",
+                parse_mode="Markdown",
+            )
+        else:
+            await query.edit_message_text(
+                f"❌ Error switching model. The selected model may not be available.",
+                parse_mode="Markdown",
+            )
 
     async def export_to_document(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE

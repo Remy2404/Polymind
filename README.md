@@ -8,12 +8,12 @@ A sophisticated Telegram bot powered by Google's Gemini AI & DeepSeek AI that of
 ## ✨ Features
 
 - **🤖 AI-Powered Conversations**
-  - Natural language interactions using Google's Gemini AI
-  - Context-aware responses with conversation memory
+  - Natural language interactions using multiple AI models (Gemini, DeepSeek, OpenRouter)
+  - Context-aware responses with conversation memory per model
 
 - **🖼️ Advanced Media Capabilities**
-  - **Image Analysis**: Upload images for detailed AI descriptions and analysis
-  - **Image Generation**: Create images from text prompts with multiple AI models
+  - **Image Analysis**: Upload images for detailed AI descriptions and analysis (Gemini)
+  - **Image Generation**: Create images from text prompts with multiple AI models (Flux, Together AI, Imagen 3 via Gemini)
   - **Video Generation**: Generate short videos from text descriptions
 
 - **📄 Document Processing**
@@ -24,11 +24,14 @@ A sophisticated Telegram bot powered by Google's Gemini AI & DeepSeek AI that of
   - Transcribe voice messages to text
   - Automatic language detection for better accuracy
 
-- **🌐 Multiple AI Models**
+- **🌐 Multiple AI Models & Management**
   - **Gemini AI**: Primary model for text and multimodal conversations
+  - **DeepSeek LLM**: Alternative LLM for specialized tasks
+  - **OpenRouter Models**: Access to models like Optimus Alpha, DeepCoder, Llama-4 Maverick
   - **Flux**: Fast image generation model
   - **Together AI**: Alternative model for image generation
-  - **DeepSeek LLM**: Additional LLM option for specialized tasks
+  - **Model Switching**: Easily switch between configured AI models using `/switchmodel`
+  - **Centralized Model Registry**: Manages model configurations and capabilities
 
 - **🔄 Performance Optimizations**
   - Rate limiting to prevent API abuse
@@ -45,19 +48,20 @@ A sophisticated Telegram bot powered by Google's Gemini AI & DeepSeek AI that of
 ### Prerequisites
 
 - Python 3.11+
-- MongoDB database
+- [MongoDB](https://www.mongodb.com/) database
 - API keys for:
-  - Telegram Bot
-  - Google Gemini
-  - Hugging Face (for image generation)
-  - Together AI (optional)
+  - [Telegram Bot](https://t.me/botfather)
+  - [Google Gemini](https://ai.google.dev/)
+  - [Hugging Face](https://huggingface.co/settings/tokens) (for image/video generation)
+  - [OpenRouter AI](https://openrouter.ai/keys) (for Optimus Alpha, DeepCoder, Llama-4)
+  - [Together AI](https://api.together.ai/settings/api-keys) (optional)
 
 ### Installation
 
 1. **Clone the repository**
 
 ```bash
-git clone https://github.com/yourusername/Telegram-Gemini-Bot.git
+git clone https://github.com/Remy2404/Telegram-Gemini-Bot.git
 cd Telegram-Gemini-Bot
 ```
 
@@ -77,54 +81,64 @@ pip install -r requirements.txt
 
 4. **Configure environment variables**
 
-  Create a .env file in the root directory:
+  Create a `.env` file in the root directory:
 
-```
+```env
 DATABASE_URL=your_mongodb_connection_string
-MONGODB_DB_NAME=your_database_name
-TELEGRAM_BOT_TOKEN=your_bot_token
-GEMINI_API_KEY=your_gemini_api_key
-TEXT_TO_IMAGE_API_KEY=your_huggingface_api_key
-TEXT_TO_VIDEO_API_KEY=your_video_api_key (HuggingFace)
-TOGETHER_API_KEY=your_together_api_key
-BOT_MODE=webhook  # or polling
-WEBHOOK_URL=your_webhook_url  # if using webhook mode
+TELEGRAM_BOT_TOKEN=your_bot_token # Get from BotFather on Telegram
+GEMINI_API_KEY=your_gemini_api_key # Get from Google AI Studio
+OPENROUTER_API_KEY=your_openrouter_api_key # Get from OpenRouter website
+TEXT_TO_IMAGE_API_KEY=your_huggingface_api_key # Get from Hugging Face settings  or The same API of huggingface
+TEXT_TO_VIDEO_API_KEY=your_video_api_key # Get from Hugging Face settings or The same API of huggingface
+TOGETHER_API_KEY=your_together_api_key # Get from Together AI website
+BOT_MODE=webhook
+WEBHOOK_URL=your_webhook_url
 PORT=8000
 DEV_MODE=true
 IGNORE_DB_ERROR=true
-LOG_LEVEL=INFO
 LOGS_DIR=logs
-ADMIN_USER_ID=your_telegram_id
 ```
 
 5. **Start the bot**
-
+ 
 ```bash
-python app.py
+python app.py or uvicorn app:app --host 0.0.0.0 --port 8000 --reload 
 ```
-
+### 🌐 Webhook Setup before running bot 
+1. Install ngrok:
+2. Run ngrok:
+3. Update your .env file with the webhook URL:
+4. Restart the bot to apply changes
+  ```bash
+  ngrok http 8000 # Replace in WEBHOOK_URL
+  ```
 ## 🤖 Bot Commands
 
 - `/start` - Initialize the bot and receive a welcome message
 - `/help` - Display available commands and usage instructions
 - `/settings` - Configure bot preferences
-- `/generate_image` - Create an image from text description
+- `/generate_image` - Create images from text description (Flux)
+- `/imagen3` - Generate images using Imagen 3 (via Gemini)
 - `/genimg` - Generate an image using Together AI
 - `/generate_video` - Create a short video from text description
-- `/reset` - Clear your conversation history
+- `/reset` - Clear your conversation history for the current model
 - `/stats` - View your usage statistics
-- `/switchmodel` - Change between available AI models
+- `/switchmodel` - Change between available AI models (Gemini, DeepSeek, Optimus Alpha, DeepCoder, Llama-4)
 - `/language` - Change the interface language
+- `/exportdoc` - Export conversation or custom text to PDF/DOCX
+- `/gendoc` - Generate an AI-authored document (article, report, etc.)
 
 ## 🏗️ Project Structure
 
-```
+```plaintext
 src/
-├── handlers/         # Message and command handlers
-├── services/         # Core services (Gemini API, LLMs, etc.)
-├── utils/            # Utility functions and helpers
 ├── database/         # Database connections and models
-└── main.py           # Entry point for the application
+├── handlers/         # Message, command, and callback handlers
+├── services/         # Core services (API wrappers, data managers, etc.)
+│   └── model_handlers/ # Specific AI model handlers, factory, registry
+├── utils/            # Utility functions, logging, config
+└── main.py           # Entry point (if applicable, otherwise app.py)
+app.py                # Main application file (FastAPI/Webhook setup)
 ```
 
 ## 🐳 Docker Deployment
@@ -194,6 +208,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 - [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot)
 - [Google Gemini AI](https://ai.google.dev/)
+- [DeepSeek AI](https://www.deepseek.com/)
+- [OpenRouter AI](https://openrouter.ai/)
 - [MongoDB](https://www.mongodb.com/)
 - [Hugging Face](https://huggingface.co/)
 - [Together AI](https://www.together.ai/)

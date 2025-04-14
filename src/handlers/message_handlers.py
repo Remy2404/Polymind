@@ -678,46 +678,33 @@ class MessageHandlers:
             await status_message.delete()
 
             if response:
-                # Split long messages
-                response_chunks = await self.text_handler.split_long_message(response)
-                sent_messages = []
-
-                # Send each chunk
-                for chunk in response_chunks:
-                    try:
-                        formatted_chunk = (
-                            await self.text_handler.format_telegram_markdown(chunk)
-                        )
-                        sent_message = await update.message.reply_text(
-                            formatted_chunk,
-                            parse_mode="MarkdownV2",
-                            disable_web_page_preview=True,
-                        )
-                        sent_messages.append(sent_message.message_id)
-                    except Exception as markdown_error:
-                        self.logger.warning(
-                            f"Markdown formatting failed: {markdown_error}"
-                        )
-                        sent_message = await update.message.reply_text(
-                            chunk, parse_mode=None
-                        )
-                        sent_messages.append(sent_message.message_id)
-
-                # Store document info in user context
-                self.user_data_manager.add_to_context(
-                    user_id,
-                    {
-                        "role": "user",
-                        "content": f"[Document: {file_name} with prompt: {prompt}]",
-                    },
+                # Format the response
+                response_text = response.get(
+                    "result", "Document processed successfully."
                 )
-                self.user_data_manager.add_to_context(
-                    user_id, {"role": "assistant", "content": response}
+                document_id = response.get("document_id", "Unknown")
+
+                # Escape Markdown special characters
+                response_text = self._escape_markdown(response_text)
+                document_id = self._escape_markdown(document_id)
+
+                # Ensure the response is user-friendly
+                formatted_response = (
+                    f"**Document Analysis Completed**\n\n"
+                    f"{response_text}\n\n"
+                    f"**Document ID:** {document_id}"
                 )
 
-                # Store in memory manager for long-term context
+                # Send the formatted response to the user
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=formatted_response,
+                    parse_mode="Markdown",
+                    disable_web_page_preview=True,
+                )
+
+                # Store document interaction in memory manager
                 try:
-                    # Get memory manager from text_handler if it exists
                     if (
                         hasattr(self.text_handler, "memory_manager")
                         and self.text_handler.memory_manager
@@ -737,7 +724,9 @@ class MessageHandlers:
 
                         # Add AI's response to memory
                         document_summary = (
-                            response[:500] + "..." if len(response) > 500 else response
+                            response_text[:500] + "..."
+                            if len(response_text) > 500
+                            else response_text
                         )
                         document_response = (
                             f"[Document analysis of {file_name}]: {document_summary}"
@@ -754,34 +743,6 @@ class MessageHandlers:
                         f"Error storing document in memory manager: {str(memory_error)}"
                     )
 
-                # Store document reference in user data (NEW)
-                if "document_history" not in context.user_data:
-                    context.user_data["document_history"] = []
-
-                # Store document info in user data (OLD)
-                context.user_data["document_history"].append(
-                    {
-                        "timestamp": datetime.datetime.now().isoformat(),
-                        "file_id": file_id,
-                        "file_name": file_name,
-                        "file_extension": file_extension,
-                        "prompt": prompt,
-                        "summary": (
-                            response[:300] + "..." if len(response) > 300 else response
-                        ),
-                        "full_response": response,  # Critical for follow-up questions
-                        "message_id": update.message.message_id,
-                        "response_message_ids": sent_messages,  # These are already message IDs
-                    }
-                )
-
-                # Update user stats
-                if self.user_data_manager:
-                    self.user_data_manager.update_stats(user_id, document=True)
-
-                self.telegram_logger.log_message(
-                    f"Document analysis completed successfully", user_id
-                )
             else:
                 await update.message.reply_text(
                     "Sorry, I couldn't analyze the document. Please try again."
@@ -794,6 +755,32 @@ class MessageHandlers:
             await update.message.reply_text(
                 "Sorry, I couldn't process your document. Please ensure it's in a supported format."
             )
+
+    def _escape_markdown(self, text: str) -> str:
+        """Escape special characters for Telegram Markdown."""
+        escape_chars = [
+            "_",
+            "*",
+            "[",
+            "]",
+            "(",
+            ")",
+            "~",
+            "`",
+            ">",
+            "#",
+            "+",
+            "-",
+            "=",
+            "|",
+            "{",
+            "}",
+            ".",
+            "!",
+        ]
+        for char in escape_chars:
+            text = text.replace(char, f"\\{char}")
+        return text
 
     async def _error_handler(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -895,3 +882,58 @@ class MessageHandlers:
                     ),
                 ]
             ]
+
+    async def handle_document_processing(self, update, context):
+        try:
+            # Extract document and user information
+            document = update.message.document
+            user_id = update.message.from_user.id
+
+            # Log the start of document processing
+            logger.info(f"Processing document for user {user_id}")
+
+            # Call the document processing service
+            result = await self.document_processor.process_document_enhanced(
+                file=document.file_id,
+                file_extension=document.file_name.split(".")[-1],
+                prompt="Analyze this document",
+                user_id=user_id,
+            )
+
+            # Check if the result contains an error
+            if "error" in result:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=f"Error processing document: {result['error']}",
+                )
+                return
+
+            # Format the response for the user
+            response_text = result.get("result", "Document processed successfully.")
+            document_id = result.get("document_id", "Unknown")
+
+            formatted_response = (
+                f"**Document Analysis Completed**\n\n"
+                f"{response_text}\n\n"
+                f"**Document ID:** {document_id}"
+            )
+
+            # Send the formatted response to the user
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=formatted_response,
+                parse_mode="Markdown",
+            )
+
+            # Log the successful completion
+            logger.info(f"Document analysis completed successfully for user {user_id}")
+
+        except Exception as e:
+            # Log the error
+            logger.error(f"Error in document processing: {str(e)}")
+
+            # Notify the user of the error
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="An error occurred while processing your document. Please try again later.",
+            )

@@ -33,6 +33,13 @@ class OpenRouterAPI:
             "Content-Type": "application/json",
         }
 
+        # Available models
+        self.available_models = {
+            "optimus-alpha": "openrouter/optimus-alpha",
+            "deepcoder": "agentica-org/deepcoder-14b-preview:free",
+            "llama4_maverick": "meta-llama/llama-4-maverick:free",
+        }
+
         # Circuit breaker properties
         self.api_failures = 0
         self.api_last_failure = 0
@@ -61,7 +68,7 @@ class OpenRouterAPI:
         self,
         prompt: str,
         context: List[Dict] = None,
-        model: str = "openrouter/quasar-alpha",
+        model: str = "openrouter/optimus-alpha",
         temperature: float = 0.7,
         max_tokens: int = 4000,
     ) -> Optional[str]:
@@ -73,13 +80,11 @@ class OpenRouterAPI:
             session = await self.ensure_session()
 
             # Prepare the messages
-            messages = []
-
-            # Add system message
+            messages = []  # Add system message
             messages.append(
                 {
                     "role": "system",
-                    "content": "You are Quasar Alpha, an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate.",
+                    "content": "You are Optimus Alpha, an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate.",
                 }
             )
 

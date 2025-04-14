@@ -14,6 +14,7 @@ import asyncio
 from services.memory_manager import MemoryManager
 from services.model_handlers.model_history_manager import ModelHistoryManager
 
+
 class TextHandler:
     def __init__(
         self,
@@ -36,7 +37,11 @@ class TextHandler:
         self.memory_manager.short_term_limit = 15
         self.memory_manager.token_limit = 8192
 
-        # Instantiate the new ModelHistoryManager
+        # These will be set later when application context is available
+        self.model_registry = None
+        self.user_model_manager = None
+
+        # Instantiate the ModelHistoryManager (will be updated with model_registry later if available)
         self.model_history_manager = ModelHistoryManager(self.memory_manager)
 
     async def format_telegram_markdown(self, text: str) -> str:
@@ -198,8 +203,12 @@ class TextHandler:
             )
 
             if is_image_request and image_prompt:
-                # Delete the thinking message first
-                await thinking_message.delete()
+                # Try to delete the thinking message first, but continue even if it fails
+                try:
+                    await thinking_message.delete()
+                except Exception as e:
+                    self.logger.warning(f"Could not delete thinking message: {e}")
+                    # Continue processing even if deletion fails
 
                 # Inform the user that image generation is starting
                 status_message = await update.message.reply_text(
@@ -207,10 +216,8 @@ class TextHandler:
                 )
 
                 try:
-                    # Generate the image using Imagen 3
-                    image_bytes = await self.gemini_api.generate_image_with_imagen3(
-                        image_prompt
-                    )
+                    # First try with the primary image generation method (using gemini-2.0-flash-exp-image-generation)
+                    image_bytes = await self.gemini_api.generate_image(image_prompt)
 
                     if image_bytes:
                         # Delete the status message
@@ -268,79 +275,98 @@ class TextHandler:
                     self.logger.error(f"Error generating image: {e}")
                     await status_message.edit_text(
                         "Sorry, there was an error generating your image. Please try again later."
+                    )  # Get the preferred model with the new ModelManager system
+
+            # Try to get the model registry and user model manager from application context
+            if hasattr(context, "application") and hasattr(
+                context.application, "bot_data"
+            ):
+                if not self.model_registry:
+                    self.model_registry = context.application.bot_data.get(
+                        "model_registry"
+                    )
+                if not self.user_model_manager:
+                    self.user_model_manager = context.application.bot_data.get(
+                        "user_model_manager"
                     )
 
-            # Get the preferred model with multiple fallback mechanisms
-            preferred_model = await self.user_data_manager.get_user_preference(
-                user_id, "preferred_model", default="gemini"
-            )
-            self.logger.info(f"Preferred model for user {user_id}: {preferred_model}")
+                # If we have the model registry and user model manager, update the ModelHistoryManager
+                if (
+                    self.model_registry
+                    and self.user_model_manager
+                    and hasattr(self, "model_history_manager")
+                ):
+                    # Only update the ModelHistoryManager once
+                    if (
+                        not hasattr(self.model_history_manager, "model_registry")
+                        or not self.model_history_manager.model_registry
+                    ):
+                        # Create a new ModelHistoryManager with model_registry and user_model_manager
+                        from services.model_handlers.model_history_manager import (
+                            ModelHistoryManager,
+                        )
 
-            # Check for temporary flags from a recent model switch
-            if (
-                "just_switched_model" in context.user_data
-                and context.user_data["just_switched_model"]
-            ):
-                preferred_model = context.user_data.get(
-                    "switched_to_model", preferred_model
+                        self.model_history_manager = ModelHistoryManager(
+                            self.memory_manager,
+                            self.user_model_manager,
+                            self.model_registry,
+                        )
+                        self.logger.info(
+                            "Updated ModelHistoryManager with model_registry and user_model_manager"
+                        )
+
+            # Get the preferred model using the new system if available, otherwise fall back to legacy approach
+            if self.user_model_manager:
+                preferred_model = self.user_model_manager.get_user_model(user_id)
+                self.logger.info(
+                    f"Using model from UserModelManager for user {user_id}: {preferred_model}"
+                )
+
+                # Get model config for additional info like timeout
+                model_config = self.user_model_manager.get_user_model_config(user_id)
+                model_timeout = model_config.timeout_seconds if model_config else 60
+            else:
+                # Legacy fallback method
+                preferred_model = await self.user_data_manager.get_user_preference(
+                    user_id, "preferred_model", default="gemini"
                 )
                 self.logger.info(
-                    f"Using recently switched model for user {user_id}: {preferred_model}"
+                    f"Preferred model for user {user_id}: {preferred_model}"
                 )
-                # Clear the temporary flags after a few messages
-                if "model_switch_counter" not in context.user_data:
-                    context.user_data["model_switch_counter"] = 1
-                else:
-                    context.user_data["model_switch_counter"] += 1
 
-                # After 5 messages, we can trust the DB to have the correct preference
-                if context.user_data["model_switch_counter"] >= 5:
-                    context.user_data["just_switched_model"] = False
-                    context.user_data["model_switch_counter"] = 0
+                # Check for temporary flags from a recent model switch
+                if (
+                    "just_switched_model" in context.user_data
+                    and context.user_data["just_switched_model"]
+                ):
+                    preferred_model = context.user_data.get(
+                        "switched_to_model", preferred_model
+                    )
                     self.logger.info(
-                        f"Cleared temporary model switch flags for user {user_id}"
+                        f"Using recently switched model for user {user_id}: {preferred_model}"
                     )
+                    # Clear the temporary flags after a few messages
+                    if "model_switch_counter" not in context.user_data:
+                        context.user_data["model_switch_counter"] = 1
+                    else:
+                        context.user_data["model_switch_counter"] += 1
+                    # After 5 messages, we can trust the DB to have the correct preference
+                    if context.user_data["model_switch_counter"] >= 5:
+                        context.user_data["just_switched_model"] = False
+                        context.user_data["model_switch_counter"] = 0
+                        self.logger.info(
+                            f"Cleared temporary model switch flags for user {user_id}"
+                        )
 
-            # Check the backup preference store only if we haven't recently switched models
-            if (
-                not context.user_data.get("just_switched_model", False)
-                and hasattr(self.user_data_manager, "preference_backup")
-                and user_id in self.user_data_manager.preference_backup
-            ):
-                backup_model = self.user_data_manager.preference_backup.get(
-                    user_id, {}
-                ).get("preferred_model")
-                if backup_model and preferred_model != backup_model:
-                    self.logger.warning(
-                        f"Preference mismatch for user {user_id}. DB: {preferred_model}, Backup: {backup_model}. Using DB value."
-                    )
-
-                    # Update the backup to match the DB instead of the other way around
-                    if hasattr(self.user_data_manager, "preference_backup"):
-                        if user_id in self.user_data_manager.preference_backup:
-                            self.user_data_manager.preference_backup[user_id][
-                                "preferred_model"
-                            ] = preferred_model
-                            self.logger.info(
-                                f"Updated backup preference for user {user_id} to {preferred_model}"
-                            )
-
-            # As a final fallback, check if we're in the middle of a DeepSeek conversation
-            last_message_indicator = context.user_data.get("last_message_indicator", "")
-            if "DeepSeek" in last_message_indicator and preferred_model == "gemini":
-                self.logger.warning(
-                    f"Last message was from DeepSeek but preference is gemini. Correcting to deepseek."
-                )
-                preferred_model = "deepseek"
-                await self.user_data_manager.set_user_preference(
-                    user_id, "preferred_model", preferred_model
+                # Set timeout based on model
+                model_timeout = (
+                    300.0 if preferred_model in ["deepseek", "optimus-alpha"] else 60.0
                 )
 
             # Apply response style guidelines
             enhanced_prompt_with_guidelines = await self._apply_response_guidelines(
                 enhanced_prompt, preferred_model, context
             )
-
             try:
                 # Get the model handler for the preferred model
                 # Use the class's API instances directly
@@ -351,7 +377,7 @@ class TextHandler:
                     deepseek_api=self.deepseek_api,
                 )
 
-                # Generate response using the model handler
+                # Generate response using the model handler with proper timeout from model_config
                 response = await asyncio.wait_for(
                     model_handler.generate_response(
                         prompt=enhanced_prompt_with_guidelines,
@@ -359,11 +385,7 @@ class TextHandler:
                         temperature=0.7,
                         max_tokens=4000,
                     ),
-                    timeout=(
-                        300.0
-                        if preferred_model in ["deepseek", "quasar_alpha"]
-                        else 60.0
-                    ),
+                    timeout=model_timeout,
                 )
             except asyncio.TimeoutError:
                 await thinking_message.delete()
@@ -398,10 +420,10 @@ class TextHandler:
 
             # Get the model indicator from the model handler
             model_handler = ModelHandlerFactory.get_model_handler(
-                preferred_model, 
+                preferred_model,
                 gemini_api=self.gemini_api,
                 openrouter_api=self.openrouter_api,
-                deepseek_api=self.deepseek_api
+                deepseek_api=self.deepseek_api,
             )
             model_indicator = model_handler.get_model_indicator()
 
@@ -585,7 +607,9 @@ class TextHandler:
         # conversation_id = f"user_{user_id}" # Not needed directly
 
         # Get messages using ModelHistoryManager
-        messages = await self.model_history_manager.get_history(user_id, max_messages=50) # Get more messages for display
+        messages = await self.model_history_manager.get_history(
+            user_id, max_messages=50
+        )  # Get more messages for display
 
         if not messages:
             await update.message.reply_text(
@@ -778,4 +802,3 @@ class TextHandler:
 
         await update.message.reply_text("✅ Your conversation history has been reset.")
         telegram_logger.log_message(f"Conversation history cleared", user_id)
-        

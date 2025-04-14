@@ -39,7 +39,6 @@ from src.services.flux_lora_img import flux_lora_image_generator
 import uvicorn
 from src.services.document_processing import DocumentProcessor
 from src.database.connection import get_database
-from src.services.text_to_video import text_to_video_generator
 
 load_dotenv()
 
@@ -195,7 +194,7 @@ class TelegramBot:
             # Initialize OpenRouter API for Quasar Alpha
             openrouter_rate_limiter = RateLimiter(requests_per_minute=20)
             self.openrouter_api = OpenRouterAPI(rate_limiter=openrouter_rate_limiter)
-            
+
             # Initialize DeepSeekLLM for DeepSeek model
             self.deepseek_api = DeepSeekLLM()
 
