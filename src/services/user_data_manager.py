@@ -55,7 +55,7 @@ class UserDataManager:
             self.logger.error(f"Error initializing user {user_id}: {str(e)}")
             raise
 
-    def update_stats(
+    async def update_stats(
         self,
         user_id: int,
         message: bool = False,
@@ -92,8 +92,11 @@ class UserDataManager:
 
             # Update user record
             users_collection.update_one({"user_id": user_id}, update_dict, upsert=True)
+            self.logger.info(f"Updated stats for user: {user_id}")
+            return True
         except Exception as e:
-            logging.error(f"Error updating user stats: {str(e)}")
+            self.logger.error(f"Error updating user stats: {str(e)}")
+            return False
 
     async def update_user_data(self, user_id: int, user_data: dict) -> None:
         """Update user data in the database."""
@@ -130,12 +133,19 @@ class UserDataManager:
         """
         try:
             # Ensure message is a dictionary with required keys
-            if not isinstance(message, dict) or 'role' not in message or 'content' not in message:
-                self.logger.error(f"Invalid message format for user {user_id}: {message}")
+            if (
+                not isinstance(message, dict)
+                or "role" not in message
+                or "content" not in message
+            ):
+                self.logger.error(
+                    f"Invalid message format for user {user_id}: {message}"
+                )
                 return
-                
+
             self.users_collection.update_one(
-                {"user_id": user_id}, {"$push": {"contexts": message}} # Push the dictionary
+                {"user_id": user_id},
+                {"$push": {"contexts": message}},  # Push the dictionary
             )
             self.logger.debug(f"Added message to history for user: {user_id}")
         except Exception as e:
@@ -193,9 +203,11 @@ class UserDataManager:
         # Ensure the retrieved context is a list of dictionaries
         context = user_data.get("contexts", [])
         if not isinstance(context, list):
-             self.logger.warning(f"User {user_id} context is not a list: {type(context)}. Clearing.")
-             await self.clear_history(user_id) # Consider clearing invalid context
-             return []
+            self.logger.warning(
+                f"User {user_id} context is not a list: {type(context)}. Clearing."
+            )
+            await self.clear_history(user_id)  # Consider clearing invalid context
+            return []
         # Optionally validate that elements are dictionaries (can add later if needed)
         return context
 

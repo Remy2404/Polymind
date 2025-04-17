@@ -28,6 +28,16 @@ from src.utils.telegramlog import TelegramLogger
 from src.services.document_processing import DocumentProcessor
 from src.handlers.text_handlers import TextHandler
 
+# Import new utility classes
+from handlers.message_context_handler import MessageContextHandler
+from handlers.response_formatter import ResponseFormatter
+from handlers.media_context_extractor import MediaContextExtractor
+from services.media.image_processor import ImageProcessor
+from services.media.voice_processor import VoiceProcessor
+from services.model_handlers.prompt_formatter import PromptFormatter
+from services.user_preferences_manager import UserPreferencesManager
+from services.conversation_manager import ConversationManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,8 +54,20 @@ class MessageHandlers:
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
         self.document_processor = document_processor
-        self.text_handler = text_handler  # Store the text_handler correctly
+        self.text_handler = text_handler
         self.logger = logging.getLogger(__name__)
+
+        # Initialize utility classes
+        self.context_handler = MessageContextHandler()
+        self.response_formatter = ResponseFormatter()
+        self.media_context_extractor = MediaContextExtractor()
+        self.image_processor = ImageProcessor(gemini_api)
+        self.voice_processor = VoiceProcessor()
+        self.prompt_formatter = PromptFormatter()
+        self.preferences_manager = UserPreferencesManager(user_data_manager)
+
+        # Initialize conversation manager (will be lazy-loaded with proper dependencies)
+        self._conversation_manager = None
 
     async def _handle_text_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -114,13 +136,13 @@ class MessageHandlers:
 
             # Process the message
             await text_handler.handle_text_message(update, context)
-            await self.user_data_manager.update_user_stats(
+            await self.user_data_manager.update_stats(
                 user_id, {"text_messages": 1, "total_messages": 1}
             )
         except Exception as e:
             self.logger.error(f"Error processing text message: {str(e)}")
             await self._error_handler(update, context)
-        self.user_data_manager.update_stats(user_id, text_message=True)
+        # We already called update_stats above inside the try block, no need to call it again here
 
     async def _handle_image_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -128,31 +150,80 @@ class MessageHandlers:
         """Handle incoming image messages."""
         try:
             user_id = update.effective_user.id
-            self.telegram_logger.log_message(user_id, "Received image message")
+            self.logger.info(f"Processing image from user {user_id}")
+            self.telegram_logger.log_message("Received image message", user_id)
 
-            # Check if the bot is mentioned in the image caption
-            bot_username = "@Gemini_AIAssistBot"
-            if update.message.caption and bot_username in update.message.caption:
-                self.logger.info(f"Bot mentioned by user {user_id} in image caption")
-                await update.message.reply_text(
-                    "I see you sent an image mentioning me. How can I assist you?"
+            # Check if we have a valid image
+            if (
+                not update.message
+                or not update.message.photo
+                or len(update.message.photo) == 0
+            ):
+                await update.message.reply_text("Sorry, I couldn't process this image.")
+                return
+
+            # Get the highest resolution photo
+            photo = update.message.photo[-1]
+
+            # Get caption as prompt or use a default prompt
+            caption = update.message.caption or "Describe this image in detail."
+
+            # Show processing message
+            processing_message = await update.message.reply_text(
+                "Processing your image. Please wait..."
+            )
+
+            # Send typing indicator
+            await context.bot.send_chat_action(
+                chat_id=update.effective_chat.id, action=ChatAction.TYPING
+            )
+
+            try:
+                # Download the image file
+                photo_file = await context.bot.get_file(photo.file_id)
+                image_bytes = await photo_file.download_as_bytearray()
+
+                # Convert to BytesIO to make it easier to process
+                image_data = io.BytesIO(image_bytes)
+
+                # Use our ImageProcessor to analyze the image
+                response = await self.image_processor.analyze_image(image_data, caption)
+
+                # Delete the processing message
+                try:
+                    await processing_message.delete()
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to delete processing message: {str(e)}"
+                    )
+
+                # Send the analysis response
+                if response:
+                    await self._safe_reply(
+                        update.message, response, parse_mode="Markdown"
+                    )
+                else:
+                    await update.message.reply_text(
+                        "Sorry, I couldn't analyze this image. Please try again with a different image."
+                    )
+
+                # Update user statistics
+                try:
+                    await self.user_data_manager.update_stats(user_id, image=True)
+                except Exception as stats_error:
+                    self.logger.warning(f"Failed to update stats: {str(stats_error)}")
+
+            except Exception as inner_error:
+                self.logger.error(f"Error processing image content: {str(inner_error)}")
+                await processing_message.edit_text(
+                    "Sorry, I couldn't process this image. Please try another one."
                 )
 
-            # Initialize user data if not already initialized
-            await self.user_data_manager.initialize_user(user_id)
-
-            # Create text handler instance (which also handles images)
-            text_handler = TextHandler(self.gemini_api, self.user_data_manager)
-
-            # Process the image
-            await text_handler.handle_image(update, context)
-            await self.user_data_manager.update_user_stats(
-                user_id, {"images": 1, "total_messages": 1}
-            )
         except Exception as e:
             self.logger.error(f"Error processing image message: {str(e)}")
             await self._error_handler(update, context)
-        self.user_data_manager.update_stats(user_id, image=True)
+
+        # Stats are already updated in the try block, no need to call it again here
 
     async def _handle_voice_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -166,50 +237,21 @@ class MessageHandlers:
         conversation_id = f"user_{user_id}"
         self.telegram_logger.log_message("Received voice message", user_id)
 
+        # Extract quote context using MessageContextHandler
+        quoted_text, quoted_message_id = self.context_handler.extract_reply_context(
+            update.message
+        )
+
         try:
-            # First check user's language preference before doing any processing
-            # This helps us optimize for the right language from the start
-            user_lang = "en"  # Default to English
+            # Get user's language preference using UserPreferencesManager
+            user_lang = (
+                await self.preferences_manager.get_user_language_preference(user_id)
+                or "en"
+            )
 
-            try:
-                # Get user's preferred language from database if available - this is critical for Khmer support
-                preferred_lang = None
-
-                # First check if there's an application-level user_data_manager
-                if (
-                    hasattr(context.application, "user_data_manager")
-                    and context.application.user_data_manager
-                ):
-                    preferred_lang = (
-                        await context.application.user_data_manager.get_user_preference(
-                            user_id, "preferred_language", default=None
-                        )
-                    )
-
-                # If not found, try the instance user_data_manager
-                if not preferred_lang:
-                    preferred_lang = await self.user_data_manager.get_user_preference(
-                        user_id, "preferred_language", default=None
-                    )
-
-                # Also check in context.user_data for immediate preference set by /language command
-                if not preferred_lang and "preferences" in context.user_data:
-                    preferred_lang = context.user_data["preferences"].get("language")
-
-                # Use the found language preference or fall back to Telegram's language code
-                if preferred_lang:
-                    user_lang = preferred_lang
-                    self.logger.info(
-                        f"Using user preferred language: {user_lang} for voice recognition"
-                    )
-                elif update.effective_user.language_code:
-                    user_lang = update.effective_user.language_code
-                    self.logger.info(
-                        f"Using Telegram language code: {user_lang} for voice recognition"
-                    )
-            except Exception as lang_error:
-                self.logger.warning(f"Error getting user language: {str(lang_error)}")
-                # Continue with default English if we can't get the language preference
+            # If not found in preferences, try the instance user_data_manager
+            if user_lang == "en" and update.effective_user.language_code:
+                user_lang = update.effective_user.language_code
 
             # Enhanced language mapping with better Khmer support
             language_map = {
@@ -247,275 +289,107 @@ class MessageHandlers:
 
             status_message = await update.message.reply_text(processing_text)
 
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Download the voice file
-                file = await context.bot.get_file(update.message.voice.file_id)
-                ogg_file_path = os.path.join(temp_dir, f"{user_id}_voice.ogg")
-                await file.download_to_drive(ogg_file_path)
+            # Use VoiceProcessor for downloading and converting voice file
+            voice_file = await context.bot.get_file(update.message.voice.file_id)
+            ogg_file_path, wav_file_path = (
+                await self.voice_processor.download_and_convert(
+                    voice_file, str(user_id), is_khmer
+                )
+            )
 
-                # Apply specific audio processing for Khmer language
-                wav_file_path = os.path.join(temp_dir, f"{user_id}_voice.wav")
-                audio = AudioSegment.from_ogg(ogg_file_path)
+            # Use VoiceProcessor for transcribing the voice file
+            text, recognition_language = await self.voice_processor.transcribe(
+                wav_file_path, lang, is_khmer
+            )
 
-                # Different audio processing for different languages
-                if is_khmer:
-                    # For Khmer, don't speed up, instead enhance clarity
-                    enhanced_audio = audio.normalize()
-                    # Higher quality settings for Khmer
-                    enhanced_audio = enhanced_audio.set_frame_rate(16000)
-                    enhanced_audio = enhanced_audio.set_channels(
-                        1
-                    )  # Mono for better speech recognition
-                else:
-                    # For other languages, slight speedup can help
-                    enhanced_audio = audio.speedup(playback_speed=1.1)
+            if not text:
+                # Language-specific error message
+                error_text = (
+                    "សូមអភ័យទោស មិនអាចយល់សំឡេងបានទេ។ សូមសាកល្បងម្តងទៀតជាមួយសំឡេងច្បាស់ជាងនេះ។\n\n"
+                    "Sorry, I couldn't understand the audio. Please try again with clearer audio."
+                    if is_khmer
+                    else "Sorry, I couldn't understand the audio. Please try again with clearer audio."
+                )
 
-                # Export with appropriate settings
-                enhanced_audio.export(wav_file_path, format="wav")
-
-                # Convert the voice file to text using speech recognition
-                recognizer = sr.Recognizer()
-                with sr.AudioFile(wav_file_path) as source:
-                    # Adjust for ambient noise - different durations based on language
-                    recognizer.adjust_for_ambient_noise(
-                        source, duration=1.0 if is_khmer else 0.5
-                    )
-
-                    # Adjust energy threshold based on language
-                    recognizer.energy_threshold = 300 if is_khmer else 500
-                    audio_data = recognizer.record(source)
-
+                # Update status message instead of deleting
                 try:
-                    # For Khmer, we'll use multiple attempts with different settings
-                    text = ""
-                    recognition_language = ""
-
-                    if is_khmer:
-                        # Log attempt to help debug
-                        self.logger.info(
-                            f"Attempting Khmer speech recognition for user {user_id}"
-                        )
-
-                        # Try multiple Khmer variants in sequence
-                        khmer_variants = ["km-KH", "km", "kh"]
-                        recognition_error = None
-
-                        for variant in khmer_variants:
-                            try:
-                                self.logger.info(
-                                    f"Trying speech recognition with language: {variant}"
-                                )
-                                text = recognizer.recognize_google(
-                                    audio_data, language=variant
-                                )
-                                recognition_language = variant
-                                # If successful, break out of the loop
-                                break
-                            except sr.UnknownValueError as e:
-                                recognition_error = e
-                                self.logger.warning(
-                                    f"Recognition failed with {variant}, trying next variant"
-                                )
-                                # Try with lower energy threshold for the next attempt
-                                recognizer.energy_threshold -= 50
-
-                        # If all variants failed, raise the last error to trigger the error handler
-                        if not text and recognition_error:
-                            raise recognition_error
-                    else:
-                        # For non-Khmer languages, use standard recognition with the detected language
-                        text = recognizer.recognize_google(audio_data, language=lang)
-                        recognition_language = lang
-
-                    # Log successful recognition
-                    self.logger.info(
-                        f"Successfully recognized speech with language {recognition_language}: '{text}'"
+                    await status_message.edit_text(error_text)
+                except Exception as edit_error:
+                    self.logger.warning(
+                        f"Could not edit status message: {str(edit_error)}"
                     )
-
-                    # Delete the status message safely
                     try:
-                        await status_message.delete()
-                    except Exception as msg_error:
-                        self.logger.warning(
-                            f"Could not delete status message: {str(msg_error)}"
-                        )
-                        # Try to update instead if we can't delete
-                        try:
-                            await status_message.edit_text("✓ Processing complete")
-                        except:
-                            pass
-
-                    # Show the transcribed text to the user
-                    transcript_text = (
-                        f"🎤 *បំលែងសំឡេងទៅជាអក្សរ (Transcription)*: \n{text}"
-                        if is_khmer
-                        else f"🎤 *Transcription*: \n{text}"
-                    )
-
-                    # Use safe_reply to handle the flood control issue
-                    try:
-                        if hasattr(self, "_safe_reply") and callable(self._safe_reply):
-                            transcript_message = await self._safe_reply(
-                                update.message, transcript_text, parse_mode="Markdown"
-                            )
-                        else:
-                            # Fall back to regular reply if _safe_reply doesn't exist
-                            transcript_message = await update.message.reply_text(
-                                transcript_text, parse_mode="Markdown"
-                            )
-                    except Exception as reply_error:
-                        self.logger.error(
-                            f"Error sending transcript message: {str(reply_error)}"
-                        )
-                        # Try without markdown
-                        transcript_message = await update.message.reply_text(
-                            f"🎤 Transcription: \n{text}"
-                        )
-
-                    # Log the transcribed text
-                    self.telegram_logger.log_message(
-                        f"Transcribed {recognition_language} text: {text}", user_id
-                    )
-
-                    # Initialize user data if not already initialized
-                    await self.user_data_manager.initialize_user(user_id)
-
-                    # Create a new text_handler instance instead of trying to use self.text_handler
-                    # This fixes the 'MessageHandlers' object has no attribute 'text_handler' error
-                    text_handler = TextHandler(self.gemini_api, self.user_data_manager)
-
-                    # Store voice message in MemoryManager with language metadata
-                    try:
-                        # Only add to memory manager if it's properly initialized
-                        if (
-                            hasattr(text_handler, "memory_manager")
-                            and text_handler.memory_manager is not None
-                        ):
-                            # Use proper language label
-                            language_label = "km" if is_khmer else lang.split("-")[0]
-
-                            # Store with enhanced metadata to improve context retention
-                            await text_handler.memory_manager.add_user_message(
-                                conversation_id,
-                                f"[Voice message in {language_label} language: {text}]",
-                                str(user_id),
-                                language=language_label,  # Add language metadata
-                                is_voice=True,  # Flag as voice message
-                                voice_duration=update.message.voice.duration,
-                                recognition_language=recognition_language,
-                                timestamp=datetime.datetime.now().timestamp(),
-                            )
-
-                            # Log successful memory storage
-                            self.logger.info(
-                                f"Voice message context stored in memory for user {user_id}"
-                            )
-                    except Exception as mem_error:
-                        self.logger.error(
-                            f"Error adding to memory manager: {str(mem_error)}"
-                        )
-                        # Continue processing even if memory manager fails
-
-                    # Create a new Update object with the transcribed text
-                    new_update = Update.de_json(
-                        {
-                            "update_id": update.update_id,
-                            "message": {
-                                "message_id": update.message.message_id,
-                                "date": update.message.date.timestamp(),
-                                "chat": update.message.chat.to_dict(),
-                                "from": update.message.from_user.to_dict(),
-                                "text": text,
-                            },
-                        },
-                        context.bot,
-                    )
-
-                    # Process the transcribed text as if it were a regular text message
-                    await text_handler.handle_text_message(new_update, context)
-
-                    # Update user stats with language information
-                    try:
-                        # Check if the update_user_stats method exists and is callable
-                        if hasattr(
-                            self.user_data_manager, "update_user_stats"
-                        ) and callable(self.user_data_manager.update_user_stats):
-                            stats_update = {"voice_messages": 1, "total_messages": 1}
-
-                            # Add language-specific stat if we have language info
-                            if is_khmer:
-                                stats_update["voice_messages_km"] = 1
-                            else:
-                                language_label = (
-                                    lang.split("-")[0] if "-" in lang else lang
-                                )
-                                stats_update[f"voice_messages_{language_label}"] = 1
-
-                            # Use the method
-                            update_result = self.user_data_manager.update_user_stats(
-                                user_id, stats_update
-                            )
-
-                            # Handle both sync and async implementations
-                            if asyncio.iscoroutine(update_result):
-                                await update_result
-                        else:
-                            # Fallback to update_stats if available
-                            self.user_data_manager.update_stats(
-                                user_id, voice_message=True
-                            )
-                    except Exception as stats_error:
-                        self.logger.error(
-                            f"Error updating user stats: {str(stats_error)}"
-                        )
-                        # Try the simple update_stats method as fallback
-                        try:
-                            if hasattr(self.user_data_manager, "update_stats"):
-                                self.user_data_manager.update_stats(
-                                    user_id, voice_message=True
-                                )
-                        except:
-                            pass
-
-                except sr.UnknownValueError:
-                    # Language-specific error message
-                    error_text = (
-                        "សូមអភ័យទោស មិនអាចយល់សំឡេងបានទេ។ សូមសាកល្បងម្តងទៀតជាមួយសំឡេងច្បាស់ជាងនេះ។\n\n"
-                        "Sorry, I couldn't understand the audio. Please try again with clearer audio."
-                        if is_khmer
-                        else "Sorry, I couldn't understand the audio. Please try again with clearer audio."
-                    )
-
-                    # Update status message instead of deleting
-                    try:
-                        await status_message.edit_text(error_text)
-                    except Exception as edit_error:
-                        self.logger.warning(
-                            f"Could not edit status message: {str(edit_error)}"
-                        )
-                        # Try to send a new message if editing fails
-                        try:
-                            await update.message.reply_text(error_text)
-                        except:
-                            pass
-
-                except sr.RequestError as e:
-                    self.logger.error(
-                        f"Could not request results from Google Speech Recognition service; {e}"
-                    )
-                    # Update status message instead of deleting
-                    try:
-                        await status_message.edit_text(
-                            "Sorry, there was an error processing your voice message. Please try again later."
-                        )
+                        await update.message.reply_text(error_text)
                     except:
-                        try:
-                            await update.message.reply_text(
-                                "Sorry, there was an error processing your voice message. Please try again later."
-                            )
-                        except:
-                            pass
+                        pass
+                return
 
+            # Delete the status message safely
+            try:
+                await status_message.delete()
+            except Exception as msg_error:
+                self.logger.warning(
+                    f"Could not delete status message: {str(msg_error)}"
+                )
+                try:
+                    await status_message.edit_text("✓ Processing complete")
+                except:
+                    pass
+
+            # Show the transcribed text to the user using ResponseFormatter
+            transcript_text = (
+                f"🎤 *បំលែងសំឡេងទៅជាអក្សរ (Transcription)*: \n{text}"
+                if is_khmer
+                else f"🎤 *Transcription*: \n{text}"
+            )
+
+            # Use safe_reply to handle the flood control issue
+            try:
+                transcript_message = await self._safe_reply(
+                    update.message, transcript_text, parse_mode="Markdown"
+                )
+            except Exception as reply_error:
+                self.logger.error(
+                    f"Error sending transcript message: {str(reply_error)}"
+                )
+                # Try without markdown
+                transcript_message = await update.message.reply_text(
+                    f"🎤 Transcription: \n{text}"
+                )
+
+            # Log the transcribed text
+            self.telegram_logger.log_message(
+                f"Transcribed {recognition_language} text: {text}", user_id
+            )
+
+            # Initialize user data if not already initialized
+            await self.user_data_manager.initialize_user(user_id)
+
+            # Create text handler instance
+            text_handler = TextHandler(
+                self.gemini_api,
+                self.user_data_manager,
+                self.openrouter_api if hasattr(self, "openrouter_api") else None,
+                self.deepseek_api if hasattr(self, "deepseek_api") else None,
+            )
+
+            # Get or create ConversationManager
+            if (
+                not hasattr(self, "_conversation_manager")
+                or not self._conversation_manager
+            ):
+                self._conversation_manager = ConversationManager(
+                    text_handler.memory_manager, text_handler.model_history_manager
+                )
+
+            # Use ConversationManager to save voice interaction to memory
+            language_label = "km" if is_khmer else lang.split("-")[0]
+            await self._conversation_manager.save_media_interaction(
+                user_id,
+                "voice",
+                text,
+                f"I've transcribed your voice message which said: {text}",
+            )
         except Exception as e:
             self.logger.error(f"Error processing voice message: {str(e)}")
             try:
@@ -531,7 +405,7 @@ class MessageHandlers:
 
     async def _safe_reply(
         self, message, text, parse_mode=None, retry_delay=5, max_retries=3
-    ):
+    ) -> None:
         """Safely reply to a message with built-in flood control handling"""
         for attempt in range(max_retries):
             try:

@@ -1,4 +1,4 @@
-from typing import Dict, Type
+from typing import Dict, Type, Optional
 from services.model_handlers import ModelHandler
 from services.model_handlers.gemini_handler import GeminiHandler
 from services.model_handlers.deepseek_handler import DeepSeekHandler
@@ -71,4 +71,37 @@ class ModelHandlerFactory:
             else:
                 raise ValueError(f"Unknown model: {model_name}")
 
+            # Ensure handler has implemented format_quoted_message method
+            cls._ensure_quoted_message_support(cls._handlers[model_name])
+
         return cls._handlers[model_name]
+
+    @staticmethod
+    def _ensure_quoted_message_support(handler: ModelHandler) -> None:
+        """
+        Ensure that the handler supports quoted messages by checking if format_quoted_message
+        is properly implemented. If not implemented, monkey patch it with a default implementation.
+
+        Args:
+            handler: The model handler to check.
+        """
+        # Check if the handler has a proper implementation of format_quoted_message
+        # If not properly implemented, add a default implementation
+        if not hasattr(
+            handler, "format_quoted_message"
+        ) or handler.format_quoted_message.__qualname__.startswith("ModelHandler"):
+            # Add default implementation
+            def format_quoted_message(
+                self, prompt: str, quoted_message: Optional[str]
+            ) -> str:
+                """Default implementation of format_quoted_message for all model handlers."""
+                if quoted_message:
+                    return f'The user is replying to this previous message: "{quoted_message}"\n\nUser\'s reply: {prompt}'
+                return prompt
+
+            # Monkey patch the method onto the handler instance
+            import types
+
+            handler.format_quoted_message = types.MethodType(
+                format_quoted_message, handler
+            )

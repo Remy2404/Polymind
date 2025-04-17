@@ -1,3 +1,4 @@
+import io
 import os
 import aiofiles
 from telegram import Update
@@ -13,6 +14,14 @@ from services.model_handlers.factory import ModelHandlerFactory
 import asyncio
 from services.memory_manager import MemoryManager
 from services.model_handlers.model_history_manager import ModelHistoryManager
+
+# Use relative imports for handler utilities
+from .message_context_handler import MessageContextHandler
+from .response_formatter import ResponseFormatter
+from .media_context_extractor import MediaContextExtractor
+from services.media.image_processor import ImageProcessor
+from services.model_handlers.prompt_formatter import PromptFormatter
+from services.conversation_manager import ConversationManager
 
 
 class TextHandler:
@@ -41,37 +50,26 @@ class TextHandler:
         self.model_registry = None
         self.user_model_manager = None
 
-        # Instantiate the ModelHistoryManager (will be updated with model_registry later if available)
+        # Instantiate the ModelHistoryManager
         self.model_history_manager = ModelHistoryManager(self.memory_manager)
 
-    async def format_telegram_markdown(self, text: str) -> str:
-        try:
-            from telegramify_markdown import convert
+        # Initialize utility classes
+        self.context_handler = MessageContextHandler()
+        self.response_formatter = ResponseFormatter()
+        self.media_context_extractor = MediaContextExtractor()
+        self.image_processor = ImageProcessor(gemini_api)
+        self.prompt_formatter = PromptFormatter()
+        self.conversation_manager = ConversationManager(
+            self.memory_manager, self.model_history_manager
+        )
 
-            formatted_text = convert(text)
-            return formatted_text
-        except Exception as e:
-            self.logger.error(f"Error formatting markdown: {str(e)}")
-            return text.replace("*", "").replace("_", "").replace("`", "")
+    async def format_telegram_markdown(self, text: str) -> str:
+        # Delegate to ResponseFormatter
+        return await self.response_formatter.format_telegram_markdown(text)
 
     async def split_long_message(self, text: str, max_length: int = 4096) -> List[str]:
-        if len(text) <= max_length:
-            return [text]
-
-        chunks = []
-        current_chunk = ""
-
-        for line in text.split("\n"):
-            if len(current_chunk) + len(line) + 1 > max_length:
-                chunks.append(current_chunk)
-                current_chunk = line
-            else:
-                current_chunk += "\n" + line if current_chunk else line
-
-        if current_chunk:
-            chunks.append(current_chunk)
-
-        return chunks
+        # Delegate to ResponseFormatter
+        return await self.response_formatter.split_long_message(text, max_length)
 
     async def handle_text_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -82,6 +80,11 @@ class TextHandler:
         user_id = update.effective_user.id
         message = update.message or update.edited_message
         message_text = message.text
+
+        # Extract quoted message using MessageContextHandler
+        quoted_text, quoted_message_id = self.context_handler.extract_reply_context(
+            message
+        )
 
         # Define a unique conversation ID for this user
         conversation_id = f"user_{user_id}"
@@ -112,38 +115,12 @@ class TextHandler:
                     # Remove all mentions of bot_username from the message text
                     message_text = message_text.replace(bot_username, "").strip()
 
-            # Check if user is referring to images or documents
-            image_related_keywords = [
-                "image",
-                "picture",
-                "photo",
-                "pic",
-                "img",
-                "that image",
-                "the picture",
-            ]
-            document_related_keywords = [
-                "document",
-                "doc",
-                "file",
-                "pdf",
-                "that document",
-                "the file",
-                "the pdf",
-                "tell me more",
-                "more information",
-                "more details",
-                "explain further",
-                "tell me about it",
-                "what else",
-                "elaborate",
-            ]
-
-            referring_to_image = any(
-                keyword in message_text.lower() for keyword in image_related_keywords
+            # Check if user is referring to images or documents using MessageContextHandler
+            referring_to_image = self.context_handler.detect_reference_to_image(
+                message_text
             )
-            referring_to_document = any(
-                keyword in message_text.lower() for keyword in document_related_keywords
+            referring_to_document = self.context_handler.detect_reference_to_document(
+                message_text
             )
 
             # Send initial "thinking" message
@@ -152,8 +129,8 @@ class TextHandler:
                 chat_id=update.effective_chat.id, action=ChatAction.TYPING
             )
 
-            # Get conversation history using the new manager
-            history_context = await self.model_history_manager.get_history(
+            # Get conversation history using ConversationManager
+            history_context = await self.conversation_manager.get_conversation_history(
                 user_id, max_messages=self.max_context_length
             )
 
@@ -161,45 +138,54 @@ class TextHandler:
             enhanced_prompt = message_text
             context_added = False
 
-            # Add image context if relevant
+            # Add quoted text context if this is a reply to another message
+            if quoted_text:
+                enhanced_prompt = self.prompt_formatter.add_context(
+                    message_text, "quote", quoted_text
+                )
+                context_added = True
+
+            # Add image context if relevant using MediaContextExtractor
             if (
                 referring_to_image
                 and "image_history" in context.user_data
                 and context.user_data["image_history"]
             ):
-                image_context = await self.get_image_context(user_id, context)
-                enhanced_prompt = f"The user is referring to previously shared images. Here's the context of those images:\n\n{image_context}\n\nUser's question: {message_text}"
-                context_added = True
+                image_context = await self.media_context_extractor.get_image_context(
+                    context.user_data
+                )
+                if context_added:
+                    # We already have other context, so add this as additional context
+                    enhanced_prompt += f"\n\nThe user is also referring to previously shared images. Image context:\n\n{image_context}"
+                else:
+                    enhanced_prompt = self.prompt_formatter.add_context(
+                        message_text, "image", image_context
+                    )
+                    context_added = True
 
-            # Add document context if relevant
+            # Add document context if relevant using MediaContextExtractor
             if (
                 referring_to_document
                 and "document_history" in context.user_data
                 and context.user_data["document_history"]
             ):
-                document_context = await self.get_document_context(user_id, context)
+                document_context = (
+                    await self.media_context_extractor.get_document_context(
+                        context.user_data
+                    )
+                )
                 if context_added:
+                    # We already have other context, so add this as additional context
                     enhanced_prompt += f"\n\nThe user is also referring to previously processed documents. Document context:\n\n{document_context}"
                 else:
-                    enhanced_prompt = f"The user is referring to previously processed documents. Here's the context of those documents:\n\n{document_context}\n\nUser's question: {message_text}"
+                    enhanced_prompt = self.prompt_formatter.add_context(
+                        message_text, "document", document_context
+                    )
                     context_added = True
 
-            # Add this after existing document context check
-            if (
-                (
-                    "tell me more" in message_text.lower()
-                    or "more details" in message_text.lower()
-                )
-                and "document_history" in context.user_data
-                and context.user_data["document_history"]
-            ):
-                document_context = await self.get_document_context(user_id, context)
-                enhanced_prompt = f"The user wants more information about the previously analyzed document. Here's the document context:\n\n{document_context}\n\nProvide more detailed analysis focusing on aspects not covered in the initial response."
-                context_added = True
-
-            # Check if this is an image generation request
-            is_image_request, image_prompt = await self.detect_image_generation_request(
-                message_text
+            # Check if this is an image generation request using ImageProcessor
+            is_image_request, image_prompt = (
+                await self.image_processor.detect_image_generation_request(message_text)
             )
 
             if is_image_request and image_prompt:
@@ -216,8 +202,10 @@ class TextHandler:
                 )
 
                 try:
-                    # First try with the primary image generation method (using gemini-2.0-flash-exp-image-generation)
-                    image_bytes = await self.gemini_api.generate_image(image_prompt)
+                    # Use the ImageProcessor to generate the image
+                    image_bytes = await self.image_processor.generate_image(
+                        image_prompt
+                    )
 
                     if image_bytes:
                         # Delete the status message
@@ -231,36 +219,16 @@ class TextHandler:
 
                         # Update user stats
                         if self.user_data_manager:
-                            self.user_data_manager.update_stats(
+                            await self.user_data_manager.update_stats(
                                 user_id, image_generation=True
                             )
 
-                        # Store the response in both storage systems
-                        # Add to MemoryManager
-                        await self.memory_manager.add_user_message(
-                            conversation_id,
+                        # Save interaction to conversation history using ConversationManager
+                        await self.conversation_manager.save_media_interaction(
+                            user_id,
+                            "generated_image",
                             f"Generate an image of: {image_prompt}",
-                            str(user_id),
-                        )
-                        await self.memory_manager.add_assistant_message(
-                            conversation_id,
                             f"Here's the image I generated of {image_prompt}.",
-                        )
-
-                        # Also add to existing system for backward compatibility
-                        self.user_data_manager.add_to_context(
-                            user_id,
-                            {
-                                "role": "user",
-                                "content": f"Generate an image of: {image_prompt}",
-                            },
-                        )
-                        self.user_data_manager.add_to_context(
-                            user_id,
-                            {
-                                "role": "assistant",
-                                "content": f"Here's the image I generated of {image_prompt}.",
-                            },
                         )
 
                         # Return early since we've handled the request
@@ -275,9 +243,14 @@ class TextHandler:
                     self.logger.error(f"Error generating image: {e}")
                     await status_message.edit_text(
                         "Sorry, there was an error generating your image. Please try again later."
-                    )  # Get the preferred model with the new ModelManager system
+                    )
 
-            # Try to get the model registry and user model manager from application context
+            # Get the preferred model with the ModelHandler system
+            from services.user_preferences_manager import UserPreferencesManager
+
+            preferences_manager = UserPreferencesManager(self.user_data_manager)
+
+            # Try to get model registry and user model manager from application context
             if hasattr(context, "application") and hasattr(
                 context.application, "bot_data"
             ):
@@ -315,61 +288,39 @@ class TextHandler:
                             "Updated ModelHistoryManager with model_registry and user_model_manager"
                         )
 
-            # Get the preferred model using the new system if available, otherwise fall back to legacy approach
-            if self.user_model_manager:
-                preferred_model = self.user_model_manager.get_user_model(user_id)
-                self.logger.info(
-                    f"Using model from UserModelManager for user {user_id}: {preferred_model}"
-                )
-
-                # Get model config for additional info like timeout
-                model_config = self.user_model_manager.get_user_model_config(user_id)
-                model_timeout = model_config.timeout_seconds if model_config else 60
-            else:
-                # Legacy fallback method
-                preferred_model = await self.user_data_manager.get_user_preference(
-                    user_id, "preferred_model", default="gemini"
-                )
-                self.logger.info(
-                    f"Preferred model for user {user_id}: {preferred_model}"
-                )
-
-                # Check for temporary flags from a recent model switch
-                if (
-                    "just_switched_model" in context.user_data
-                    and context.user_data["just_switched_model"]
-                ):
-                    preferred_model = context.user_data.get(
-                        "switched_to_model", preferred_model
-                    )
-                    self.logger.info(
-                        f"Using recently switched model for user {user_id}: {preferred_model}"
-                    )
-                    # Clear the temporary flags after a few messages
-                    if "model_switch_counter" not in context.user_data:
-                        context.user_data["model_switch_counter"] = 1
-                    else:
-                        context.user_data["model_switch_counter"] += 1
-                    # After 5 messages, we can trust the DB to have the correct preference
-                    if context.user_data["model_switch_counter"] >= 5:
-                        context.user_data["just_switched_model"] = False
-                        context.user_data["model_switch_counter"] = 0
-                        self.logger.info(
-                            f"Cleared temporary model switch flags for user {user_id}"
+                        # Update the ConversationManager with the new ModelHistoryManager
+                        self.conversation_manager = ConversationManager(
+                            self.memory_manager, self.model_history_manager
                         )
 
-                # Set timeout based on model
-                model_timeout = (
-                    300.0 if preferred_model in ["deepseek", "optimus-alpha"] else 60.0
-                )
-
-            # Apply response style guidelines
-            enhanced_prompt_with_guidelines = await self._apply_response_guidelines(
-                enhanced_prompt, preferred_model, context
+            # Get the preferred model using the UserPreferencesManager
+            preferred_model = await preferences_manager.get_user_model_preference(
+                user_id
             )
+            self.logger.info(f"Preferred model for user {user_id}: {preferred_model}")
+
+            # Apply response style guidelines using PromptFormatter
+            enhanced_prompt_with_guidelines = (
+                await self.prompt_formatter.apply_response_guidelines(
+                    enhanced_prompt,
+                    ModelHandlerFactory.get_model_handler(
+                        preferred_model,
+                        gemini_api=self.gemini_api,
+                        openrouter_api=self.openrouter_api,
+                        deepseek_api=self.deepseek_api,
+                    ),
+                    context,
+                )
+            )
+
+            # Get model timeout
+            model_timeout = 60.0  # Default timeout
+            if self.user_model_manager:
+                model_config = self.user_model_manager.get_user_model_config(user_id)
+                model_timeout = model_config.timeout_seconds if model_config else 60.0
+
             try:
                 # Get the model handler for the preferred model
-                # Use the class's API instances directly
                 model_handler = ModelHandlerFactory.get_model_handler(
                     preferred_model,
                     gemini_api=self.gemini_api,
@@ -384,6 +335,7 @@ class TextHandler:
                         context=history_context,
                         temperature=0.7,
                         max_tokens=4000,
+                        quoted_message=quoted_text,  # Pass the quoted message to the model handler
                     ),
                     timeout=model_timeout,
                 )
@@ -411,40 +363,56 @@ class TextHandler:
                 )
                 return
 
-            # Split long messages and send them, then delete the thinking message
-            message_chunks = await self.split_long_message(response)
+            # Split long messages using ResponseFormatter and send them
+            message_chunks = await self.response_formatter.split_long_message(response)
             await thinking_message.delete()
 
             # Store the message IDs for potential editing
             sent_messages = []
 
-            # Get the model indicator from the model handler
-            model_handler = ModelHandlerFactory.get_model_handler(
-                preferred_model,
-                gemini_api=self.gemini_api,
-                openrouter_api=self.openrouter_api,
-                deepseek_api=self.deepseek_api,
-            )
+            # Get model indicator from the model handler
             model_indicator = model_handler.get_model_indicator()
-
-            # Store the model indicator for model consistency checking in future messages
             context.user_data["last_message_indicator"] = model_indicator
+
+            # Determine if this is a reply
+            is_reply = self.context_handler.should_use_reply_format(
+                quoted_text, quoted_message_id
+            )
 
             for i, chunk in enumerate(message_chunks):
                 try:
-                    # Add model indicator to first message only
-                    text_to_send = chunk
+                    # Format response with model indicator using ResponseFormatter
                     if i == 0:
-                        text_to_send = f"{model_indicator}\n\n{chunk}"
-
-                    # Format with telegramify-markdown
-                    formatted_chunk = await self.format_telegram_markdown(text_to_send)
-                    if i == 0:
-                        last_message = await message.reply_text(
-                            formatted_chunk,
-                            parse_mode="MarkdownV2",
-                            disable_web_page_preview=True,
+                        text_to_send = (
+                            self.response_formatter.format_with_model_indicator(
+                                chunk, model_indicator, is_reply
+                            )
                         )
+                    else:
+                        text_to_send = chunk
+
+                    # Format with telegramify-markdown using ResponseFormatter
+                    formatted_chunk = (
+                        await self.response_formatter.format_telegram_markdown(
+                            text_to_send
+                        )
+                    )
+
+                    if i == 0:
+                        # For first chunk, use reply_to_message_id if this is a reply
+                        if is_reply:
+                            last_message = await message.reply_text(
+                                formatted_chunk,
+                                parse_mode="MarkdownV2",
+                                disable_web_page_preview=True,
+                                reply_to_message_id=quoted_message_id,
+                            )
+                        else:
+                            last_message = await message.reply_text(
+                                formatted_chunk,
+                                parse_mode="MarkdownV2",
+                                disable_web_page_preview=True,
+                            )
                     else:
                         last_message = await context.bot.send_message(
                             chat_id=update.effective_chat.id,
@@ -470,11 +438,18 @@ class TextHandler:
                         )
                     sent_messages.append(last_message)
 
-            # Save user message and assistant response using the new manager
+            # Save interaction to conversation history using ConversationManager
             if response:
-                await self.model_history_manager.save_message_pair(
-                    user_id, message_text, response
-                )
+                if quoted_text:
+                    # If there was a quoted message, use special handling
+                    await self.conversation_manager.add_quoted_message_context(
+                        user_id, quoted_text, message_text, response
+                    )
+                else:
+                    # Regular message pair
+                    await self.conversation_manager.save_message_pair(
+                        user_id, message_text, response, preferred_model
+                    )
 
                 # Store the message IDs in context for future editing
                 if "bot_messages" not in context.user_data:
@@ -493,315 +468,97 @@ class TextHandler:
                 parse_mode="MarkdownV2",
             )
 
-    async def handle_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def handle_image(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle incoming image messages with AI analysis."""
         user_id = update.effective_user.id
-        # Define conversation ID for this user - Handled by ModelHistoryManager now
-        # conversation_id = f"user_{user_id}"
-        telegram_logger.log_message("Processing an image", user_id)
-
-        await context.bot.send_chat_action(
-            chat_id=update.effective_chat.id, action=ChatAction.TYPING
-        )
+        self.logger.info(f"Processing image from user {user_id}")
 
         try:
-            # In group chats, process only images that mention the bot
-            if update.effective_chat.type in ["group", "supergroup"]:
-                bot_username = "@" + context.bot.username
-                caption = update.message.caption or ""
-                if bot_username not in caption:
-                    # Bot not mentioned, ignore message
-                    return
-                else:
-                    # Remove all mentions of bot_username from the caption
-                    caption = caption.replace(bot_username, "").strip()
-            else:
-                caption = (
-                    update.message.caption
-                    or "Please analyze this image and describe it."
-                )
-
+            # Get the largest available photo
             photo = update.message.photo[-1]
-            image_file = await context.bot.get_file(photo.file_id)
-            if image_file is None:
-                await update.message.reply_text(
-                    "Failed to retrieve image file. Please try again."
-                )
-                return
-            image_bytes = await image_file.download_as_bytearray()
+            caption = update.message.caption or "What's in this image?"
 
-            # Use the updated analyze_image method
-            response = await self.gemini_api.analyze_image(image_bytes, caption)
+            # Send typing action and initial status message
+            await context.bot.send_chat_action(
+                chat_id=update.effective_chat.id, action=ChatAction.TYPING
+            )
+            status_message = await update.message.reply_text(
+                "Analyzing image... This may take a moment."
+            )
+
+            # Download the image
+            image_file = await context.bot.get_file(photo.file_id)
+            image_bytes_io = io.BytesIO()
+            await image_file.download_to_memory(image_bytes_io)
+            image_bytes_io.seek(0)
+
+            # Store in user context for future reference
+            if "image_history" not in context.user_data:
+                context.user_data["image_history"] = []
+
+            # Add to the beginning (most recent first)
+            context.user_data["image_history"].insert(
+                0,
+                {
+                    "file_id": photo.file_id,
+                    "caption": caption,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "width": photo.width,
+                    "height": photo.height,
+                },
+            )
+
+            # Limit the history size
+            if len(context.user_data["image_history"]) > 5:
+                context.user_data["image_history"] = context.user_data["image_history"][
+                    :5
+                ]
+
+            # Analyze the image with a prompt
+            response = await self.image_processor.analyze_image(image_bytes_io, caption)
+
+            # Delete status message
+            await status_message.delete()
 
             if response:
-                # Split the response into chunks
-                response_chunks = await self.split_long_message(response)
-                sent_messages = []
-
-                # Send each chunk
-                for chunk in response_chunks:
-                    try:
-                        # Format with telegramify-markdown
-                        formatted_chunk = await self.format_telegram_markdown(chunk)
-                        sent_message = await update.message.reply_text(
-                            formatted_chunk,
-                            parse_mode="MarkdownV2",
-                            disable_web_page_preview=True,
-                        )
-                        sent_messages.append(sent_message.message_id)
-                    except Exception as formatting_error:
-                        self.logger.warning(
-                            f"Markdown formatting failed: {formatting_error}"
-                        )
-                        # Try without markdown formatting and remove special characters
-                        sent_message = await update.message.reply_text(
-                            chunk.replace("*", "").replace("_", "").replace("`", ""),
-                            parse_mode=None,
-                        )
-                        sent_messages.append(sent_message.message_id)
-
-                # Store the image interaction using ModelHistoryManager
-                await self.model_history_manager.save_image_interaction(
-                    user_id, caption, response
+                # Format the response with model indicator
+                model_indicator = "🧠 Gemini"
+                text_to_send = self.response_formatter.format_with_model_indicator(
+                    response, model_indicator
                 )
 
-                # Store image reference in user data for future reference (non-history context)
-                if "image_history" not in context.user_data:
-                    context.user_data["image_history"] = []
-
-                # Store image metadata
-                context.user_data["image_history"].append(
-                    {
-                        "timestamp": datetime.datetime.now().isoformat(),
-                        "file_id": photo.file_id,
-                        "caption": caption,
-                        "description": response,
-                        "message_id": update.message.message_id,
-                        "response_message_ids": sent_messages,  # Now storing all message IDs
-                    }
+                # Format with telegramify-markdown
+                formatted_response = (
+                    await self.response_formatter.format_telegram_markdown(text_to_send)
                 )
 
-                # Update user stats for image
+                # Send the formatted response
+                await update.message.reply_text(
+                    formatted_response,
+                    parse_mode="MarkdownV2",
+                    disable_web_page_preview=True,
+                )
+
+                # Save interaction to conversation history using ConversationManager
+                if hasattr(self, "conversation_manager"):
+                    await self.conversation_manager.save_media_interaction(
+                        user_id,
+                        "image",
+                        f"[Image shared with caption: {caption}]",
+                        response,
+                    )
+
+                # Update user stats
                 if self.user_data_manager:
                     self.user_data_manager.update_stats(user_id, image=True)
-
-                telegram_logger.log_message(
-                    f"Image analysis completed successfully", user_id
-                )
             else:
                 await update.message.reply_text(
-                    "Sorry, I couldn't analyze the image\\. Please try again\\.",
-                    parse_mode="MarkdownV2",
+                    "Sorry, I couldn't analyze this image. Please try again with a different image or question."
                 )
-
         except Exception as e:
-            self.logger.error(f"Error processing image: {e}")
+            self.logger.error(f"Error processing image: {str(e)}")
             await update.message.reply_text(
-                "Sorry, I couldn't process your image\\. The response might be too long or there might be an issue with the image format\\. Please try a different image or a more specific question\\.",
-                parse_mode="MarkdownV2",
+                "Sorry, I encountered an error while processing your image. Please try again later."
             )
-
-    async def show_history(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        user_id = update.effective_user.id
-        # conversation_id = f"user_{user_id}" # Not needed directly
-
-        # Get messages using ModelHistoryManager
-        messages = await self.model_history_manager.get_history(
-            user_id, max_messages=50
-        )  # Get more messages for display
-
-        if not messages:
-            await update.message.reply_text(
-                "You don't have any conversation history yet."
-            )
-            return
-
-        # Build history text
-        history_text = "Your conversation history:"
-        for msg in messages:
-            role = msg.get("role", "unknown").capitalize()
-            content = msg.get("content", "")
-            history_text += f"{role}: {content}\n\n"
-
-        # Split long messages
-        message_chunks = await self.split_long_message(history_text)
-
-        for chunk in message_chunks:
-            await update.message.reply_text(chunk)
-
-    async def get_image_context(
-        self, user_id: int, context: ContextTypes.DEFAULT_TYPE
-    ) -> str:
-        """Generate context from previously processed images"""
-        if (
-            "image_history" not in context.user_data
-            or not context.user_data["image_history"]
-        ):
-            return ""
-
-        # Get the 3 most recent images
-        recent_images = context.user_data["image_history"][-3:]
-
-        image_context = "Recently analyzed images:\n"
-        for idx, img in enumerate(recent_images):
-            image_context += f"[Image {idx+1}]: Caption: {img['caption']}\nDescription: {img['description'][:100]}...\n\n"
-
-        return image_context
-
-    async def get_document_context(
-        self, user_id: int, context: ContextTypes.DEFAULT_TYPE
-    ) -> str:
-        """Generate richer context from previously processed documents"""
-        if (
-            "document_history" not in context.user_data
-            or not context.user_data["document_history"]
-        ):
-            return ""
-
-        # Get the most recent document (the one the user is likely referring to)
-        most_recent = context.user_data["document_history"][-1]
-
-        document_context = f"Recently analyzed document: {most_recent['file_name']}\n\n"
-        document_context += f"Full content summary:\n{most_recent['full_response']}\n\n"
-
-        # Add a special instruction for the AI
-        document_context += "Please provide additional details or answer follow-up questions about this document."
-
-        return document_context
-
-    async def detect_image_generation_request(self, text: str) -> tuple[bool, str]:
-        """
-        Detect if a message is requesting image generation and extract the prompt.
-
-        Returns:
-            tuple: (is_image_request, image_prompt)
-        """
-        # Lowercase for easier matching
-        text_lower = text.lower().strip()
-
-        # Define image generation trigger phrases
-        image_triggers = [
-            "generate an image",
-            "generate image",
-            "create an image",
-            "create image",
-            "make an image",
-            "make image",
-            "draw",
-            "generate a picture",
-            "create a picture",
-            "generate img",
-            "generate an img",
-            "create img",
-            "make img",
-            "generate a photo",
-            "image of",
-            "picture of",
-            "photo of",
-            "draw me",
-            "generate me an image",
-            "create me an image",
-            "make me an image",
-            "generate me a picture",
-            "can you generate an image",
-            "can you create an image",
-            "i want an image of",
-            "please make an image",
-        ]
-
-        # Check if any trigger phrase is in the message
-        is_image_request = any(trigger in text_lower for trigger in image_triggers)
-
-        if is_image_request:
-            # Extract the prompt: Find the first trigger that matches and get everything after it
-            image_prompt = text
-            for trigger in sorted(image_triggers, key=len, reverse=True):
-                if trigger in text_lower:
-                    # Find the trigger position and extract everything after it
-                    trigger_pos = text_lower.find(trigger)
-                    prompt_start = trigger_pos + len(trigger)
-
-                    # Clean up the prompt - remove words like "of", "about", etc. at the beginning
-                    raw_prompt = text[prompt_start:].strip()
-                    clean_words = [
-                        "of",
-                        "about",
-                        "showing",
-                        "depicting",
-                        "that shows",
-                        "with",
-                        ":",
-                        "-",
-                    ]
-
-                    for word in clean_words:
-                        if raw_prompt.lower().startswith(word + " "):
-                            raw_prompt = raw_prompt[len(word) :].strip()
-
-                    image_prompt = raw_prompt
-                    break
-
-            # If we have a non-empty prompt, it's an image request
-            if image_prompt and len(image_prompt) > 0:
-                return True, image_prompt
-
-        return False, ""
-
-    async def _apply_response_guidelines(
-        self, prompt: str, preferred_model: str, context=None
-    ) -> str:
-        """Apply appropriate response style guidelines based on the selected model."""
-        try:
-            guidelines_path = os.path.join(
-                os.path.dirname(__file__), "..", "doc", "dataset.md"
-            )
-            async with aiofiles.open(guidelines_path, "r", encoding="utf-8") as file:
-                content = await file.read()
-
-            # Get the model handler for the preferred model
-            # Use the class's API instances directly
-            model_handler = ModelHandlerFactory.get_model_handler(
-                preferred_model,
-                gemini_api=self.gemini_api,
-                openrouter_api=self.openrouter_api,
-                deepseek_api=self.deepseek_api,
-            )
-
-            # Get system message from the model handler
-            system_message = model_handler.get_system_message()
-
-            # Create enhanced prompt with system message and user query
-            enhanced_prompt = f"{system_message}\n\nUser query: {prompt}"
-
-            return enhanced_prompt
-        except Exception as e:
-            self.logger.error(f"Error applying response guidelines: {str(e)}")
-            return prompt  # Return original prompt if there was an error
-
-    def get_handlers(self):
-        return [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text_message),
-            MessageHandler(filters.PHOTO, self.handle_image),
-        ]
-
-    async def reset_conversation(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        """Reset a user's conversation history using ModelHistoryManager."""
-        user_id = update.effective_user.id
-        # conversation_id = f"user_{user_id}" # Not needed directly
-
-        # Clear conversation using ModelHistoryManager
-        await self.model_history_manager.clear_history(user_id)
-
-        # Clear other non-history context data in user_data (this remains)
-        if "image_history" in context.user_data:
-            context.user_data["image_history"] = []
-        if "document_history" in context.user_data:
-            context.user_data["document_history"] = []
-        if "bot_messages" in context.user_data:
-            context.user_data["bot_messages"] = {}
-
-        await update.message.reply_text("✅ Your conversation history has been reset.")
-        telegram_logger.log_message(f"Conversation history cleared", user_id)

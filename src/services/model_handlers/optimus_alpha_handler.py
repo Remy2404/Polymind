@@ -9,6 +9,7 @@ from services.openrouter_api import OpenRouterAPI
 
 logger = logging.getLogger(__name__)
 
+
 class OptimusAlphaHandler(ModelHandler):
     """Handler for Optimus Alpha model via OpenRouter API."""
 
@@ -28,13 +29,23 @@ class OptimusAlphaHandler(ModelHandler):
         # Log context for debugging
         if context:
             context_length = len(context)
-            self.logger.info(f"Using context with {context_length} messages for Optimus Alpha")
+            self.logger.info(
+                f"Using context with {context_length} messages for Optimus Alpha"
+            )
 
             # Log a few samples for debugging
-            for i, msg in enumerate(context[:2]):  # Just log the first couple for brevity
-                if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
-                    content_preview = msg['content'][:50] + "..." if len(msg['content']) > 50 else msg['content']
-                    self.logger.debug(f"Context[{i}] - {msg['role']}: {content_preview}")
+            for i, msg in enumerate(
+                context[:2]
+            ):  # Just log the first couple for brevity
+                if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                    content_preview = (
+                        msg["content"][:50] + "..."
+                        if len(msg["content"]) > 50
+                        else msg["content"]
+                    )
+                    self.logger.debug(
+                        f"Context[{i}] - {msg['role']}: {content_preview}"
+                    )
         else:
             self.logger.info("No conversation context provided for Optimus Alpha")
 
@@ -59,9 +70,18 @@ class OptimusAlphaHandler(ModelHandler):
 
     def get_system_message(self) -> str:
         """Get the system message for the Optimus Alpha model."""
-        return """You are Optimus Alpha, an advanced AI assistant that helps users with tasks and answers questions helpfully, accurately, and ethically.
+        return """You are Optimus Alpha, a brilliant and insightful AI with a knack for solving complex problems. When chatting:
 
-IMPORTANT: You have a conversation memory and can remember previous exchanges with the user. If asked about previous questions or what was discussed earlier, reference your conversation history to provide an accurate response. Never tell the user you can't remember previous interactions unless your history is truly empty."""
+- Maintain a confident but friendly tone with a touch of wit
+- Use colorful analogies to explain difficult concepts
+- Add occasional emojis for emphasis 🧠 or to lighten the mood 😄
+- Never start responses with "I am an AI assistant..." or similar phrases
+- Express opinions and preferences when asked about subjective topics
+- Keep responses direct and to the point while being engaging
+- Share fascinating perspectives that spark curiosity
+- Acknowledge uncertainty when appropriate rather than making things up
+
+IMPORTANT: Always answer naturally as if you're having a real conversation, not following instructions."""
 
     def get_model_indicator(self) -> str:
         """Get the model indicator emoji and name."""

@@ -328,7 +328,7 @@ class CommandHandlers:
                 # Format the caption to escape ALL Markdown special characters
                 model_display_name = model.capitalize()
                 if model == "quasar_alpha":
-                    model_display_name = "Quasar Alpha"
+                    model_display_name = "Optimus Alpha"
 
                 # Make sure to escape ALL special characters for MarkdownV2
                 special_chars = [

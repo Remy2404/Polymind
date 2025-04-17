@@ -1,3 +1,10 @@
+from src.handlers.message_context_handler import MessageContextHandler
+from src.handlers.response_formatter import ResponseFormatter
+from src.handlers.media_context_extractor import MediaContextExtractor
+from src.services.media.image_processor import ImageProcessor
+from src.services.media.voice_processor import VoiceProcessor
+from src.services.model_handlers.prompt_formatter import PromptFormatter
+from src.services.user_preferences_manager import UserPreferencesManager
 import os
 import sys
 import logging
@@ -230,26 +237,59 @@ class TelegramBot:
             # Other initializations
             self.user_data_manager = UserDataManager(self.db)
             self.telegram_logger = telegram_logger
+
+            # Create instances of utility classes
+            self.context_handler = MessageContextHandler()
+            self.response_formatter = ResponseFormatter()
+            self.media_context_extractor = MediaContextExtractor()
+            self.image_processor = ImageProcessor(self.gemini_api)
+            self.voice_processor = VoiceProcessor()
+            self.prompt_formatter = PromptFormatter()
+            self.preferences_manager = UserPreferencesManager(self.user_data_manager)
+
+            # Store utility instances in application context for access from handlers
+            self.application.bot_data["context_handler"] = self.context_handler
+            self.application.bot_data["response_formatter"] = self.response_formatter
+            self.application.bot_data["media_context_extractor"] = (
+                self.media_context_extractor
+            )
+            self.application.bot_data["image_processor"] = self.image_processor
+            self.application.bot_data["voice_processor"] = self.voice_processor
+            self.application.bot_data["prompt_formatter"] = self.prompt_formatter
+            self.application.bot_data["preferences_manager"] = self.preferences_manager
+
         except Exception as e:
             self.logger.error(f"Error initializing services: {e}")
             raise
 
-        # Pass the OpenRouterAPI instance to the TextHandler
+        # Initialize TextHandler with utility classes
         self.text_handler = TextHandler(
             gemini_api=self.gemini_api,
             user_data_manager=self.user_data_manager,
             openrouter_api=self.openrouter_api,
             deepseek_api=self.deepseek_api,
         )
+
+        # Once text_handler is initialized, create ConversationManager
+        from src.services.conversation_manager import ConversationManager
+
+        self.conversation_manager = ConversationManager(
+            self.text_handler.memory_manager, self.text_handler.model_history_manager
+        )
+        self.application.bot_data["conversation_manager"] = self.conversation_manager
+
+        # Initialize other handlers
         self.command_handler = CommandHandlers(
             gemini_api=self.gemini_api,
             user_data_manager=self.user_data_manager,
             telegram_logger=self.telegram_logger,
             flux_lora_image_generator=flux_lora_image_generator,
         )
+
         # Initialize DocumentProcessor with the bot parameter
         self.document_processor = DocumentProcessor(bot=self.application.bot)
-        # Update MessageHandlers initialization with document_processor
+
+        # Update MessageHandlers initialization with all dependencies including utility classes
         self.message_handlers = MessageHandlers(
             self.gemini_api,
             self.user_data_manager,
@@ -257,6 +297,18 @@ class TelegramBot:
             self.document_processor,
             self.text_handler,
         )
+
+        # Share utility classes with message_handlers
+        self.message_handlers.context_handler = self.context_handler
+        self.message_handlers.response_formatter = self.response_formatter
+        self.message_handlers.media_context_extractor = self.media_context_extractor
+        self.message_handlers.image_processor = self.image_processor
+        self.message_handlers.voice_processor = self.voice_processor
+        self.message_handlers.prompt_formatter = self.prompt_formatter
+        self.message_handlers.preferences_manager = self.preferences_manager
+        self.message_handlers._conversation_manager = self.conversation_manager
+
+        # Initialize other services
         self.reminder_manager = ReminderManager(self.application.bot)
         self.language_manager = LanguageManager()
 
@@ -276,28 +328,21 @@ class TelegramBot:
             maxsize=1000, ttl=300
         )  # Reduced TTL for fresher responses
 
-        # Register handlers with cache awareness
+        # Register command handlers via CommandHandlers
         self.command_handler.register_handlers(
             self.application, cache=self.response_cache
         )
-        for handler in self.text_handler.get_handlers():
-            self.application.add_handler(handler)
+        # Register message handlers
         self.message_handlers.register_handlers(self.application)
+        # Register reminder and language commands separately
         self.application.add_handler(
             CommandHandler("remind", self.reminder_manager.set_reminder)
         )
         self.application.add_handler(
             CommandHandler("language", self.language_manager.set_language)
         )
-        self.application.add_handler(
-            CommandHandler("history", self.text_handler.show_history)
-        )
-        self.application.add_handler(
-            CommandHandler("reset", self.text_handler.reset_conversation)
-        )
-        self.application.add_handler(
-            CommandHandler("documents", self.command_handler.show_document_history)
-        )
+        # Note: Other commands (start, help, reset, settings, stats, export, etc.)
+        # are registered inside CommandHandlers.register_handlers
 
         # Remove any existing error handlers before adding new one
         self.application.error_handlers.clear()

@@ -1,10 +1,15 @@
-import time
-import json
 import logging
+import json
+import asyncio
+from typing import Dict, List, Any, Optional, Tuple, Union
+from datetime import datetime, timedelta
+import aiofiles
+import os
+import re
+from collections import defaultdict
+import time
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
-import asyncio
-import re
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -69,17 +74,6 @@ class Conversation:
         )
         conv.messages = [Message.from_dict(msg) for msg in data.get("messages", [])]
         return conv
-
-
-import logging
-import json
-import asyncio
-from typing import Dict, List, Any, Optional, Tuple, Union
-from datetime import datetime, timedelta
-import aiofiles
-import os
-import re
-from collections import defaultdict
 
 
 class MemoryManager:

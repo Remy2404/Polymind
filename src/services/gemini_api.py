@@ -195,47 +195,67 @@ class GeminiAPI:
             logging.error(f"Error formatting message: {str(e)}")
             return text
 
-    async def analyze_image(self, image_data: bytes, prompt: str) -> str:
+    async def analyze_image(self, image_data, prompt: str) -> str:
         """Analyze an image and generate a response based on the prompt."""
         await self.rate_limiter.acquire()
         try:
-            # Validate image first
-            if not ImageProcessor.validate_image(image_data):
+            # Handle BytesIO objects directly
+            if isinstance(image_data, io.BytesIO):
+                # Make sure we're at the start of the stream
+                image_data.seek(0)
+                image_bytes = image_data.getvalue()
+            else:
+                # If it's already bytes, use it directly
+                image_bytes = image_data
+
+            # Use the ImageProcessor class methods properly
+            from services.media.image_processor import ImageProcessor
+
+            img_processor = ImageProcessor(None)
+
+            # Validate image
+            if not img_processor.validate_image(image_bytes):
                 return "Sorry, the image format is not supported. Please send a JPEG or PNG image."
 
             # Process the image and get the correct MIME type
-            processed_image = await ImageProcessor.prepare_image(image_data)
-            mime_type = ImageProcessor.get_mime_type(processed_image)
+            # Check if prepare_image is a coroutine function or returns a coroutine
+            prepare_method = img_processor.prepare_image(image_bytes)
+            if asyncio.iscoroutine(prepare_method):
+                processed_image = await prepare_method
+            else:
+                processed_image = prepare_method
 
-            # Generate response with proper error handling
+            mime_type = img_processor.get_mime_type(processed_image)
+
+            # Get the bytes from the BytesIO object for the API
+            processed_image.seek(0)
+            processed_bytes = processed_image.getvalue()
+
+            # Generate response with proper error handling using updated API parameters
             try:
+                model = "gemini-2.0-flash"
+                self.logger.info(f"Analyzing image with model: {model}")
+
+                # Create a properly formatted content part for the image
+                image_part = {
+                    "mime_type": mime_type,
+                    "data": base64.b64encode(processed_bytes).decode("utf-8"),
+                }
+
+                # Create content parts with proper formatting
+                content_parts = [{"text": prompt}, {"inline_data": image_part}]
+
+                # Call the model with the updated content format
                 response = await asyncio.to_thread(
-                    self.vision_model.generate_content,
-                    [
-                        prompt,  # First element is the text prompt
-                        {
-                            "mime_type": mime_type,
-                            "data": processed_image,
-                        },  # Use correct MIME type
-                    ],
-                    safety_settings=[
-                        {
-                            "category": "HARM_CATEGORY_HARASSMENT",
-                            "threshold": "BLOCK_MEDIUM_AND_ABOVE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_HATE_SPEECH",
-                            "threshold": "BLOCK_MEDIUM_AND_ABOVE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                            "threshold": "BLOCK_MEDIUM_AND_ABOVE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                            "threshold": "BLOCK_MEDIUM_AND_ABOVE",
-                        },
-                    ],
+                    self.genai_client.models.generate_content,
+                    model=model,
+                    contents=content_parts,
+                    config=types.GenerateContentConfig(
+                        temperature=0.4,
+                        top_p=0.95,
+                        top_k=64,
+                        max_output_tokens=8192,
+                    ),
                 )
 
                 if response and hasattr(response, "text"):
@@ -246,7 +266,7 @@ class GeminiAPI:
 
             except Exception as e:
                 logging.error(f"Vision model error: {str(e)}")
-                return "I'm sorry, there was an error processing your image. Please try again later."
+                return f"I'm sorry, there was an error processing your image: {str(e)}"
 
         except UnidentifiedImageError:
             logging.error("The provided image could not be identified.")
@@ -255,7 +275,7 @@ class GeminiAPI:
             )
         except Exception as e:
             telegram_logger.log_error(f"Image analysis error: {str(e)}", 0)
-            return "I'm sorry, I encountered an error processing your image. Please try again with a different image."
+            return f"I'm sorry, I encountered an error processing your image: {str(e)}"
 
     async def generate_image(self, prompt: str) -> Optional[bytes]:
         """
