@@ -692,6 +692,7 @@ class TextHandler:
             "generate a picture",
             "create a picture",
             "generate img",
+            "generate an img",
             "create img",
             "make img",
             "generate a photo",
@@ -741,7 +742,9 @@ class TextHandler:
                     image_prompt = raw_prompt
                     break
 
-            return True, image_prompt
+            # If we have a non-empty prompt, it's an image request
+            if image_prompt and len(image_prompt) > 0:
+                return True, image_prompt
 
         return False, ""
 

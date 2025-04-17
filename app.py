@@ -155,6 +155,27 @@ class TelegramBot:
         # Create client session for HTTP requests
         self.session = None
 
+    async def create_session(self):
+        """Create an aiohttp session for HTTP requests."""
+        try:
+            if self.session is None or self.session.closed:
+                # Create session with optimized parameters
+                tcp_connector = aiohttp.TCPConnector(
+                    limit=150,  # Increased connection pool size
+                    limit_per_host=30,
+                    force_close=False,
+                    enable_cleanup_closed=True,
+                )
+                self.session = aiohttp.ClientSession(
+                    connector=tcp_connector,
+                    timeout=aiohttp.ClientTimeout(total=300, connect=30),
+                )
+                self.logger.info("Created new aiohttp session for bot")
+            return self.session
+        except Exception as e:
+            self.logger.error(f"Failed to create aiohttp session: {str(e)}")
+            raise
+
     def _init_db_connection(self):
         # More efficient retry with exponential backoff
         max_retries = 3

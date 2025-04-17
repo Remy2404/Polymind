@@ -1,7 +1,6 @@
 import logging
-import google.generativeai as genai
+from google import genai
 from google.genai import types
-import google.genai
 import sys
 import os
 import time
@@ -66,7 +65,8 @@ class GeminiAPI:
         if not GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY not found or empty")
 
-        genai.configure(api_key=GEMINI_API_KEY)
+        # Initialize official GenAI client
+        self.genai_client = genai.Client(api_key=GEMINI_API_KEY)
 
         # Generation configuration
         self.generation_config = {
@@ -74,7 +74,6 @@ class GeminiAPI:
             "top_p": 0.95,
             "top_k": 64,
             "max_output_tokens": 65536,
-            "response_mime_type": "text/plain",
         }
 
         # Image generation configuration
@@ -85,11 +84,11 @@ class GeminiAPI:
         }
 
         try:
-            # Set up dedicated models for different tasks
-            self.chat_model = genai.GenerativeModel("gemini-2.5-pro-exp-03-25")
+            # Use the GenAI client for all model calls
+            self.chat_model = self.genai_client
 
             # Initialize MongoDB connection
-            self.db, self.client = get_database()
+            self.db, self.mongo_client = get_database()
             self.image_cache = get_image_cache_collection(self.db)
             if self.image_cache is not None:
                 self.logger.info("Image cache collection is ready.")
@@ -256,13 +255,15 @@ class GeminiAPI:
             )
         except Exception as e:
             telegram_logger.log_error(f"Image analysis error: {str(e)}", 0)
-            return "I'm sorry, I encountered an error processing your image. Please try again with a different image." 
+            return "I'm sorry, I encountered an error processing your image. Please try again with a different image."
+
     async def generate_image(self, prompt: str) -> Optional[bytes]:
         """
-        Generate an image based on the provided text prompt using the Gemini API.
-        Uses the Client-based approach from Google's documentation with gemini-2.0-flash-exp-image-generation.
+        Generate an image based on the provided text prompt.
+        Uses gemini-2.0-flash-exp-image-generation for image generation with proper response_modalities parameter.
         Returns the image as bytes. Checks cache before generating a new image.
         """
+        # Check cache first
         if self.image_cache is not None:
             cached_image = await asyncio.to_thread(
                 self.image_cache.find_one, {"prompt": prompt}
@@ -274,225 +275,53 @@ class GeminiAPI:
         await self.rate_limiter.acquire()
 
         try:
-            # Prepare the prompt for image generation
-            enhanced_prompt = f"Generate a detailed, high-quality image of: {prompt}"
-            self.logger.info(f"Generating image with prompt: '{enhanced_prompt}'")            # Create a new client instance
-            client = genai.Client()
-
-            # Use the client.models.generate_content as per Google's SDK example
+            # Attempt with gemini-2.0-flash-exp-image-generation (official image generation model)
+            self.logger.info(
+                f"Attempting image generation with gemini-2.0-flash-exp-image-generation for: '{prompt}'"
+            )
+            enhanced_prompt = f"Generate a high-quality, detailed image of: {prompt}. Make it photorealistic and visually appealing."
+            self.logger.info(
+                f"Attempting to generate image with gemini-2.0-flash-exp-image-generation: '{enhanced_prompt}'"
+            )
             response = await asyncio.to_thread(
-                client.models.generate_content,
+                self.genai_client.models.generate_content,
                 model="gemini-2.0-flash-exp-image-generation",
                 contents=enhanced_prompt,
                 config=types.GenerateContentConfig(
-                    response_modalities=['Text', 'Image'],
-                    temperature=0.4,
+                    temperature=0.9,
+                    top_k=64,
                     top_p=0.95,
-                    top_k=32,
-                )
+                    response_modalities=["TEXT", "IMAGE"],
+                ),
             )
-
-            # Extract the image from the response
-            image_bytes = None
-            
-            for part in response.candidates[0].content.parts:
-                if part.text is not None:
-                    # Log the text response
-                    self.logger.info(f"Text response from image generation: {part.text}")
-                elif part.inline_data is not None:
-                    # Get the binary data directly
-                    image_bytes = part.inline_data.data
-                    
-                    # Store in cache
-                    cache_document = {
-                        "prompt": prompt,
-                        "image_data": image_bytes,
-                        "model": "gemini-2.0-flash-exp-image-generation",
-                        "timestamp": datetime.datetime.now(datetime.timezone.utc),
-                    }
-                    try:
-                        await asyncio.to_thread(
-                            self.image_cache.insert_one, cache_document
-                        )
-                        self.logger.info(f"Cached image for prompt: '{prompt}'")
-                    except Exception as cache_error:
-                        self.logger.error(f"Failed to cache image: {cache_error}")
-
-                    return image_bytes            # If we got here, no images were found in the response
-            if not image_bytes:
-                self.logger.warning(f"No images found in response for prompt: '{prompt}'")
-                raise ValueError("Response did not contain any images")
-
-        except Exception as e:
-            self.logger.error(f"Image generation error: {str(e)}")
-            # Try fallback to imagen3 method if this fails
-            self.logger.info(f"Attempting fallback to alternate image generation method for: '{prompt}'")
-            try:
-                return await self.generate_image_with_imagen3(prompt)
-            except Exception as fallback_error:
-                self.logger.error(f"Fallback image generation also failed: {str(fallback_error)}")
-                return None
-
-    async def generate_image_with_imagen3(self, prompt: str) -> Optional[bytes]:
-        """
-        Fallback method to generate an image using Google's API via REST endpoint.
-        Used as a backup if the primary image generation model fails.
-        Returns the image as bytes.
-        """
-        await self.rate_limiter.acquire()
-        try:
-            import httpx
-            import json
-            import base64
-
-            # Try the direct method using the client
-            try:
-                # Use CLIENT approach as in the documentation
-                from google import genai
-                from PIL import Image
-
-                self.logger.info(
-                    f"Using Client approach for image generation: '{prompt}'"
-                )
-
-                client = genai.Client(api_key=GEMINI_API_KEY)
-
-                enhanced_prompt = (
-                    f"Create a detailed, photorealistic image of: {prompt}"
-                )
-
-                response = await asyncio.to_thread(
-                    client.generate_content,
-                    model="gemini-1.5-pro-vision",
-                    contents=enhanced_prompt,
-                    generation_config=genai.types.GenerateContentConfig(
-                        response_mime_type="image/png",
-                        temperature=0.4,
-                        top_p=0.95,
-                        top_k=32,
-                    ),
-                )
-
-                # Process response
-                for part in response.candidates[0].content.parts:
-                    if hasattr(part, "inline_data") and part.inline_data:
-                        image_bytes = part.inline_data.data
-
-                        # Cache the image
-                        if self.image_cache:
-                            cache_document = {
-                                "prompt": prompt,
-                                "image_data": image_bytes,
-                                "model": "gemini-1.5-pro-vision",
-                                "timestamp": datetime.datetime.now(
-                                    datetime.timezone.utc
-                                ),
-                            }
-                            await asyncio.to_thread(
-                                self.image_cache.insert_one, cache_document
-                            )
-
-                        self.logger.info(f"Successfully generated image for: {prompt}")
-                        return image_bytes
-
-                self.logger.warning(
-                    "Client approach didn't produce an image, trying REST API fallback"
-                )
-                raise ValueError("No image in response")
-
-            except Exception as client_error:
-                self.logger.error(f"Client approach failed: {str(client_error)}")
-                # Fall back to REST API approach
-
-                # Use the REST API approach
-                url = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-vision:generateContent"
-                headers = {
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": GEMINI_API_KEY,
-                }
-
-                # Format the request specifically for image generation
-                data = {
-                    "contents": [
-                        {
-                            "role": "user",
-                            "parts": [
-                                {
-                                    "text": f"Generate a high-quality, photorealistic image of: {prompt}. Return the image only without any text."
-                                }
-                            ],
-                        }
-                    ],
-                    "generation_config": {
-                        "temperature": 0.4,
-                        "topP": 0.95,
-                        "topK": 32,
-                        "response_mime_type": "image/png",
-                    },
-                }
-
-                self.logger.info(
-                    f"Sending REST API image generation request for: {prompt}"
-                )
-
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        url, headers=headers, json=data, timeout=60.0
-                    )
-
-                    # Handle error responses
-                    if response.status_code != 200:
-                        self.logger.error(
-                            f"API error: {response.status_code} - {response.text}"
-                        )
-                        return None
-
-                    response_data = response.json()
-
-                    # Extract the image data from the response
-                    # Check if the response has the expected structure
-                    if "candidates" in response_data and response_data["candidates"]:
-                        candidate = response_data["candidates"][0]
-
-                        if "content" in candidate and "parts" in candidate["content"]:
-                            for part in candidate["content"]["parts"]:
-                                # Look for inline_data which contains the image
-                                if "inline_data" in part:
-                                    # Extract base64 encoded image
-                                    mime_type = part["inline_data"]["mime_type"]
-                                    image_data = part["inline_data"]["data"]
-                                    binary_image = base64.b64decode(image_data)
-
-                                    # Cache the image if cache is available
-                                    if self.image_cache:
-                                        cache_document = {
-                                            "prompt": prompt,
-                                            "image_data": binary_image,
-                                            "model": "gemini-1.5-pro-vision",
-                                            "timestamp": datetime.datetime.now(
-                                                datetime.timezone.utc
-                                            ),
-                                        }
-                                        await asyncio.to_thread(
-                                            self.image_cache.insert_one, cache_document
-                                        )
-
-                                    self.logger.info(
-                                        f"Successfully generated image for: {prompt}"
+            if hasattr(response, "candidates") and response.candidates:
+                for candidate in response.candidates:
+                    if hasattr(candidate, "content") and candidate.content:
+                        for part in candidate.content.parts:
+                            if hasattr(part, "inline_data") and part.inline_data:
+                                image_bytes = part.inline_data.data
+                                if image_bytes and self.image_cache:
+                                    cache_document = {
+                                        "prompt": prompt,
+                                        "image_data": image_bytes,
+                                        "model": "gemini-2.0-flash-exp-image-generation",
+                                        "timestamp": datetime.datetime.now(
+                                            datetime.timezone.utc
+                                        ),
+                                    }
+                                    await asyncio.to_thread(
+                                        self.image_cache.insert_one, cache_document
                                     )
-                                    return binary_image
-
-                    # If we got here, no image was found in the response
-                    self.logger.warning(
-                        f"No image found in response for prompt: {prompt}"
-                    )
-                    self.logger.debug(
-                        f"Response data: {json.dumps(response_data, indent=2)}"
-                    )
-                    return None
-
+                                    self.logger.info(
+                                        f"Cached image for prompt: '{prompt}'"
+                                    )
+                                return image_bytes
+            self.logger.warning(
+                f"No image found in gemini-2.0-flash-exp-image-generation response for prompt: '{prompt}'"
+            )
+            return None
         except Exception as e:
-            self.logger.error(f"Imagen 3 generation error: {str(e)}")
+            self.logger.error(f"Error in image generation: {str(e)}")
             return None
 
     async def generate_response(
@@ -527,21 +356,13 @@ class GeminiAPI:
         await self.rate_limiter.acquire()
 
         try:
-            # Prepare the conversation history
-            conversation = []
-
-            # System message with clear identity
+            # System message with clear identity and instructions
             system_message = (
                 "You are Gemini, an AI assistant that can help with various tasks. "
                 "When introducing yourself, always refer to yourself as Gemini. "
                 "Do not introduce yourself as DeepGem or any other name."
             )
 
-            conversation.append(
-                genai.types.ContentDict(role="user", parts=[system_message])
-            )
-
-            # Add system context about memory capabilities
             memory_context = (
                 "You have the ability to remember previous conversations including "
                 "descriptions of images and documents the user has shared. When answering, "
@@ -549,30 +370,22 @@ class GeminiAPI:
                 "Reference relevant previous discussions when answering the user's current question."
             )
 
-            conversation.append(
-                genai.types.ContentDict(role="user", parts=[memory_context])
-            )
+            # Build prompt with system instructions
+            full_prompt = f"{system_message}\n\n{memory_context}"
 
             # Add image context if provided
             if image_context:
-                conversation.append(
-                    genai.types.ContentDict(
-                        role="user", parts=[f"Image context: {image_context}"]
-                    )
-                )
+                full_prompt += f"\n\nImage context: {image_context}"
 
             # Add document context if provided
             if document_context:
-                conversation.append(
-                    genai.types.ContentDict(
-                        role="user", parts=[f"Document context: {document_context}"]
-                    )
-                )
+                full_prompt += f"\n\nDocument context: {document_context}"
 
-            # Add conversation context - improved handling
+            # Add conversation context in a format that works with the API
+            conversation_text = ""
             if context:
                 # Ensure context isn't too long by taking the most recent entries
-                max_context_entries = 15  # Increased from previous value
+                max_context_entries = 15
                 recent_context = (
                     context[-max_context_entries:]
                     if len(context) > max_context_entries
@@ -581,14 +394,7 @@ class GeminiAPI:
 
                 # Add a reminder about conversation length
                 if len(context) > max_context_entries:
-                    conversation.append(
-                        genai.types.ContentDict(
-                            role="user",
-                            parts=[
-                                f"Note: There are {len(context) - max_context_entries} earlier messages in our conversation that aren't shown here."
-                            ],
-                        )
-                    )
+                    conversation_text += f"\nNote: There are {len(context) - max_context_entries} earlier messages in our conversation that aren't shown here.\n\n"
 
                 # Process each context message
                 for message in recent_context:
@@ -600,39 +406,20 @@ class GeminiAPI:
                         role = message.get("role")
                         content = message.get("content")
                         if role and content:
-                            conversation.append(
-                                genai.types.ContentDict(
-                                    role="user" if role == "user" else "model",
-                                    parts=[content],
-                                )
-                            )
+                            prefix = "User: " if role == "user" else "Gemini: "
+                            conversation_text += f"{prefix}{content}\n\n"
 
-            # Add the current prompt to the conversation
-            conversation.append(genai.types.ContentDict(role="user", parts=[prompt]))
+            # Add the current prompt
+            full_prompt += f"\n\n{conversation_text}\nUser query: {prompt}"
 
-            # Generate the response with safety settings
+            # Generate text via official client.models.generate_content with proper formatting
+            self.logger.debug(f"Sending prompt to Gemini API: {full_prompt[:100]}...")
+
             response = await asyncio.to_thread(
-                self.vision_model.generate_content,
-                conversation,
-                generation_config=self.generation_config,
-                safety_settings=[
-                    {
-                        "category": "HARM_CATEGORY_HARASSMENT",
-                        "threshold": "BLOCK_MEDIUM_AND_ABOVE",
-                    },
-                    {
-                        "category": "HARM_CATEGORY_HATE_SPEECH",
-                        "threshold": "BLOCK_MEDIUM_AND_ABOVE",
-                    },
-                    {
-                        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                        "threshold": "BLOCK_MEDIUM_AND_ABOVE",
-                    },
-                    {
-                        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                        "threshold": "BLOCK_MEDIUM_AND_ABOVE",
-                    },
-                ],
+                self.genai_client.models.generate_content,
+                model="gemini-2.0-flash",  # Updated to use gemini-2.0-flash
+                contents=full_prompt,  # Send as a single string
+                config=types.GenerateContentConfig(**self.generation_config),
             )
 
             # Process response
