@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.middleware.gzip import GZipMiddleware
+from dotenv import load_dotenv
 from telegram import Update
 import traceback
 from telegram.ext import (
@@ -23,9 +24,9 @@ from telegram.ext import (
     PicklePersistence,
 )
 from cachetools import TTLCache, LRUCache
-import platform
-import psutil
-import time
+import threading
+import requests
+from contextlib import asynccontextmanager
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.database.connection import get_database, close_database_connection
@@ -48,7 +49,6 @@ from src.services.flux_lora_img import flux_lora_image_generator
 import uvicorn
 from src.services.document_processing import DocumentProcessor
 from src.database.connection import get_database
-from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -92,11 +92,10 @@ async def root_post():
 
 @app.get("/health")
 async def health_check():
-    """
-    Minimal health check endpoint that always returns 200 OK.
-    Koyeb uses this to determine if the service is healthy.
-    """
-    return {"status": "ok"}
+    """Health check endpoint."""
+    return JSONResponse(
+        content={"status": "ok", "message": "Service is healthy"}, status_code=200
+    )
 
 
 @app.post("/test-webhook")
@@ -148,7 +147,6 @@ class TelegramBot:
         self.application = (
             Application.builder()
             .token(self.token)
-            .persistence(PicklePersistence(filepath="conversation_states.pickle"))
             .http_version("1.1")
             .get_updates_http_version("1.1")
             .read_timeout(None)
@@ -356,7 +354,6 @@ class TelegramBot:
         self.application.error_handlers.clear()
         # Add error handler last
         self.application.add_error_handler(self.message_handlers._error_handler)
-        self.application.run_webhook = self.run_webhook
 
     async def setup_webhook(self):
         """Set up webhook with proper update processing."""
@@ -417,33 +414,6 @@ class TelegramBot:
                     await update.message.reply_text("Processing your request...")
                 except Exception as reply_error:
                     self.logger.error(f"Failed to send error message: {reply_error}")
-
-    # Update the webhook handler in run_webhook method
-    def run_webhook(self, loop):
-        @app.post(f"/webhook/{self.token}")
-        async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
-            try:
-                # Extract data with no timeout
-                update_data = await request.json()
-
-                # Log incoming update for debugging
-                self.logger.info(
-                    f"Received webhook update: {update_data.get('update_id', 'unknown')}"
-                )
-
-                # Return immediate response before processing to prevent webhook timeout
-                background_tasks.add_task(self.process_update, update_data)
-
-                return JSONResponse(
-                    content={"status": "ok"},
-                    status_code=200,
-                    headers={"Connection": "keep-alive"},
-                )
-            except Exception as e:
-                self.logger.error(f"Webhook error: {str(e)}")
-                return JSONResponse(
-                    content={"status": "error", "detail": str(e)}, status_code=500
-                )
 
     async def start_keep_alive(self):
         """Start the keep-alive task to maintain persistent connections."""
@@ -571,88 +541,6 @@ async def keep_alive(self):
             await asyncio.sleep(60)  # Check every minute
 
 
-def create_app(webhook: TelegramBot, loop):
-    webhook.run_webhook(loop)
-    return app
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Properly clean up resources when the application is shutting down"""
-    try:
-        logger.info("Application shutdown initiated, cleaning up resources...")
-
-        # Stop the application
-        if hasattr(app, "bot") and app.bot and app.bot.application:
-            await app.bot.application.stop()
-            await app.bot.application.shutdown()
-
-        # Clean up the bot's resources
-        if hasattr(app, "bot") and app.bot:
-            await app.bot.shutdown()
-
-        logger.info("Application shutdown complete, all resources cleaned up")
-    except Exception as e:
-        logger.error(f"Error during shutdown: {str(e)}")
-        logger.error(traceback.format_exc())
-
-
-if __name__ == "__main__":
-    main_bot = TelegramBot()
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    # Ensure the application is initialized before accepting webhook requests
-    if os.environ.get("DEV_SERVER") == "uvicorn":
-        # For development server, initialize the application first
-        loop.run_until_complete(main_bot.create_session())
-        loop.run_until_complete(main_bot.application.initialize())
-        loop.run_until_complete(main_bot.application.start())
-        uvicorn.run(app, host="0.0.0.0", port=8000)
-    else:
-        try:
-            if not os.getenv("WEBHOOK_URL"):
-                logger.error("WEBHOOK_URL not set in .env")
-                sys.exit(1)
-
-            # Initialize and start the application before setting up webhooks
-            loop.run_until_complete(main_bot.create_session())
-            loop.run_until_complete(main_bot.application.initialize())
-            loop.run_until_complete(main_bot.application.start())
-            logger.info("Bot application initialized and started")
-
-            # Now set up the webhook
-            loop.run_until_complete(main_bot.setup_webhook())
-
-            # Register the webhook handler
-            app = create_app(main_bot, loop)
-
-            def run_fastapi():
-                port = int(os.environ.get("PORT", 8000))
-                config = uvicorn.Config(
-                    app,
-                    host="0.0.0.0",
-                    port=port,
-                    loop="asyncio",
-                    timeout_keep_alive=None,
-                    timeout_graceful_shutdown=None,
-                    limit_concurrency=None,  #
-                    backlog=4096,
-                    workers=4,
-                )
-                server = uvicorn.Server(config)
-                server.run()
-
-            fastapi_thread = Thread(target=run_fastapi)
-            fastapi_thread.start()
-            loop.run_forever()
-        except Exception as e:
-            logger.error(f"Error: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            loop.run_until_complete(main_bot.shutdown())  # Proper async shutdown
-            sys.exit(1)
-
-
 def get_application():
     """Create and configure the application for uvicorn without creating a new event loop"""
     # Set the environment variable so our code knows we're using uvicorn
@@ -661,40 +549,60 @@ def get_application():
     # Initialize the bot
     bot = TelegramBot()
 
+    # Create a FastAPI app
+    app = FastAPI()
+
     # Setup webhook handling without creating a new loop
     existing_loop = asyncio.get_event_loop()
-    bot.run_webhook(existing_loop)
 
-    # Create a startup event to initialize the application when uvicorn starts
-    @app.on_event("startup")
-    async def startup_event():
+    # Register the webhook endpoint directly on this FastAPI instance
+    @app.post(f"/webhook/{bot.token}")
+    async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         try:
-            await bot.create_session()
-            await bot.application.initialize()
-            await bot.application.start()
-            logger.info("Bot application initialized and started")
+            # Extract data with no timeout
+            update_data = await request.json()
 
-            # Start the keep-alive mechanism
-            await bot.start_keep_alive()
-            logger.info("Keep-alive mechanism started")
+            # Log incoming update for debugging
+            bot.logger.info(
+                f"Received webhook update: {update_data.get('update_id', 'unknown')}"
+            )
 
-            if os.getenv("WEBHOOK_URL"):
-                await bot.setup_webhook()
-                logger.info(f"Webhook set up at {os.getenv('WEBHOOK_URL')}")
+            # Return immediate response before processing to prevent webhook timeout
+            background_tasks.add_task(bot.process_update, update_data)
 
-            # Log successful startup
-            logger.info("Application startup complete and all systems operational")
+            return JSONResponse(
+                content={"status": "ok"},
+                status_code=200,
+                headers={"Connection": "keep-alive"},
+            )
         except Exception as e:
-            logger.error(f"Startup error: {str(e)}")
-            logger.error(traceback.format_exc())
+            bot.logger.error(f"Webhook error: {str(e)}")
+            return JSONResponse(
+                content={"status": "error", "detail": str(e)}, status_code=500
+            )
 
-    # Add shutdown handler
-    @app.on_event("shutdown")
-    async def shutdown_event():
+    # Create a lifespan context manager to handle startup and shutdown events
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Startup logic - runs before application starts taking requests
+        await bot.application.initialize()
+        await bot.application.start()
+
+        if os.getenv("WEBHOOK_URL"):
+            await bot.setup_webhook()
+            bot.logger.info(f"Webhook endpoint registered at /webhook/{bot.token}")
+
+        yield  # Application runs and handles requests here
+
+        # Shutdown logic - runs after application finishes handling requests
         await bot.application.stop()
         await bot.application.shutdown()
+
+    # Set the lifespan for the FastAPI app
+    app.router.lifespan_context = lifespan
 
     return app
 
 
+# For uvicorn to import
 app = get_application()
