@@ -44,7 +44,7 @@ langcodes==3.5.0
 scikit-learn==1.6.1
 
 # Utility dependencies
-httpx==0.28.1  # Updated to be compatible with python-telegram-bot and google-genai
+httpx==0.28.1
 python-dateutil==2.9.0.post0
 regex==2024.11.6
 tqdm==4.67.1

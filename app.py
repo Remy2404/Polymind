@@ -151,7 +151,7 @@ class TelegramBot:
             .write_timeout(None)
             .connect_timeout(None)
             .pool_timeout(None)
-            .connection_pool_size(128)  # Increased connection pool size
+            .connection_pool_size(128)
             .build()
         )
 
@@ -419,13 +419,17 @@ class TelegramBot:
         @app.post(f"/webhook/{self.token}")
         async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             try:
-                # Extract data with a timeout
-                update_data = await asyncio.wait_for(request.json(), timeout=None)
+                # Extract data with no timeout
+                update_data = await request.json()
 
-                # Process update in background without timeout
+                # Log incoming update for debugging
+                self.logger.info(
+                    f"Received webhook update: {update_data.get('update_id', 'unknown')}"
+                )
+
+                # Return immediate response before processing to prevent webhook timeout
                 background_tasks.add_task(self.process_update, update_data)
 
-                # Return immediate response
                 return JSONResponse(
                     content={"status": "ok"},
                     status_code=200,
@@ -436,6 +440,40 @@ class TelegramBot:
                 return JSONResponse(
                     content={"status": "error", "detail": str(e)}, status_code=500
                 )
+
+    async def start_keep_alive(self):
+        """Start the keep-alive task to maintain persistent connections."""
+        self.logger.info("Starting keep-alive task")
+        asyncio.create_task(self._keep_alive_task())
+
+    async def _keep_alive_task(self):
+        """Keep the server and connection alive with periodic health checks."""
+        while True:
+            try:
+                # Use Application's get_me method which has built-in retry logic
+                me = await self.application.bot.get_me()
+                self.logger.debug(f"Keep-alive check: Connected as {me.username}")
+
+                # Ping health endpoint
+                if os.getenv("APP_URL"):
+                    async with aiohttp.ClientSession() as session:
+                        health_url = f"{os.getenv('APP_URL')}/health"
+                        async with session.get(health_url, timeout=10) as response:
+                            self.logger.debug(f"Health check: {response.status}")
+            except Exception as e:
+                self.logger.warning(f"Keep-alive check failed: {e}")
+                # Self-healing attempt
+                if not self.application.running:
+                    try:
+                        await self.application.initialize()
+                        await self.application.start()
+                        await self.setup_webhook()
+                        self.logger.info("Successfully reconnected to Telegram API")
+                    except Exception as reconnect_error:
+                        self.logger.error(f"Failed to reconnect: {reconnect_error}")
+            finally:
+
+                await asyncio.sleep(60)
 
 
 async def start_bot(webhook: TelegramBot):
@@ -541,11 +579,25 @@ def get_application():
     # Create a startup event to initialize the application when uvicorn starts
     @app.on_event("startup")
     async def startup_event():
-        await bot.application.initialize()
-        await bot.application.start()
+        try:
+            await bot.create_session()
+            await bot.application.initialize()
+            await bot.application.start()
+            logger.info("Bot application initialized and started")
 
-        if os.getenv("WEBHOOK_URL"):
-            await bot.setup_webhook()
+            # Start the keep-alive mechanism
+            await bot.start_keep_alive()
+            logger.info("Keep-alive mechanism started")
+
+            if os.getenv("WEBHOOK_URL"):
+                await bot.setup_webhook()
+                logger.info(f"Webhook set up at {os.getenv('WEBHOOK_URL')}")
+
+            # Log successful startup
+            logger.info("Application startup complete and all systems operational")
+        except Exception as e:
+            logger.error(f"Startup error: {str(e)}")
+            logger.error(traceback.format_exc())
 
     # Add shutdown handler
     @app.on_event("shutdown")
