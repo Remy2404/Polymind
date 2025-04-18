@@ -15,7 +15,6 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.middleware.gzip import GZipMiddleware
-from dotenv import load_dotenv
 from telegram import Update
 import traceback
 from telegram.ext import (
@@ -24,8 +23,6 @@ from telegram.ext import (
     PicklePersistence,
 )
 from cachetools import TTLCache, LRUCache
-import threading
-import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.database.connection import get_database, close_database_connection
@@ -48,6 +45,7 @@ from src.services.flux_lora_img import flux_lora_image_generator
 import uvicorn
 from src.services.document_processing import DocumentProcessor
 from src.database.connection import get_database
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -146,13 +144,14 @@ class TelegramBot:
         self.application = (
             Application.builder()
             .token(self.token)
+            .persistence(PicklePersistence(filepath="conversation_states.pickle"))
             .http_version("1.1")
             .get_updates_http_version("1.1")
             .read_timeout(None)
             .write_timeout(None)
             .connect_timeout(None)
             .pool_timeout(None)
-            .connection_pool_size(128)
+            .connection_pool_size(128)  # Increased connection pool size
             .build()
         )
 
@@ -501,12 +500,6 @@ if __name__ == "__main__":
             # Register the webhook handler
             app = create_app(main_bot, loop)
 
-            # Start keep-alive thread if not running in debug mode
-            if os.getenv("ENVIRONMENT") != "development":
-                keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
-                keep_alive_thread.start()
-                logger.info("Keep-alive thread started")
-
             def run_fastapi():
                 port = int(os.environ.get("PORT", 8000))
                 config = uvicorn.Config(
@@ -516,7 +509,7 @@ if __name__ == "__main__":
                     loop="asyncio",
                     timeout_keep_alive=None,
                     timeout_graceful_shutdown=None,
-                    limit_concurrency=None,
+                    limit_concurrency=None,  #
                     backlog=4096,
                     workers=4,
                 )
