@@ -27,6 +27,10 @@ from cachetools import TTLCache, LRUCache
 import threading
 import requests
 from contextlib import asynccontextmanager
+import uuid
+import json
+import ipaddress
+import psutil
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.database.connection import get_database, close_database_connection
@@ -129,6 +133,9 @@ class TelegramBot:
     def __init__(self):
         # Initialize only essential services at startup
         self.logger = logging.getLogger(__name__)
+
+        # Track active update processing tasks
+        self._update_tasks = set()
 
         # More efficient caching strategy
         self.response_cache = TTLCache(maxsize=500, ttl=3600)  # Increased cache size
@@ -360,8 +367,8 @@ class TelegramBot:
         webhook_path = f"/webhook/{self.token}"
         webhook_url = f"{os.getenv('WEBHOOK_URL')}{webhook_path}"
 
-        # First, delete existing webhook and get pending updates
-        await self.application.bot.delete_webhook(drop_pending_updates=True)
+        # First, delete existing webhook without dropping pending updates to preserve queued messages
+        await self.application.bot.delete_webhook(drop_pending_updates=False)
 
         # Optimized webhook configuration
         webhook_config = {
@@ -395,7 +402,7 @@ class TelegramBot:
             self.logger.info("Application is already running. Skipping start.")
 
     async def process_update(self, update_data: dict):
-        """Process updates received from webhook without timeout."""
+        """Process updates with better task management."""
         try:
             if not self.application.running:
                 await self.application.initialize()
@@ -403,17 +410,23 @@ class TelegramBot:
 
             update = Update.de_json(update_data, self.application.bot)
 
-            # Process update in task to avoid blocking
-            async with asyncio.TaskGroup() as tg:
-                tg.create_task(self.application.process_update(update))
+            # Process update in a dedicated task
+            task = asyncio.create_task(self.application.process_update(update))
+            # Add task to a set for tracking
+            self._update_tasks.add(task)
+
+            # Wait for the task to complete or until it's canceled
+            await task
 
         except Exception as e:
             self.logger.error(f"Error in process_update: {str(e)}")
-            if hasattr(update, "message") and update.message:
-                try:
-                    await update.message.reply_text("Processing your request...")
-                except Exception as reply_error:
-                    self.logger.error(f"Failed to send error message: {reply_error}")
+            # Ensure the task is properly cleaned up
+            if task in self._update_tasks:
+                self._update_tasks.remove(task)
+                if not task.done():
+                    task.cancel()
+        finally:
+            pass
 
 
 async def start_bot(webhook: TelegramBot):
@@ -431,18 +444,6 @@ async def start_bot(webhook: TelegramBot):
         raise
 
 
-# Add this method to TelegramBot class
-async def keep_alive(self):
-    """Keep the connection alive."""
-    while True:
-        try:
-            await self.application.bot.get_me()
-        except Exception as e:
-            self.logger.warning(f"Keep-alive check failed: {e}")
-        finally:
-            await asyncio.sleep(60)  # Check every minute
-
-
 def get_application():
     """Create and configure the application for uvicorn without creating a new event loop"""
     # Set the environment variable so our code knows we're using uvicorn
@@ -451,54 +452,363 @@ def get_application():
     # Initialize the bot
     bot = TelegramBot()
 
-    # Create a FastAPI app
+    # Create a FastAPI app with exception handlers
     app = FastAPI()
+
+    # Add middleware for request ID tracking and timing
+    @app.middleware("http")
+    async def add_process_time_header(request: Request, call_next):
+        # Generate unique request ID for tracking
+        request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
+
+        # Start timer for performance monitoring
+        start_time = time.time()
+
+        # Add request ID to logger context
+        logger_with_context = logging.LoggerAdapter(
+            bot.logger, {"request_id": request_id}
+        )
+
+        # Log incoming request
+        logger_with_context.info(
+            f"Request started: {request.method} {request.url.path}"
+        )
+
+        try:
+            # Process the request
+            response = await call_next(request)
+
+            # Calculate processing time
+            process_time = time.time() - start_time
+
+            # Add custom headers
+            response.headers["X-Process-Time"] = str(process_time)
+            response.headers["X-Request-ID"] = request_id
+
+            # Log successful response with timing
+            logger_with_context.info(
+                f"Request completed: {request.method} {request.url.path} "
+                f"- Status: {response.status_code} - Time: {process_time:.3f}s"
+            )
+
+            # Record metrics for monitoring (if you have a metrics system)
+            # This could be expanded to use Prometheus, StatsD, etc.
+            if process_time > 1.0:
+                logger_with_context.warning(
+                    f"Slow request detected: {process_time:.3f}s"
+                )
+
+            return response
+
+        except Exception as e:
+            # Log exception with full details
+            process_time = time.time() - start_time
+            logger_with_context.error(
+                f"Request failed: {request.method} {request.url.path} "
+                f"- Error: {str(e)} - Time: {process_time:.3f}s",
+                exc_info=True,
+            )
+
+            # Return proper error response
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "Internal server error",
+                    "request_id": request_id,  # Include request ID for troubleshooting
+                },
+            )
+
+    # Define custom exception handler for webhook errors
+    class WebhookException(Exception):
+        def __init__(self, status_code: int, detail: str):
+            self.status_code = status_code
+            self.detail = detail
+            super().__init__(self.detail)
+
+    @app.exception_handler(WebhookException)
+    async def webhook_exception_handler(request: Request, exc: WebhookException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": exc.detail,
+                "request_id": getattr(request.state, "request_id", "unknown"),
+            },
+        )
 
     # Setup webhook handling without creating a new loop
     existing_loop = asyncio.get_event_loop()
 
-    # Register the webhook endpoint directly on this FastAPI instance
-    @app.post(f"/webhook/{bot.token}")
+    # Extract the token value for use in both URL-encoded and raw forms
+    raw_token = bot.token
+    # URL-encoded token is what Telegram actually sends in the webhook URL
+    url_encoded_token = raw_token.replace(":", "%3A")
+
+    # Register the webhook endpoint with BOTH the raw token and URL-encoded token paths
+    # This ensures we catch the request regardless of encoding
+    @app.post(f"/webhook/{raw_token}")
+    @app.post(
+        f"/webhook/{url_encoded_token}"
+    )  # Add this path to match Telegram's URL-encoded format
     async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
+        # Get request ID from state (added by middleware)
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        logger_with_context = logging.LoggerAdapter(
+            bot.logger, {"request_id": request_id}
+        )
+
+        # Log the actual path for debugging
+        logger_with_context.info(f"Webhook received at path: {request.url.path}")
+
+        # Track timing for monitoring
+        start_time = time.time()
+
         try:
-            # Extract data with no timeout
-            update_data = await request.json()
+            # Validate request content type
+            content_type = request.headers.get("content-type", "")
+            if not content_type.startswith("application/json"):
+                raise WebhookException(
+                    status_code=415,
+                    detail="Unsupported Media Type: Content-Type must be application/json",
+                )
 
-            # Log incoming update for debugging
-            bot.logger.info(
-                f"Received webhook update: {update_data.get('update_id', 'unknown')}"
+            # Apply rate limiting (optional)
+            # This is a simple implementation - could be replaced with Redis-based solution
+            client_ip = request.client.host if request.client else "unknown"
+            current_rate = getattr(get_application, f"rate_{client_ip}", 0)
+            if current_rate > 30:  # 30 requests per minute
+                logger_with_context.warning(f"Rate limit exceeded for IP: {client_ip}")
+                raise WebhookException(status_code=429, detail="Too Many Requests")
+
+            setattr(get_application, f"rate_{client_ip}", current_rate + 1)
+            background_tasks.add_task(
+                lambda: setattr(get_application, f"rate_{client_ip}", current_rate)
             )
 
-            # Return immediate response before processing to prevent webhook timeout
-            background_tasks.add_task(bot.process_update, update_data)
+            # Extract data with timeout handling
+            try:
+                # Set a reasonable timeout for JSON parsing
+                update_data = await asyncio.wait_for(request.json(), timeout=2.0)
+            except asyncio.TimeoutError:
+                raise WebhookException(
+                    status_code=408,
+                    detail="Request Timeout: JSON parsing took too long",
+                )
+            except json.JSONDecodeError:
+                raise WebhookException(
+                    status_code=400, detail="Bad Request: Invalid JSON format"
+                )
 
+            # Basic validation of Telegram update structure
+            if not isinstance(update_data, dict):
+                raise WebhookException(
+                    status_code=400, detail="Bad Request: Update data must be an object"
+                )
+
+            if "update_id" not in update_data:
+                raise WebhookException(
+                    status_code=400, detail="Bad Request: Missing update_id field"
+                )
+
+            # Log incoming update with useful context
+            update_id = update_data.get("update_id", "unknown")
+            logger_with_context.info(
+                f"Received webhook update {update_id} - "
+                f"Type: {_get_update_type(update_data)} - "
+                f"Size: {len(json.dumps(update_data))} bytes"
+            )
+
+            # Process update with retry mechanism for transient errors
+            # Add to background tasks for async processing
+            background_tasks.add_task(
+                _process_update_with_retry, bot, update_data, logger_with_context
+            )
+
+            # Track processing time
+            process_time = time.time() - start_time
+
+            # Return immediate response with useful headers
             return JSONResponse(
-                content={"status": "ok"},
+                content={"status": "ok", "received_at": time.time()},
                 status_code=200,
-                headers={"Connection": "keep-alive"},
+                headers={
+                    "X-Process-Time": str(process_time),
+                    "X-Request-ID": request_id,
+                    "Connection": "keep-alive",
+                },
             )
+
+        except WebhookException as e:
+            # Already formatted exceptions just get passed through
+            raise
+
         except Exception as e:
-            bot.logger.error(f"Webhook error: {str(e)}")
-            return JSONResponse(
-                content={"status": "error", "detail": str(e)}, status_code=500
+            # Log unexpected errors
+            logger_with_context.error(
+                f"Webhook unexpected error: {str(e)}", exc_info=True
             )
+
+            # Return a proper error response
+            return JSONResponse(
+                content={"status": "error", "detail": str(e), "request_id": request_id},
+                status_code=500,
+            )
+
+    # Helper functions for webhook processing
+    def _get_update_type(update_data):
+        """Determine the type of Telegram update for better logging"""
+        if "message" in update_data:
+            if "text" in update_data["message"]:
+                return "text_message"
+            elif "photo" in update_data["message"]:
+                return "photo_message"
+            elif "voice" in update_data["message"]:
+                return "voice_message"
+            elif "document" in update_data["message"]:
+                return "document_message"
+            return "other_message"
+        elif "edited_message" in update_data:
+            return "edited_message"
+        elif "callback_query" in update_data:
+            return "callback_query"
+        elif "inline_query" in update_data:
+            return "inline_query"
+        return "unknown"
+
+    async def _process_update_with_retry(bot, update_data, logger):
+        """Process update with retry mechanism for transient errors"""
+        max_retries = 3
+        base_delay = 0.5  # Start with 500ms delay
+
+        for attempt in range(max_retries):
+            try:
+                # Process the update
+                await bot.process_update(update_data)
+                if attempt > 0:
+                    # Log successful retry
+                    logger.info(
+                        f"Successfully processed update {update_data.get('update_id')} on attempt {attempt+1}"
+                    )
+                return
+
+            except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+                # These are transient errors, retry with backoff
+                retry_delay = base_delay * (2**attempt)  # Exponential backoff
+
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Transient error processing update {update_data.get('update_id')}, "
+                        f"retrying in {retry_delay}s: {str(e)}"
+                    )
+                    await asyncio.sleep(retry_delay)
+                else:
+                    logger.error(
+                        f"Failed to process update {update_data.get('update_id')} "
+                        f"after {max_retries} attempts: {str(e)}"
+                    )
+
+            except Exception as e:
+                # Non-transient errors, don't retry
+                logger.error(
+                    f"Error processing update {update_data.get('update_id')}: {str(e)}",
+                    exc_info=True,
+                )
+                return
+
+    # Create a health check endpoint with detailed status
+    @app.get("/health")
+    async def health_check():
+        """Enhanced health check endpoint with detailed status information."""
+        health_data = {
+            "status": "ok",
+            "timestamp": time.time(),
+            "version": os.getenv("APP_VERSION", "1.0.0"),
+            "components": {},
+        }
+
+        # Check Telegram API connection
+        try:
+            me = await bot.application.bot.get_me()
+            health_data["components"]["telegram_api"] = {
+                "status": "ok",
+                "bot_username": me.username,
+            }
+        except Exception as e:
+            health_data["status"] = "degraded"
+            health_data["components"]["telegram_api"] = {
+                "status": "error",
+                "error": str(e),
+            }
+
+        # Check database connection
+        try:
+            # Just a simple ping to check connection
+            ping_result = bot.db.command("ping")
+            health_data["components"]["database"] = {
+                "status": "ok" if ping_result.get("ok") == 1 else "error"
+            }
+        except Exception as e:
+            health_data["status"] = "degraded"
+            health_data["components"]["database"] = {"status": "error", "error": str(e)}
+
+        # Add system metrics
+        health_data["system"] = {
+            "cpu_usage": psutil.cpu_percent(),
+            "memory_usage": psutil.virtual_memory().percent,
+            "disk_usage": psutil.disk_usage("/").percent,
+        }
+
+        # Set appropriate status code based on overall health
+        status_code = 200 if health_data["status"] == "ok" else 503
+
+        return JSONResponse(content=health_data, status_code=status_code)
 
     # Create a lifespan context manager to handle startup and shutdown events
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Startup logic - runs before application starts taking requests
-        await bot.application.initialize()
-        await bot.application.start()
+        logger.info("Starting application with enhanced monitoring...")
 
-        if os.getenv("WEBHOOK_URL"):
-            await bot.setup_webhook()
-            bot.logger.info(f"Webhook endpoint registered at /webhook/{bot.token}")
+        try:
+            await bot.application.initialize()
+            await bot.application.start()
 
-        yield  # Application runs and handles requests here
+            # If WEBHOOK_URL is set, configure webhook; otherwise, start polling fallback
+            if os.getenv("WEBHOOK_URL"):
+                await bot.setup_webhook()
+                bot.logger.info(
+                    f"Webhook endpoints registered at /webhook/{raw_token} and /webhook/{url_encoded_token}"
+                )
+            else:
+                # Start polling in a background thread for development/local usage
+                from threading import Thread
 
-        # Shutdown logic - runs after application finishes handling requests
-        await bot.application.stop()
-        await bot.application.shutdown()
+                def _polling():
+                    bot.application.run_polling()
+
+                Thread(target=_polling, daemon=True).start()
+                bot.logger.info(
+                    "Polling fallback started; bot will process updates via polling."
+                )
+
+            # Log successful startup
+            logger.info("Application started successfully")
+
+            yield  # Application runs and handles requests here
+
+        except Exception as e:
+            logger.error(f"Error during application startup: {e}", exc_info=True)
+            raise
+        finally:
+            # Shutdown logic - runs after application finishes handling requests
+            logger.info("Shutting down application...")
+
+            try:
+                await bot.application.stop()
+                await bot.application.shutdown()
+                logger.info("Application shutdown completed successfully")
+            except Exception as e:
+                logger.error(f"Error during application shutdown: {e}", exc_info=True)
 
     # Set the lifespan for the FastAPI app
     app.router.lifespan_context = lifespan
@@ -506,5 +816,5 @@ def get_application():
     return app
 
 
-# For uvicorn to import
+# Override module-level app with the TelegramBot-configured application
 app = get_application()
