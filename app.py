@@ -32,6 +32,9 @@ import json
 import ipaddress
 import psutil
 
+# Import the message filter
+from src.utils.ignore_message import message_filter
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.database.connection import get_database, close_database_connection
 from src.services.user_data_manager import UserDataManager
@@ -404,10 +407,21 @@ class TelegramBot:
     async def process_update(self, update_data: dict):
         """Process updates with better task management."""
         try:
+            # Check if this update should be ignored using the external message filter
+            bot_username = getattr(
+                self.application.bot, "username", "Gemini_AIAssistBot"
+            )
+            if message_filter.should_ignore_update(update_data, bot_username):
+                self.logger.info(
+                    f"Ignoring update {update_data.get('update_id', 'unknown')}"
+                )
+                return  # Skip processing this update
+
             if not self.application.running:
                 await self.application.initialize()
                 await self.application.start()
 
+            # Process the update as usual
             update = Update.de_json(update_data, self.application.bot)
 
             # Process update in a dedicated task
@@ -679,6 +693,15 @@ def get_application():
         """Process update with retry mechanism for transient errors"""
         max_retries = 3
         base_delay = 0.5  # Start with 500ms delay
+
+        # Special handling for updates that can be safely ignored
+        # Use the external message_filter instead of the deprecated _should_ignore_update
+        bot_username = getattr(bot.application.bot, "username", "Gemini_AIAssistBot")
+        if message_filter.should_ignore_update(update_data, bot_username):
+            logger.info(
+                f"Filtering out content in update {update_data.get('update_id')}"
+            )
+            return
 
         for attempt in range(max_retries):
             try:
