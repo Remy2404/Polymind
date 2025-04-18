@@ -62,3 +62,4 @@ scipy==1.15.2
 # AI models 
 safetensors==0.5.3
 tokenizers==0.21.0
+psutil==7.0.0

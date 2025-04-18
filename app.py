@@ -23,6 +23,9 @@ from telegram.ext import (
     PicklePersistence,
 )
 from cachetools import TTLCache, LRUCache
+import platform
+import psutil
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.database.connection import get_database, close_database_connection
@@ -89,10 +92,41 @@ async def root_post():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return JSONResponse(
-        content={"status": "ok", "message": "Service is healthy"}, status_code=200
-    )
+    """
+    Enhanced health check endpoint optimized for Koyeb deployments.
+    Returns 200 OK with detailed health information.
+    """
+
+    try:
+        # Gather system metrics
+        system_info = {
+            "cpu_percent": psutil.cpu_percent(interval=0.1),
+            "memory_percent": psutil.virtual_memory().percent,
+            "uptime": time.time() - psutil.boot_time(),
+            "python_version": platform.python_version(),
+            "platform": platform.platform(),
+        }
+
+        # Return detailed health information
+        return JSONResponse(
+            content={
+                "status": "ok",
+                "message": "Service is healthy",
+                "timestamp": time.time(),
+                "system_info": system_info,
+            },
+            status_code=200,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Connection": "keep-alive",
+            },
+        )
+    except Exception as e:
+        logger.error(f"Error collecting health metrics: {str(e)}")
+        return JSONResponse(
+            content={"status": "ok", "message": "Service is operational"},
+            status_code=200,
+        )
 
 
 @app.post("/test-webhook")
@@ -447,33 +481,78 @@ class TelegramBot:
         asyncio.create_task(self._keep_alive_task())
 
     async def _keep_alive_task(self):
-        """Keep the server and connection alive with periodic health checks."""
+        """
+        Advanced keep-alive mechanism specifically optimized for Koyeb deployments.
+        This prevents the instance from being stopped due to inactivity.
+        """
+        self.logger.info("Starting enhanced keep-alive task for Koyeb")
+        ping_interval = 60  # Ping every minute (more frequent for Koyeb)
+        reconnect_attempts = 0
+        max_reconnect_attempts = 5
+
         while True:
             try:
-                # Use Application's get_me method which has built-in retry logic
+                # 1. Check Telegram API connection
                 me = await self.application.bot.get_me()
-                self.logger.debug(f"Keep-alive check: Connected as {me.username}")
+                self.logger.debug(f"Keep-alive: Connected to Telegram as {me.username}")
+                reconnect_attempts = 0  # Reset counter on successful connection
 
-                # Ping health endpoint
-                if os.getenv("APP_URL"):
+                # 2. Ping our own health endpoint with additional headers
+                if os.getenv("WEBHOOK_URL"):
+                    # Extract base URL from webhook URL (remove /webhook/TOKEN part)
+                    base_url = os.getenv("WEBHOOK_URL").split("/webhook")[0]
                     async with aiohttp.ClientSession() as session:
-                        health_url = f"{os.getenv('APP_URL')}/health"
-                        async with session.get(health_url, timeout=10) as response:
-                            self.logger.debug(f"Health check: {response.status}")
+                        health_url = f"{base_url}/health"
+                        headers = {
+                            "User-Agent": "TelegramBot/1.0 KeepAlive",
+                            "Connection": "keep-alive",
+                            "X-Keep-Alive": "true",
+                        }
+                        async with session.get(
+                            health_url, headers=headers, timeout=10
+                        ) as response:
+                            if response.status == 200:
+                                self.logger.debug(
+                                    f"Health check passed: {await response.text()}"
+                                )
+                            else:
+                                self.logger.warning(
+                                    f"Health check returned status {response.status}"
+                                )
+                else:
+                    self.logger.warning(
+                        "No WEBHOOK_URL set, skipping self health check"
+                    )
+
+            except asyncio.CancelledError:
+                self.logger.info("Keep-alive task cancelled")
+                break
+
             except Exception as e:
                 self.logger.warning(f"Keep-alive check failed: {e}")
-                # Self-healing attempt
-                if not self.application.running:
+                reconnect_attempts += 1
+
+                # If connection to Telegram API was lost, try to reconnect with exponential backoff
+                if reconnect_attempts <= max_reconnect_attempts:
                     try:
-                        await self.application.initialize()
-                        await self.application.start()
-                        await self.setup_webhook()
-                        self.logger.info("Successfully reconnected to Telegram API")
+                        if not self.application.running:
+                            await self.application.initialize()
+                            await self.application.start()
+                            await self.setup_webhook()
+                            self.logger.info("Successfully reconnected to Telegram API")
                     except Exception as reconnect_error:
                         self.logger.error(f"Failed to reconnect: {reconnect_error}")
-            finally:
 
-                await asyncio.sleep(60)
+                    # Exponential backoff for reconnection attempts
+                    backoff_time = min(30, 2**reconnect_attempts)
+                    self.logger.info(
+                        f"Backing off for {backoff_time}s before next reconnection attempt"
+                    )
+                    await asyncio.sleep(backoff_time)
+                    continue
+
+            # Use a shorter interval to prevent Koyeb from stopping the instance
+            await asyncio.sleep(ping_interval)
 
 
 async def start_bot(webhook: TelegramBot):
@@ -608,5 +687,4 @@ def get_application():
     return app
 
 
-# For uvicorn to import
 app = get_application()
