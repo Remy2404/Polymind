@@ -93,17 +93,10 @@ async def root_post():
 @app.get("/health")
 async def health_check():
     """
-    Simple health check endpoint for Koyeb.
-    Always returns 200 OK without performing any heavy operations.
+    Minimal health check endpoint that always returns 200 OK.
+    Koyeb uses this to determine if the service is healthy.
     """
-    return JSONResponse(
-        content={"status": "ok"},
-        status_code=200,
-        headers={
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Connection": "keep-alive",
-        },
-    )
+    return {"status": "ok"}
 
 
 @app.post("/test-webhook")
