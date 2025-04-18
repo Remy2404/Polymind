@@ -93,40 +93,17 @@ async def root_post():
 @app.get("/health")
 async def health_check():
     """
-    Enhanced health check endpoint optimized for Koyeb deployments.
-    Returns 200 OK with detailed health information.
+    Simple health check endpoint for Koyeb.
+    Always returns 200 OK without performing any heavy operations.
     """
-
-    try:
-        # Gather system metrics
-        system_info = {
-            "cpu_percent": psutil.cpu_percent(interval=0.1),
-            "memory_percent": psutil.virtual_memory().percent,
-            "uptime": time.time() - psutil.boot_time(),
-            "python_version": platform.python_version(),
-            "platform": platform.platform(),
-        }
-
-        # Return detailed health information
-        return JSONResponse(
-            content={
-                "status": "ok",
-                "message": "Service is healthy",
-                "timestamp": time.time(),
-                "system_info": system_info,
-            },
-            status_code=200,
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Connection": "keep-alive",
-            },
-        )
-    except Exception as e:
-        logger.error(f"Error collecting health metrics: {str(e)}")
-        return JSONResponse(
-            content={"status": "ok", "message": "Service is operational"},
-            status_code=200,
-        )
+    return JSONResponse(
+        content={"status": "ok"},
+        status_code=200,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.post("/test-webhook")
@@ -604,6 +581,27 @@ async def keep_alive(self):
 def create_app(webhook: TelegramBot, loop):
     webhook.run_webhook(loop)
     return app
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Properly clean up resources when the application is shutting down"""
+    try:
+        logger.info("Application shutdown initiated, cleaning up resources...")
+
+        # Stop the application
+        if hasattr(app, "bot") and app.bot and app.bot.application:
+            await app.bot.application.stop()
+            await app.bot.application.shutdown()
+
+        # Clean up the bot's resources
+        if hasattr(app, "bot") and app.bot:
+            await app.bot.shutdown()
+
+        logger.info("Application shutdown complete, all resources cleaned up")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {str(e)}")
+        logger.error(traceback.format_exc())
 
 
 if __name__ == "__main__":
