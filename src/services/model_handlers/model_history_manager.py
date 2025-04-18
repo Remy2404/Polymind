@@ -128,33 +128,40 @@ class ModelHistoryManager:
             f"Getting history for conversation_id: {conversation_id} (model: {model_id})"
         )
 
-        # Get messages from memory manager
-        messages = self.memory_manager.short_term_memory.get(conversation_id, [])
+        # Get messages from memory manager using proper async method
+        try:
+            # Use get_short_term_memory which is an async method that properly loads from storage
+            messages = await self.memory_manager.get_short_term_memory(
+                conversation_id, limit=max_messages
+            )
 
-        # Limit to most recent messages
-        recent_messages = (
-            messages[-max_messages:] if len(messages) > max_messages else messages
-        )
+            # Format messages for AI consumption
+            formatted_history = []
+            for msg in messages:
+                # Get message attributes
+                sender = msg.get("sender", "")
+                content = msg.get("content", "")
 
-        # Format messages for AI consumption
-        formatted_history = []
-        for msg in recent_messages:
-            # Get message attributes
-            sender = msg.get("sender", "")
-            content = msg.get("content", "")
+                # Skip empty messages
+                if not content or not content.strip():
+                    continue
 
-            # Skip empty messages
-            if not content or not content.strip():
-                continue
+                # Map senders to standard role format
+                role = (
+                    "user"
+                    if sender == str(user_id) or sender == "user"
+                    else "assistant"
+                )
+                formatted_history.append({"role": role, "content": content})
 
-            # Map senders to standard role format
-            role = "user" if sender == "user" else "assistant"
-            formatted_history.append({"role": role, "content": content})
+            logger.info(
+                f"Retrieved {len(formatted_history)} history messages for user {user_id} with model {model_id}"
+            )
+            return formatted_history
 
-        logger.debug(
-            f"Retrieved {len(formatted_history)} history messages for user {user_id} with model {model_id}"
-        )
-        return formatted_history
+        except Exception as e:
+            logger.error(f"Error retrieving conversation history: {str(e)}")
+            return []
 
     async def save_message_pair(
         self,
@@ -278,17 +285,13 @@ class ModelHistoryManager:
 
             conversation_id = self._get_conversation_id(user_id, model_id)
 
-            # Check if conversation exists
-            has_short_term = conversation_id in self.memory_manager.short_term_memory
-
-            # Get message count
-            message_count = len(
-                self.memory_manager.short_term_memory.get(conversation_id, [])
-            )
+            # Use async method to properly check history
+            messages = await self.memory_manager.get_short_term_memory(conversation_id)
+            message_count = len(messages)
 
             # Log verification results
             logger.info(
-                f"History verification for user {user_id} with model {model_id}: exists={has_short_term}, message_count={message_count}"
+                f"History verification for user {user_id} with model {model_id}: exists={message_count > 0}, message_count={message_count}"
             )
 
             # Get sample of formatted history
@@ -297,7 +300,7 @@ class ModelHistoryManager:
                 f"Formatted history sample for user {user_id} with model {model_id}: {history}"
             )
 
-            return has_short_term and message_count > 0
+            return message_count > 0
         except Exception as e:
             logger.error(
                 f"History verification failed for user {user_id} with model {model_id}: {e}",

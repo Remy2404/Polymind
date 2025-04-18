@@ -22,8 +22,15 @@ class DeepSeekHandler(ModelHandler):
         context: Optional[List[Dict[str, Any]]] = None,
         temperature: float = 0.7,
         max_tokens: int = 4000,
+        quoted_message: Optional[
+            str
+        ] = None,  # Add support for quoted_message parameter
     ) -> str:
         """Generate a text response using the DeepSeek model."""
+
+        # If there's a quoted message, format the prompt to include it
+        if quoted_message:
+            prompt = self.format_quoted_message(prompt, quoted_message)
 
         # Prepare messages list for the API
         messages = []

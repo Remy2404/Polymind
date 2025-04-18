@@ -221,7 +221,31 @@ class MemoryManager:
             conversation_id, ""
         )  # No user ID needed for assistant messages
 
-    # This is the missing method that's causing the error
+    async def get_short_term_memory(self, conversation_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get short term memory messages for a conversation asynchronously.
+
+        Args:
+            conversation_id: The conversation ID to retrieve messages for
+            limit: Maximum number of messages to retrieve
+
+        Returns:
+            List of message dictionaries
+        """
+        # Ensure memory is loaded 
+        await self._load_memory(conversation_id, "")  # Empty user_id as we only need conversation memory
+        
+        # Get messages from short-term memory
+        messages = self.short_term_memory.get(conversation_id, [])
+
+        # Limit to most recent messages if needed
+        if limit > 0 and len(messages) > limit:
+            messages = messages[-limit:]  # Take the most recent 'limit' messages
+        
+        self.logger.info(f"Retrieved {len(messages)} messages from short-term memory for {conversation_id}")
+        
+        return messages
+
     def get_formatted_history(
         self, conversation_id: str, max_messages: int = 10
     ) -> List[Dict[str, Any]]:

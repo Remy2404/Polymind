@@ -24,6 +24,9 @@ class DeepCoderHandler(ModelHandler):
         context: Optional[List[Dict[str, Any]]] = None,
         temperature: float = 0.7,
         max_tokens: int = 4000,
+        quoted_message: Optional[
+            str
+        ] = None,  # Add support for quoted_message parameter
     ) -> str:
         """
         Generate a text response using the DeepCoder model.
@@ -33,10 +36,15 @@ class DeepCoderHandler(ModelHandler):
             context: Optional chat history for context.
             temperature: Controls randomness. Higher values mean more random completions.
             max_tokens: Maximum number of tokens to generate.
+            quoted_message: Optional quoted message to be included in the prompt.
 
         Returns:
             A string containing the generated response.
         """
+        # If there's a quoted message, format the prompt to include it
+        if quoted_message:
+            prompt = self.format_quoted_message(prompt, quoted_message)
+
         self.logger.info(f"Generating response using {self.model_name}")
 
         # Format messages for OpenRouter API
@@ -110,6 +118,9 @@ class Llama4MaverickHandler(ModelHandler):
         context: Optional[List[Dict[str, Any]]] = None,
         temperature: float = 0.7,
         max_tokens: int = 4000,
+        quoted_message: Optional[
+            str
+        ] = None,  # Add support for quoted_message parameter
     ) -> str:
         """
         Generate a text response using the Llama-4-Maverick model.
@@ -119,10 +130,15 @@ class Llama4MaverickHandler(ModelHandler):
             context: Optional chat history for context.
             temperature: Controls randomness. Higher values mean more random completions.
             max_tokens: Maximum number of tokens to generate.
+            quoted_message: Optional quoted message to be included in the prompt.
 
         Returns:
             A string containing the generated response.
         """
+        # If there's a quoted message, format the prompt to include it
+        if quoted_message:
+            prompt = self.format_quoted_message(prompt, quoted_message)
+
         self.logger.info(f"Generating response using {self.model_name}")
 
         # Format messages for OpenRouter API
@@ -198,6 +214,9 @@ class OptimusAlphaHandler(ModelHandler):
         context: Optional[List[Dict[str, Any]]] = None,
         temperature: float = 0.7,
         max_tokens: int = 4000,
+        quoted_message: Optional[
+            str
+        ] = None,  # Add support for quoted_message parameter
     ) -> str:
         """
         Generate a text response using the Optimus Alpha model.
@@ -207,10 +226,15 @@ class OptimusAlphaHandler(ModelHandler):
             context: Optional chat history for context.
             temperature: Controls randomness. Higher values mean more random completions.
             max_tokens: Maximum number of tokens to generate.
+            quoted_message: Optional quoted message to be included in the prompt.
 
         Returns:
             A string containing the generated response.
         """
+        # If there's a quoted message, format the prompt to include it
+        if quoted_message:
+            prompt = self.format_quoted_message(prompt, quoted_message)
+
         self.logger.info(f"Generating response using {self.model_name}")
 
         # Format messages for OpenRouter API

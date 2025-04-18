@@ -13,8 +13,15 @@ services:
         sync: false
       - key: WEBHOOK_URL
         sync: false
+      - key: APP_URL
+        value: https://telegram-gemini-bot.onrender.com
+      - key: ENVIRONMENT
+        value: production
     healthCheckPath: /health
     autoDeploy: true
+    # Disable auto-sleep
+    plan: standard # This specifies a paid plan to avoid sleep
+    sleepMode: false # Explicit setting to prevent sleeping
     git add .
     git commit -m "Prepare for Render deployment"
     git push origin main

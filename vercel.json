@@ -11,5 +11,16 @@
       "src": "/(.*)",
       "dest": "src/main.py"
     }
+  ],
+  "functions": {
+    "src/main.py": {
+      "maxDuration": 300
+    }
+  },
+  "crons": [
+    {
+      "path": "/health",
+      "schedule": "*/10 * * * *"
+    }
   ]
 }

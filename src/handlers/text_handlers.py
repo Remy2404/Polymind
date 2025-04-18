@@ -46,11 +46,11 @@ class TextHandler:
         self.memory_manager.short_term_limit = 15
         self.memory_manager.token_limit = 8192
 
-        # These will be set later when application context is available
+        # Initialize model components with safe defaults
         self.model_registry = None
         self.user_model_manager = None
 
-        # Instantiate the ModelHistoryManager
+        # Instantiate the ModelHistoryManager with safe initialization
         self.model_history_manager = ModelHistoryManager(self.memory_manager)
 
         # Initialize utility classes
@@ -62,6 +62,9 @@ class TextHandler:
         self.conversation_manager = ConversationManager(
             self.memory_manager, self.model_history_manager
         )
+
+        # Flag to track if model_registry has been initialized
+        self.model_registry_initialized = False
 
     async def format_telegram_markdown(self, text: str) -> str:
         # Delegate to ResponseFormatter
@@ -129,9 +132,47 @@ class TextHandler:
                 chat_id=update.effective_chat.id, action=ChatAction.TYPING
             )
 
-            # Get conversation history using ConversationManager
-            history_context = await self.conversation_manager.get_conversation_history(
-                user_id, max_messages=self.max_context_length
+            # Get the preferred model with the ModelHandler system
+            from services.user_preferences_manager import UserPreferencesManager
+
+            preferences_manager = UserPreferencesManager(self.user_data_manager)
+
+            # Get the preferred model using the UserPreferencesManager first so we can use it for history
+            preferred_model = await preferences_manager.get_user_model_preference(
+                user_id
+            )
+            self.logger.info(f"Preferred model for user {user_id}: {preferred_model}")
+
+            # Get conversation history using ConversationManager - IMPROVED TO USE MODEL-SPECIFIC HISTORY
+            history_context = []
+            if preferred_model:
+                # Get model-specific conversation history
+                history_context = await self.conversation_manager.get_conversation_history(
+                    user_id,
+                    max_messages=self.max_context_length,
+                    model=preferred_model,  # Pass the specific model to get its history
+                )
+
+                if not history_context:
+                    self.logger.info(
+                        f"No model-specific history found for {preferred_model}, using default history"
+                    )
+                    # Fall back to default history if model-specific history is not available
+                    history_context = (
+                        await self.conversation_manager.get_conversation_history(
+                            user_id, max_messages=self.max_context_length
+                        )
+                    )
+            else:
+                # Use default history if no preferred model is specified
+                history_context = (
+                    await self.conversation_manager.get_conversation_history(
+                        user_id, max_messages=self.max_context_length
+                    )
+                )
+
+            self.logger.info(
+                f"Retrieved {len(history_context)} message(s) from history for user {user_id}"
             )
 
             # Build enhanced prompt with relevant context
@@ -245,11 +286,6 @@ class TextHandler:
                         "Sorry, there was an error generating your image. Please try again later."
                     )
 
-            # Get the preferred model with the ModelHandler system
-            from services.user_preferences_manager import UserPreferencesManager
-
-            preferences_manager = UserPreferencesManager(self.user_data_manager)
-
             # Try to get model registry and user model manager from application context
             if hasattr(context, "application") and hasattr(
                 context.application, "bot_data"
@@ -293,24 +329,35 @@ class TextHandler:
                             self.memory_manager, self.model_history_manager
                         )
 
-            # Get the preferred model using the UserPreferencesManager
-            preferred_model = await preferences_manager.get_user_model_preference(
-                user_id
-            )
-            self.logger.info(f"Preferred model for user {user_id}: {preferred_model}")
+            # Safe check for model_registry before accessing it
+            if self.model_registry and self.model_history_manager:
+                try:
+                    selected_model = self.model_history_manager.get_selected_model(
+                        user_id
+                    )
+                    model_config = self.model_registry.get_model_config(selected_model)
+                    self.logger.info(f"Current model: {model_config}")
+                except Exception as e:
+                    self.logger.error(f"Error accessing model config: {e}")
+                    # Fall back to using preferred_model directly
+                    self.logger.info(
+                        f"Falling back to preferred model: {preferred_model}"
+                    )
+            else:
+                self.logger.info(
+                    "model_registry or model_history_manager is not available, using preferred_model directly"
+                )
 
             # Apply response style guidelines using PromptFormatter
-            enhanced_prompt_with_guidelines = (
-                await self.prompt_formatter.apply_response_guidelines(
-                    enhanced_prompt,
-                    ModelHandlerFactory.get_model_handler(
-                        preferred_model,
-                        gemini_api=self.gemini_api,
-                        openrouter_api=self.openrouter_api,
-                        deepseek_api=self.deepseek_api,
-                    ),
-                    context,
-                )
+            enhanced_prompt_with_guidelines = await self.prompt_formatter.apply_response_guidelines(
+                enhanced_prompt,
+                ModelHandlerFactory.get_model_handler(
+                    preferred_model,
+                    gemini_api=self.gemini_api,
+                    openrouter_api=self.openrouter_api,
+                    deepseek_api=self.deepseek_api,  # Pass the deepseek_api instance
+                ),
+                context,
             )
 
             # Get model timeout
@@ -320,12 +367,12 @@ class TextHandler:
                 model_timeout = model_config.timeout_seconds if model_config else 60.0
 
             try:
-                # Get the model handler for the preferred model
+                # Get the model handler with all API instances properly provided
                 model_handler = ModelHandlerFactory.get_model_handler(
                     preferred_model,
                     gemini_api=self.gemini_api,
                     openrouter_api=self.openrouter_api,
-                    deepseek_api=self.deepseek_api,
+                    deepseek_api=self.deepseek_api,  # Pass the deepseek_api instance
                 )
 
                 # Generate response using the model handler with proper timeout from model_config

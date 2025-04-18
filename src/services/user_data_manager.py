@@ -41,6 +41,9 @@ class UserDataManager:
         # Add personal information memory
         self.personal_info_cache = {}
 
+        # Add preference memory cache to ensure consistency
+        self.preference_cache = {}
+
     async def initialize_user(self, user_id: int) -> None:
         """Initialize a new user in the database."""
         try:
@@ -315,7 +318,33 @@ class UserDataManager:
     ):
         """Get a user's preference setting."""
         try:
+            # Check the in-memory preference cache first
+            if hasattr(self, "preference_cache") and user_id in self.preference_cache:
+                if preference_key in self.preference_cache[user_id]:
+                    value = self.preference_cache[user_id][preference_key]
+                    self.logger.info(
+                        f"Retrieved preference {preference_key} for user {user_id} from cache: {value}"
+                    )
+                    return value
+
+            # Also check the backup if it exists
+            if hasattr(self, "preference_backup") and user_id in self.preference_backup:
+                if preference_key in self.preference_backup[user_id]:
+                    value = self.preference_backup[user_id][preference_key]
+                    self.logger.info(
+                        f"Retrieved preference {preference_key} for user {user_id} from backup: {value}"
+                    )
+                    # Store in primary cache for next time
+                    if not hasattr(self, "preference_cache"):
+                        self.preference_cache = {}
+                    if user_id not in self.preference_cache:
+                        self.preference_cache[user_id] = {}
+                    self.preference_cache[user_id][preference_key] = value
+                    return value
+
+            # If not in cache, try to get from database
             user_data = await self.get_user_data(user_id)
+
             if not user_data or "preferences" not in user_data:
                 self.logger.info(
                     f"No preferences found for user {user_id}, returning default: {default}"
@@ -325,8 +354,16 @@ class UserDataManager:
                 return default
 
             value = user_data["preferences"].get(preference_key, default)
+
+            # Store in cache for future fast access
+            if not hasattr(self, "preference_cache"):
+                self.preference_cache = {}
+            if user_id not in self.preference_cache:
+                self.preference_cache[user_id] = {}
+            self.preference_cache[user_id][preference_key] = value
+
             self.logger.info(
-                f"Retrieved preference {preference_key} for user {user_id}: {value}"
+                f"Retrieved preference {preference_key} for user {user_id} from database: {value}"
             )
             return value
         except Exception as e:
@@ -357,13 +394,20 @@ class UserDataManager:
                     f"Preference update not acknowledged for user {user_id}"
                 )
 
+            # Always update the preference_cache to ensure consistency
+            if not hasattr(self, "preference_cache"):
+                self.preference_cache = {}
+            if user_id not in self.preference_cache:
+                self.preference_cache[user_id] = {}
+            self.preference_cache[user_id][preference_key] = value
+
             # Also update in-memory cache if we have one
             if hasattr(self, "user_data_cache") and user_id in self.user_data_cache:
                 if "preferences" not in self.user_data_cache[user_id]:
                     self.user_data_cache[user_id]["preferences"] = {}
                 self.user_data_cache[user_id]["preferences"][preference_key] = value
 
-            # Added: Store preference in a persistent in-memory backup
+            # Store preference in a persistent in-memory backup
             if not hasattr(self, "preference_backup"):
                 self.preference_backup = {}
             if user_id not in self.preference_backup:

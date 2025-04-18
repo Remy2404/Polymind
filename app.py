@@ -24,6 +24,8 @@ from telegram.ext import (
     PicklePersistence,
 )
 from cachetools import TTLCache, LRUCache
+import threading
+import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.database.connection import get_database, close_database_connection
@@ -144,14 +146,13 @@ class TelegramBot:
         self.application = (
             Application.builder()
             .token(self.token)
-            .persistence(PicklePersistence(filepath="conversation_states.pickle"))
             .http_version("1.1")
             .get_updates_http_version("1.1")
             .read_timeout(None)
             .write_timeout(None)
             .connect_timeout(None)
             .pool_timeout(None)
-            .connection_pool_size(128)  # Increased connection pool size
+            .connection_pool_size(128)
             .build()
         )
 
@@ -262,12 +263,12 @@ class TelegramBot:
             self.logger.error(f"Error initializing services: {e}")
             raise
 
-        # Initialize TextHandler with utility classes
+        # Initialize TextHandler with utility classes and ALL API instances
         self.text_handler = TextHandler(
             gemini_api=self.gemini_api,
             user_data_manager=self.user_data_manager,
-            openrouter_api=self.openrouter_api,
-            deepseek_api=self.deepseek_api,
+            openrouter_api=self.openrouter_api,  # Ensure this is passed
+            deepseek_api=self.deepseek_api,  # Ensure this is passed
         )
 
         # Once text_handler is initialized, create ConversationManager
@@ -278,12 +279,14 @@ class TelegramBot:
         )
         self.application.bot_data["conversation_manager"] = self.conversation_manager
 
-        # Initialize other handlers
+        # Initialize other handlers - pass ALL API instances needed by any model
         self.command_handler = CommandHandlers(
             gemini_api=self.gemini_api,
             user_data_manager=self.user_data_manager,
             telegram_logger=self.telegram_logger,
             flux_lora_image_generator=flux_lora_image_generator,
+            deepseek_api=self.deepseek_api,  # Ensure this is passed
+            openrouter_api=self.openrouter_api,  # Ensure this is passed for DeepCoder and other models
         )
 
         # Initialize DocumentProcessor with the bot parameter
@@ -296,6 +299,8 @@ class TelegramBot:
             self.telegram_logger,
             self.document_processor,
             self.text_handler,
+            deepseek_api=self.deepseek_api,  # Pass the deepseek_api instance
+            openrouter_api=self.openrouter_api,  # Pass the openrouter_api instance
         )
 
         # Share utility classes with message_handlers
@@ -496,6 +501,12 @@ if __name__ == "__main__":
             # Register the webhook handler
             app = create_app(main_bot, loop)
 
+            # Start keep-alive thread if not running in debug mode
+            if os.getenv("ENVIRONMENT") != "development":
+                keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
+                keep_alive_thread.start()
+                logger.info("Keep-alive thread started")
+
             def run_fastapi():
                 port = int(os.environ.get("PORT", 8000))
                 config = uvicorn.Config(
@@ -505,7 +516,7 @@ if __name__ == "__main__":
                     loop="asyncio",
                     timeout_keep_alive=None,
                     timeout_graceful_shutdown=None,
-                    limit_concurrency=None,  #
+                    limit_concurrency=None,
                     backlog=4096,
                     workers=4,
                 )

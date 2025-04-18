@@ -80,6 +80,8 @@ class CommandHandlers:
         user_data_manager: UserDataManager,
         telegram_logger: telegram_logger,
         flux_lora_image_generator: flux_lora_image_generator,
+        deepseek_api=None,  # Add parameter for DeepSeek API
+        openrouter_api=None,  # Add parameter for OpenRouter API
     ):
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
@@ -87,6 +89,8 @@ class CommandHandlers:
         self.logger = logging.getLogger(__name__)
         self.telegram_logger = telegram_logger
         self.image_handler = ImageGenerationHandler()
+        self.deepseek_api = deepseek_api  # Store DeepSeek API instance
+        self.openrouter_api = openrouter_api  # Store OpenRouter API instance
 
     # --- AI Document Generation Methods --- START ---
     async def generate_ai_document_command(

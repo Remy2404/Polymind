@@ -49,6 +49,8 @@ class MessageHandlers:
         telegram_logger,
         document_processor,
         text_handler,
+        deepseek_api=None,
+        openrouter_api=None,
     ):
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
@@ -56,6 +58,8 @@ class MessageHandlers:
         self.document_processor = document_processor
         self.text_handler = text_handler
         self.logger = logging.getLogger(__name__)
+        self.deepseek_api = deepseek_api
+        self.openrouter_api = openrouter_api
 
         # Initialize utility classes
         self.context_handler = MessageContextHandler()
@@ -131,8 +135,13 @@ class MessageHandlers:
             # Initialize user data if not already initialized
             await self.user_data_manager.initialize_user(user_id)
 
-            # Create text handler instance
-            text_handler = TextHandler(self.gemini_api, self.user_data_manager)
+            # Create text handler instance with all required API instances
+            text_handler = TextHandler(
+                self.gemini_api,
+                self.user_data_manager,
+                openrouter_api=self.openrouter_api,  # Pass the openrouter_api for models like llama4_maverick
+                deepseek_api=self.deepseek_api,  # Pass the deepseek_api for deepseek model
+            )
 
             # Process the message
             await text_handler.handle_text_message(update, context)
