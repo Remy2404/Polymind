@@ -80,7 +80,7 @@ thread_pool = ThreadPoolExecutor(max_workers=4)
 
 
 @app.get("/")
-@app.head("/")  # Add HEAD request handler
+@app.head("/")
 async def root_get():
     """Root endpoint for health checks."""
     return JSONResponse(
@@ -742,6 +742,7 @@ def get_application():
 
     # Create a health check endpoint with detailed status
     @app.get("/health")
+    @app.head("/health")
     async def health_check():
         """Enhanced health check endpoint with detailed status information."""
         health_data = {
