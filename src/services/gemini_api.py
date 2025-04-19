@@ -278,17 +278,13 @@ class GeminiAPI:
             return f"I'm sorry, I encountered an error processing your image: {str(e)}"
 
     async def generate_image(self, prompt: str) -> Optional[bytes]:
-        """
-        Generate an image based on the provided text prompt.
-        Uses gemini-2.0-flash-exp-image-generation for image generation with proper response_modalities parameter.
-        Returns the image as bytes. Checks cache before generating a new image.
-        """
+
         # Check cache first
         if self.image_cache is not None:
             cached_image = await asyncio.to_thread(
                 self.image_cache.find_one, {"prompt": prompt}
             )
-            if cached_image:
+            if cached_image is not None:  # Explicitly check for None
                 self.logger.info(f"Cache hit for prompt: '{prompt}'")
                 return cached_image["image_data"]
 
@@ -314,13 +310,33 @@ class GeminiAPI:
                     response_modalities=["TEXT", "IMAGE"],
                 ),
             )
-            if hasattr(response, "candidates") and response.candidates:
+
+            # Check if response exists
+            if response is None:
+                self.logger.warning(
+                    f"Image generation returned None response for prompt: '{prompt}'"
+                )
+                return None
+
+            # Explicit checks for response attributes
+            if hasattr(response, "candidates") and response.candidates is not None:
                 for candidate in response.candidates:
-                    if hasattr(candidate, "content") and candidate.content:
+                    if (
+                        candidate is not None
+                        and hasattr(candidate, "content")
+                        and candidate.content is not None
+                    ):
                         for part in candidate.content.parts:
-                            if hasattr(part, "inline_data") and part.inline_data:
+                            if (
+                                part is not None
+                                and hasattr(part, "inline_data")
+                                and part.inline_data is not None
+                            ):
                                 image_bytes = part.inline_data.data
-                                if image_bytes and self.image_cache:
+                                if (
+                                    image_bytes is not None
+                                    and self.image_cache is not None
+                                ):
                                     cache_document = {
                                         "prompt": prompt,
                                         "image_data": image_bytes,
@@ -336,6 +352,14 @@ class GeminiAPI:
                                         f"Cached image for prompt: '{prompt}'"
                                     )
                                 return image_bytes
+
+            # Additional debugging information
+            self.logger.debug(f"Response structure: {type(response)}")
+            if hasattr(response, "candidates"):
+                self.logger.debug(
+                    f"Candidates: {len(response.candidates) if response.candidates is not None else 'None'}"
+                )
+
             self.logger.warning(
                 f"No image found in gemini-2.0-flash-exp-image-generation response for prompt: '{prompt}'"
             )

@@ -100,12 +100,15 @@ class TextHandler:
                     for msg_id in context.user_data["bot_messages"][
                         original_message_id
                     ]:
-                        try:
-                            await context.bot.delete_message(
-                                chat_id=update.effective_chat.id, message_id=msg_id
-                            )
-                        except Exception as e:
-                            self.logger.error(f"Error deleting old message: {str(e)}")
+                        if msg_id:
+                            try:
+                                await context.bot.delete_message(
+                                    chat_id=update.effective_chat.id, message_id=msg_id
+                                )
+                            except Exception as e:
+                                self.logger.error(
+                                    f"Error deleting old message: {str(e)}"
+                                )
                     del context.user_data["bot_messages"][original_message_id]
 
             # In group chats, process only messages that mention the bot
@@ -231,11 +234,18 @@ class TextHandler:
 
             if is_image_request and image_prompt:
                 # Try to delete the thinking message first, but continue even if it fails
-                try:
-                    await thinking_message.delete()
-                except Exception as e:
-                    self.logger.warning(f"Could not delete thinking message: {e}")
-                    # Continue processing even if deletion fails
+                if thinking_message is not None:
+                    try:
+                        await thinking_message.delete()
+                        thinking_message = (
+                            None  # Mark as deleted to avoid double deletion attempts
+                        )
+                    except Exception as e:
+                        self.logger.warning(f"Could not delete thinking message: {e}")
+                        # Continue processing even if deletion fails
+                        thinking_message = (
+                            None  # Mark as deleted to avoid double deletion attempts
+                        )
 
                 # Inform the user that image generation is starting
                 status_message = await update.message.reply_text(
@@ -248,43 +258,100 @@ class TextHandler:
                         image_prompt
                     )
 
-                    if image_bytes:
-                        # Delete the status message
-                        await status_message.delete()
+                    if image_bytes and len(image_bytes) > 0:
+                        # Delete the status message if it exists
+                        if status_message is not None:
+                            try:
+                                await status_message.delete()
+                                status_message = None  # Mark as deleted
+                            except Exception as e:
+                                self.logger.warning(
+                                    f"Could not delete status message: {e}"
+                                )
+                                # Try to edit if delete fails
+                                try:
+                                    await status_message.edit_text(
+                                        "✅ Image generated successfully!"
+                                    )
+                                    status_message = None  # Consider handled
+                                except Exception:
+                                    status_message = (
+                                        None  # Consider handled even if edit fails
+                                    )
+                                    pass
 
-                        # Send the image
-                        caption = f"Generated image of: {image_prompt}"
-                        await update.message.reply_photo(
-                            photo=image_bytes, caption=caption
-                        )
-
-                        # Update user stats
-                        if self.user_data_manager:
-                            await self.user_data_manager.update_stats(
-                                user_id, image_generation=True
+                        try:
+                            # Send the image
+                            caption = f"Generated image of: {image_prompt}"
+                            await update.message.reply_photo(
+                                photo=io.BytesIO(image_bytes), caption=caption
                             )
 
-                        # Save interaction to conversation history using ConversationManager
-                        await self.conversation_manager.save_media_interaction(
-                            user_id,
-                            "generated_image",
-                            f"Generate an image of: {image_prompt}",
-                            f"Here's the image I generated of {image_prompt}.",
-                        )
+                            # Update user stats
+                            if self.user_data_manager:
+                                await self.user_data_manager.update_stats(
+                                    user_id, image_generation=True
+                                )
+
+                            # Save interaction to conversation history using ConversationManager
+                            await self.conversation_manager.save_media_interaction(
+                                user_id,
+                                "generated_image",
+                                f"Generate an image of: {image_prompt}",
+                                f"Here's the image I generated of {image_prompt}.",
+                            )
+                        except Exception as send_error:
+                            self.logger.error(
+                                f"Error sending generated image: {str(send_error)}"
+                            )
+                            await update.message.reply_text(
+                                f"I generated the image but couldn't send it due to an error: {str(send_error)}"
+                            )
 
                         # Return early since we've handled the request
                         return
                     else:
                         # Update status message if image generation failed
-                        await status_message.edit_text(
-                            "Sorry, I couldn't generate that image. Please try a different description or use the /imagen3 command."
+                        self.logger.warning(
+                            f"Image generation returned empty result for prompt: {image_prompt}"
                         )
+                        if status_message is not None:
+                            try:
+                                await status_message.edit_text(
+                                    "Sorry, I couldn't generate that image. Please try with a different description."
+                                )
+                                status_message = None  # Mark as handled
+                            except Exception as edit_error:
+                                self.logger.warning(
+                                    f"Could not edit status message: {str(edit_error)}"
+                                )
+                                try:
+                                    # If edit fails, try sending a new message
+                                    await update.message.reply_text(
+                                        "Sorry, I couldn't generate that image. Please try with a different description."
+                                    )
+                                except Exception:
+                                    pass
                         # Continue with normal text response as fallback
                 except Exception as e:
                     self.logger.error(f"Error generating image: {e}")
-                    await status_message.edit_text(
-                        "Sorry, there was an error generating your image. Please try again later."
-                    )
+                    if status_message is not None:
+                        try:
+                            await status_message.edit_text(
+                                "Sorry, there was an error generating your image. Please try again later."
+                            )
+                            status_message = None  # Mark as handled
+                        except Exception as edit_error:
+                            self.logger.warning(
+                                f"Could not edit status message: {str(edit_error)}"
+                            )
+                            try:
+                                # If edit fails, try sending a new message
+                                await update.message.reply_text(
+                                    "Sorry, there was an error generating your image. Please try again later."
+                                )
+                            except Exception:
+                                pass
 
             # Try to get model registry and user model manager from application context
             if hasattr(context, "application") and hasattr(
