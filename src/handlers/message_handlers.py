@@ -119,21 +119,16 @@ class MessageHandlers:
                 f"Received text message from user {user_id}: {message_text}"
             )
 
-            # Check if the bot is mentioned
+            # Initialize user data if not already initialized
+            await self.user_data_manager.initialize_user(user_id)
+
+            # Check if the bot is mentioned but don't send an automatic reply
+            # Just log it for tracking purposes
             bot_username = "@Gemini_AIAssistBot"
             if bot_username in message_text:
                 self.logger.info(f"Bot mentioned by user {user_id}")
-                if update.callback_query:
-                    await update.callback_query.edit_message_text(
-                        "Hello! How can I assist you today?"
-                    )
-                else:
-                    await update.message.reply_text(
-                        "Hello! How can I assist you today?"
-                    )
-
-            # Initialize user data if not already initialized
-            await self.user_data_manager.initialize_user(user_id)
+                # Remove the automatic greeting that was causing duplicate responses
+                # We'll let the text handler process the full message instead
 
             # Create text handler instance with all required API instances
             text_handler = TextHandler(
