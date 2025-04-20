@@ -1,14 +1,5 @@
 Telegram Gemini Bot
 
-A sophisticated Telegram bot powered by Google's Gemini AI & DeepSeek AI that offers advanced conversational abilities, image processing, document handling, and more.
-
-<div align="center">
-  <img src="assets/templates/Project_report_group5.png" alt="Telegram Gemini Bot Logo" width="200">
-</div>
-
-## ✨ Features
-
-Telegram Gemini Bot
 
 A sophisticated Telegram bot powered by Google's Gemini AI & DeepSeek AI that offers advanced conversational abilities, image processing, document handling, and more.
 
