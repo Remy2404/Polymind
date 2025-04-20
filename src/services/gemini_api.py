@@ -277,28 +277,92 @@ class GeminiAPI:
             telegram_logger.log_error(f"Image analysis error: {str(e)}", 0)
             return f"I'm sorry, I encountered an error processing your image: {str(e)}"
 
-    async def generate_image(self, prompt: str) -> Optional[bytes]:
+    async def handle_multimodal_input(
+        self, prompt: str, media_files: List[Dict] = None
+    ) -> str:
+        """
+        Process a multimodal input with various file types (images, audio, video, text)
+        and generate a comprehensive response.
 
+        Args:
+            prompt: The user's text prompt
+            media_files: List of dictionaries with media file data
+                Each dict should have:
+                - type: "photo", "video", "audio", "document"
+                - data: BytesIO object containing the file data
+                - mime: MIME type of the file
+
+        Returns:
+            Generated text response
+        """
+        await self.rate_limiter.acquire()
+
+        try:
+            # Handle the case with no media files (text-only)
+            if not media_files:
+                return await self.generate_response(prompt)
+
+            # For simplicity, we'll focus on handling the first file
+            # A more robust implementation would handle multiple files
+            media = media_files[0]
+            media_type = media["type"]
+            media_data = media["data"]
+
+            # Different handling based on media type
+            if media_type == "photo":
+                # Direct integration with analyze_image
+                return await self.analyze_image(media_data, prompt)
+
+            elif media_type in ("video", "audio"):
+                # Use a specialized prompt for video/audio
+                enhanced_prompt = f"[User uploaded a {media_type} file] {prompt}"
+                return await self.generate_response(enhanced_prompt)
+
+            elif media_type == "document":
+                # For documents, include filename information
+                filename = media.get("filename", "unknown file")
+                enhanced_prompt = f"[User uploaded a document: {filename}] {prompt}"
+                return await self.generate_response(enhanced_prompt)
+
+            # Fallback for unsupported media types
+            return await self.generate_response(
+                f"[User uploaded a file of type {media_type}] {prompt}"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Error in multimodal processing: {str(e)}")
+            return f"I'm sorry, I had trouble processing your {media_type if 'media_type' in locals() else 'media'}. Please try again or describe what you're looking for."
+
+    async def generate_image(self, prompt: str) -> Optional[bytes]:
+        """
+        Generate an image based on a text prompt using Gemini's image generation capabilities.
+
+        Args:
+            prompt: Text description of the image to generate
+
+        Returns:
+            Image data as bytes
+        """
         # Check cache first
         if self.image_cache is not None:
             cached_image = await asyncio.to_thread(
                 self.image_cache.find_one, {"prompt": prompt}
             )
-            if cached_image is not None:  # Explicitly check for None
+            if cached_image is not None:
                 self.logger.info(f"Cache hit for prompt: '{prompt}'")
                 return cached_image["image_data"]
 
         await self.rate_limiter.acquire()
 
         try:
-            # Attempt with gemini-2.0-flash-exp-image-generation (official image generation model)
+            # Enhance the prompt for better results
+            enhanced_prompt = f"Generate a detailed, high-quality image of: {prompt}. Make it visually appealing with good lighting and composition."
+
             self.logger.info(
-                f"Attempting image generation with gemini-2.0-flash-exp-image-generation for: '{prompt}'"
+                f"Generating image with Gemini 2.0 for prompt: '{enhanced_prompt}'"
             )
-            enhanced_prompt = f"Generate a high-quality, detailed image of: {prompt}. Make it photorealistic and visually appealing."
-            self.logger.info(
-                f"Attempting to generate image with gemini-2.0-flash-exp-image-generation: '{enhanced_prompt}'"
-            )
+
+            # Call the Gemini 2.0 Flash for image generation
             response = await asyncio.to_thread(
                 self.genai_client.models.generate_content,
                 model="gemini-2.0-flash-exp-image-generation",
@@ -311,32 +375,17 @@ class GeminiAPI:
                 ),
             )
 
-            # Check if response exists
-            if response is None:
-                self.logger.warning(
-                    f"Image generation returned None response for prompt: '{prompt}'"
-                )
-                return None
-
-            # Explicit checks for response attributes
-            if hasattr(response, "candidates") and response.candidates is not None:
+            # Extract image data from response
+            if response and hasattr(response, "candidates"):
                 for candidate in response.candidates:
-                    if (
-                        candidate is not None
-                        and hasattr(candidate, "content")
-                        and candidate.content is not None
-                    ):
+                    if hasattr(candidate, "content") and candidate.content:
                         for part in candidate.content.parts:
-                            if (
-                                part is not None
-                                and hasattr(part, "inline_data")
-                                and part.inline_data is not None
-                            ):
+                            if hasattr(part, "inline_data") and part.inline_data:
+                                # Extract the image data
                                 image_bytes = part.inline_data.data
-                                if (
-                                    image_bytes is not None
-                                    and self.image_cache is not None
-                                ):
+
+                                # Cache the result if we have image data
+                                if image_bytes and self.image_cache is not None:
                                     cache_document = {
                                         "prompt": prompt,
                                         "image_data": image_bytes,
@@ -351,22 +400,44 @@ class GeminiAPI:
                                     self.logger.info(
                                         f"Cached image for prompt: '{prompt}'"
                                     )
+
                                 return image_bytes
 
-            # Additional debugging information
-            self.logger.debug(f"Response structure: {type(response)}")
-            if hasattr(response, "candidates"):
-                self.logger.debug(
-                    f"Candidates: {len(response.candidates) if response.candidates is not None else 'None'}"
-                )
+            # If we reach here, no image data was found in the response
+            self.logger.warning(f"No image generated for prompt: '{prompt}'")
+            return None
 
-            self.logger.warning(
-                f"No image found in gemini-2.0-flash-exp-image-generation response for prompt: '{prompt}'"
-            )
-            return None
         except Exception as e:
-            self.logger.error(f"Error in image generation: {str(e)}")
+            self.logger.error(f"Image generation error: {str(e)}")
             return None
+
+    async def analyze_contents(
+        self, file_data: io.BytesIO, file_type: str, prompt: str
+    ) -> str:
+        """
+        Analyze the contents of various file types (improved version)
+
+        Args:
+            file_data: BytesIO containing the file data
+            file_type: The type of file ("image", "video", "audio", "document", etc.)
+            prompt: User's prompt or question about the file
+
+        Returns:
+            Analysis text response
+        """
+        try:
+            if file_type == "image":
+                # Use existing image analysis logic
+                return await self.analyze_image(file_data, prompt)
+
+            # For other file types, use specialized handling
+            # In a full implementation, you'd add specific processors for each file type
+            enhanced_prompt = f"[User uploaded a {file_type} file] {prompt}"
+            return await self.generate_response(enhanced_prompt)
+
+        except Exception as e:
+            self.logger.error(f"Error analyzing {file_type}: {str(e)}")
+            return f"I'm sorry, I encountered an error analyzing your {file_type}. {str(e)}"
 
     async def generate_response(
         self,

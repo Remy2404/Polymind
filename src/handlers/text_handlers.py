@@ -1,27 +1,32 @@
 import io
 import os
-import aiofiles
+import logging
 from telegram import Update
-from telegram.ext import ContextTypes, MessageHandler, filters
+from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 from utils.telegramlog import telegram_logger
 from services.gemini_api import GeminiAPI
 from services.user_data_manager import UserDataManager
-from typing import List
-import datetime
-import logging
-from services.model_handlers.factory import ModelHandlerFactory
+from typing import List, Dict, Any
 import asyncio
-from services.memory_manager import MemoryManager
-from services.model_handlers.model_history_manager import ModelHistoryManager
 
-# Use relative imports for handler utilities
+# Import core handler utilities
 from .message_context_handler import MessageContextHandler
 from .response_formatter import ResponseFormatter
 from .media_context_extractor import MediaContextExtractor
+
+# Import model and service utilities
+from services.memory_manager import MemoryManager
+from services.model_handlers.model_history_manager import ModelHistoryManager
+from services.model_handlers.factory import ModelHandlerFactory
 from services.media.image_processor import ImageProcessor
 from services.model_handlers.prompt_formatter import PromptFormatter
 from services.conversation_manager import ConversationManager
+
+# Import our newly modularized code
+from .text_processing.intent_detector import IntentDetector
+from .text_processing.media_analyzer import MediaAnalyzer
+from .text_processing.utilities import MediaUtilities, MessagePreprocessor
 
 
 class TextHandler:
@@ -39,32 +44,38 @@ class TextHandler:
         self.deepseek_api = deepseek_api
         self.max_context_length = 9
 
-        # Initialize MemoryManager
+        # Initialize memory and history management
         self.memory_manager = MemoryManager(
             db=user_data_manager.db if hasattr(user_data_manager, "db") else None,
         )
         self.memory_manager.short_term_limit = 15
         self.memory_manager.token_limit = 8192
-
-        # Initialize model components with safe defaults
-        self.model_registry = None
-        self.user_model_manager = None
-
-        # Instantiate the ModelHistoryManager with safe initialization
         self.model_history_manager = ModelHistoryManager(self.memory_manager)
 
         # Initialize utility classes
+        self.model_registry = None
+        self.user_model_manager = None
+        self.model_registry_initialized = False
+
+        # Initialize context and formatting utilities
         self.context_handler = MessageContextHandler()
         self.response_formatter = ResponseFormatter()
         self.media_context_extractor = MediaContextExtractor()
-        self.image_processor = ImageProcessor(gemini_api)
         self.prompt_formatter = PromptFormatter()
+
+        # Initialize our image processing capability
+        self.image_processor = ImageProcessor(gemini_api)
+
+        # Initialize conversation manager
         self.conversation_manager = ConversationManager(
             self.memory_manager, self.model_history_manager
         )
 
-        # Flag to track if model_registry has been initialized
-        self.model_registry_initialized = False
+        # Initialize our new modular components
+        self.intent_detector = IntentDetector()
+        self.media_analyzer = MediaAnalyzer(gemini_api)
+        self.media_utilities = MediaUtilities()
+        self.message_preprocessor = MessagePreprocessor()
 
     async def format_telegram_markdown(self, text: str) -> str:
         # Delegate to ResponseFormatter
@@ -77,6 +88,10 @@ class TextHandler:
     async def handle_text_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
+        """
+        Main handler for text messages.
+        Processes user messages, detects intent, and generates appropriate responses.
+        """
         if not update.message and not update.edited_message:
             return
 
@@ -84,595 +99,882 @@ class TextHandler:
         message = update.message or update.edited_message
         message_text = message.text
 
-        # Extract quoted message using MessageContextHandler
+        # Extract quoted message context if this is a reply
         quoted_text, quoted_message_id = self.context_handler.extract_reply_context(
             message
         )
 
-        # Define a unique conversation ID for this user
+        # Define conversation ID for this user
         conversation_id = f"user_{user_id}"
 
         try:
-            # Delete old message if this is an edited message
+            # Handle edited messages
             if update.edited_message and "bot_messages" in context.user_data:
-                original_message_id = update.edited_message.message_id
-                if original_message_id in context.user_data["bot_messages"]:
-                    for msg_id in context.user_data["bot_messages"][
-                        original_message_id
-                    ]:
-                        if msg_id:
-                            try:
-                                await context.bot.delete_message(
-                                    chat_id=update.effective_chat.id, message_id=msg_id
-                                )
-                            except Exception as e:
-                                self.logger.error(
-                                    f"Error deleting old message: {str(e)}"
-                                )
-                    del context.user_data["bot_messages"][original_message_id]
+                await self._handle_edited_message(update, context)
 
-            # In group chats, process only messages that mention the bot
+            # In group chats, only process messages that mention the bot
             if update.effective_chat.type in ["group", "supergroup"]:
                 bot_username = "@" + context.bot.username
                 if bot_username not in message_text:
                     # Bot not mentioned, ignore message
                     return
                 else:
-                    # Remove all mentions of bot_username from the message text
+                    # Remove bot username from message text
                     message_text = message_text.replace(bot_username, "").strip()
 
-            # Check if user is referring to images or documents using MessageContextHandler
-            referring_to_image = self.context_handler.detect_reference_to_image(
-                message_text
-            )
-            referring_to_document = self.context_handler.detect_reference_to_document(
-                message_text
+            # Extract any attached media files
+            has_attached_media, media_files, media_type = (
+                await self._extract_media_files(update, context)
             )
 
-            # Send initial "thinking" message
-            thinking_message = await message.reply_text("Thinking...🧠")
-            await context.bot.send_chat_action(
-                chat_id=update.effective_chat.id, action=ChatAction.TYPING
+            # Send initial "thinking" message and appropriate chat action
+            thinking_message = await message.reply_text("Processing your request...🧠")
+            await self._send_appropriate_chat_action(
+                update, context, has_attached_media, media_type
             )
 
-            # Get the preferred model with the ModelHandler system
-            from services.user_preferences_manager import UserPreferencesManager
-
-            preferences_manager = UserPreferencesManager(self.user_data_manager)
-
-            # Get the preferred model using the UserPreferencesManager first so we can use it for history
-            preferred_model = await preferences_manager.get_user_model_preference(
-                user_id
+            # Detect user intent (analyze, generate image, or chat)
+            user_intent = await self.intent_detector.detect_user_intent(
+                message_text, has_attached_media
             )
-            self.logger.info(f"Preferred model for user {user_id}: {preferred_model}")
 
-            # Get conversation history using ConversationManager - IMPROVED TO USE MODEL-SPECIFIC HISTORY
-            history_context = []
-            if preferred_model:
-                # Get model-specific conversation history
-                history_context = await self.conversation_manager.get_conversation_history(
+            # Get user's preferred model
+            preferred_model = await self._get_user_preferred_model(user_id)
+
+            # Get conversation history for context
+            history_context = await self.conversation_manager.get_conversation_history(
+                user_id, max_messages=self.max_context_length, model=preferred_model
+            )
+
+            # Handle the request based on detected intent
+            if user_intent == "generate_image":
+                await self._handle_image_generation(
+                    update,
+                    context,
+                    thinking_message,
+                    message_text,
                     user_id,
-                    max_messages=self.max_context_length,
-                    model=preferred_model,  # Pass the specific model to get its history
-                )
-
-                if not history_context:
-                    self.logger.info(
-                        f"No model-specific history found for {preferred_model}, using default history"
-                    )
-                    # Fall back to default history if model-specific history is not available
-                    history_context = (
-                        await self.conversation_manager.get_conversation_history(
-                            user_id, max_messages=self.max_context_length
-                        )
-                    )
-            else:
-                # Use default history if no preferred model is specified
-                history_context = (
-                    await self.conversation_manager.get_conversation_history(
-                        user_id, max_messages=self.max_context_length
-                    )
-                )
-
-            self.logger.info(
-                f"Retrieved {len(history_context)} message(s) from history for user {user_id}"
-            )
-
-            # Build enhanced prompt with relevant context
-            enhanced_prompt = message_text
-            context_added = False
-
-            # Add quoted text context if this is a reply to another message
-            if quoted_text:
-                enhanced_prompt = self.prompt_formatter.add_context(
-                    message_text, "quote", quoted_text
-                )
-                context_added = True
-
-            # Add image context if relevant using MediaContextExtractor
-            if (
-                referring_to_image
-                and "image_history" in context.user_data
-                and context.user_data["image_history"]
-            ):
-                image_context = await self.media_context_extractor.get_image_context(
-                    context.user_data
-                )
-                if context_added:
-                    # We already have other context, so add this as additional context
-                    enhanced_prompt += f"\n\nThe user is also referring to previously shared images. Image context:\n\n{image_context}"
-                else:
-                    enhanced_prompt = self.prompt_formatter.add_context(
-                        message_text, "image", image_context
-                    )
-                    context_added = True
-
-            # Add document context if relevant using MediaContextExtractor
-            if (
-                referring_to_document
-                and "document_history" in context.user_data
-                and context.user_data["document_history"]
-            ):
-                document_context = (
-                    await self.media_context_extractor.get_document_context(
-                        context.user_data
-                    )
-                )
-                if context_added:
-                    # We already have other context, so add this as additional context
-                    enhanced_prompt += f"\n\nThe user is also referring to previously processed documents. Document context:\n\n{document_context}"
-                else:
-                    enhanced_prompt = self.prompt_formatter.add_context(
-                        message_text, "document", document_context
-                    )
-                    context_added = True
-
-            # Check if this is an image generation request using ImageProcessor
-            is_image_request, image_prompt = (
-                await self.image_processor.detect_image_generation_request(message_text)
-            )
-
-            if is_image_request and image_prompt:
-                # Try to delete the thinking message first, but continue even if it fails
-                if thinking_message is not None:
-                    try:
-                        await thinking_message.delete()
-                        thinking_message = (
-                            None  # Mark as deleted to avoid double deletion attempts
-                        )
-                    except Exception as e:
-                        self.logger.warning(f"Could not delete thinking message: {e}")
-                        # Continue processing even if deletion fails
-                        thinking_message = (
-                            None  # Mark as deleted to avoid double deletion attempts
-                        )
-
-                # Inform the user that image generation is starting
-                status_message = await update.message.reply_text(
-                    "Generating image... This may take a moment."
-                )
-
-                try:
-                    # Use the ImageProcessor to generate the image
-                    image_bytes = await self.image_processor.generate_image(
-                        image_prompt
-                    )
-
-                    if image_bytes and len(image_bytes) > 0:
-                        # Delete the status message if it exists
-                        if status_message is not None:
-                            try:
-                                await status_message.delete()
-                                status_message = None  # Mark as deleted
-                            except Exception as e:
-                                self.logger.warning(
-                                    f"Could not delete status message: {e}"
-                                )
-                                # Try to edit if delete fails
-                                try:
-                                    await status_message.edit_text(
-                                        "✅ Image generated successfully!"
-                                    )
-                                    status_message = None  # Consider handled
-                                except Exception:
-                                    status_message = (
-                                        None  # Consider handled even if edit fails
-                                    )
-                                    pass
-
-                        try:
-                            # Send the image
-                            caption = f"Generated image of: {image_prompt}"
-                            await update.message.reply_photo(
-                                photo=io.BytesIO(image_bytes), caption=caption
-                            )
-
-                            # Update user stats
-                            if self.user_data_manager:
-                                await self.user_data_manager.update_stats(
-                                    user_id, image_generation=True
-                                )
-
-                            # Save interaction to conversation history using ConversationManager
-                            await self.conversation_manager.save_media_interaction(
-                                user_id,
-                                "generated_image",
-                                f"Generate an image of: {image_prompt}",
-                                f"Here's the image I generated of {image_prompt}.",
-                            )
-                        except Exception as send_error:
-                            self.logger.error(
-                                f"Error sending generated image: {str(send_error)}"
-                            )
-                            await update.message.reply_text(
-                                f"I generated the image but couldn't send it due to an error: {str(send_error)}"
-                            )
-
-                        # Return early since we've handled the request
-                        return
-                    else:
-                        # Update status message if image generation failed
-                        self.logger.warning(
-                            f"Image generation returned empty result for prompt: {image_prompt}"
-                        )
-                        if status_message is not None:
-                            try:
-                                await status_message.edit_text(
-                                    "Sorry, I couldn't generate that image. Please try with a different description."
-                                )
-                                status_message = None  # Mark as handled
-                            except Exception as edit_error:
-                                self.logger.warning(
-                                    f"Could not edit status message: {str(edit_error)}"
-                                )
-                                try:
-                                    # If edit fails, try sending a new message
-                                    await update.message.reply_text(
-                                        "Sorry, I couldn't generate that image. Please try with a different description."
-                                    )
-                                except Exception:
-                                    pass
-                        # Continue with normal text response as fallback
-                except Exception as e:
-                    self.logger.error(f"Error generating image: {e}")
-                    if status_message is not None:
-                        try:
-                            await status_message.edit_text(
-                                "Sorry, there was an error generating your image. Please try again later."
-                            )
-                            status_message = None  # Mark as handled
-                        except Exception as edit_error:
-                            self.logger.warning(
-                                f"Could not edit status message: {str(edit_error)}"
-                            )
-                            try:
-                                # If edit fails, try sending a new message
-                                await update.message.reply_text(
-                                    "Sorry, there was an error generating your image. Please try again later."
-                                )
-                            except Exception:
-                                pass
-
-            # Try to get model registry and user model manager from application context
-            if hasattr(context, "application") and hasattr(
-                context.application, "bot_data"
-            ):
-                if not self.model_registry:
-                    self.model_registry = context.application.bot_data.get(
-                        "model_registry"
-                    )
-                if not self.user_model_manager:
-                    self.user_model_manager = context.application.bot_data.get(
-                        "user_model_manager"
-                    )
-
-                # If we have the model registry and user model manager, update the ModelHistoryManager
-                if (
-                    self.model_registry
-                    and self.user_model_manager
-                    and hasattr(self, "model_history_manager")
-                ):
-                    # Only update the ModelHistoryManager once
-                    if (
-                        not hasattr(self.model_history_manager, "model_registry")
-                        or not self.model_history_manager.model_registry
-                    ):
-                        # Create a new ModelHistoryManager with model_registry and user_model_manager
-                        from services.model_handlers.model_history_manager import (
-                            ModelHistoryManager,
-                        )
-
-                        self.model_history_manager = ModelHistoryManager(
-                            self.memory_manager,
-                            self.user_model_manager,
-                            self.model_registry,
-                        )
-                        self.logger.info(
-                            "Updated ModelHistoryManager with model_registry and user_model_manager"
-                        )
-
-                        # Update the ConversationManager with the new ModelHistoryManager
-                        self.conversation_manager = ConversationManager(
-                            self.memory_manager, self.model_history_manager
-                        )
-
-            # Safe check for model_registry before accessing it
-            if self.model_registry and self.model_history_manager:
-                try:
-                    selected_model = self.model_history_manager.get_selected_model(
-                        user_id
-                    )
-                    model_config = self.model_registry.get_model_config(selected_model)
-                    self.logger.info(f"Current model: {model_config}")
-                except Exception as e:
-                    self.logger.error(f"Error accessing model config: {e}")
-                    # Fall back to using preferred_model directly
-                    self.logger.info(
-                        f"Falling back to preferred model: {preferred_model}"
-                    )
-            else:
-                self.logger.info(
-                    "model_registry or model_history_manager is not available, using preferred_model directly"
-                )
-
-            # Apply response style guidelines using PromptFormatter
-            enhanced_prompt_with_guidelines = await self.prompt_formatter.apply_response_guidelines(
-                enhanced_prompt,
-                ModelHandlerFactory.get_model_handler(
                     preferred_model,
-                    gemini_api=self.gemini_api,
-                    openrouter_api=self.openrouter_api,
-                    deepseek_api=self.deepseek_api,  # Pass the deepseek_api instance
-                ),
+                )
+                return
+
+            elif has_attached_media and user_intent == "analyze":
+                await self._handle_media_analysis(
+                    update,
+                    context,
+                    thinking_message,
+                    media_files,
+                    media_type,
+                    message_text,
+                    user_id,
+                    preferred_model,
+                )
+                return
+
+            # If we're here, this is a regular text conversation
+            await self._handle_text_conversation(
+                update,
                 context,
+                thinking_message,
+                message_text,
+                quoted_text,
+                quoted_message_id,
+                history_context,
+                user_id,
+                preferred_model,
             )
 
-            # Get model timeout
-            model_timeout = 60.0  # Default timeout
-            if self.user_model_manager:
-                model_config = self.user_model_manager.get_user_model_config(user_id)
-                model_timeout = model_config.timeout_seconds if model_config else 60.0
-
-            try:
-                # Get the model handler with all API instances properly provided
-                model_handler = ModelHandlerFactory.get_model_handler(
-                    preferred_model,
-                    gemini_api=self.gemini_api,
-                    openrouter_api=self.openrouter_api,
-                    deepseek_api=self.deepseek_api,  # Pass the deepseek_api instance
-                )
-
-                # Generate response using the model handler with proper timeout from model_config
-                response = await asyncio.wait_for(
-                    model_handler.generate_response(
-                        prompt=enhanced_prompt_with_guidelines,
-                        context=history_context,
-                        temperature=0.7,
-                        max_tokens=4000,
-                        quoted_message=quoted_text,  # Pass the quoted message to the model handler
-                    ),
-                    timeout=model_timeout,
-                )
-            except asyncio.TimeoutError:
-                await thinking_message.delete()
-                await message.reply_text(
-                    "Sorry, the request took too long to process. Please try again later.",
-                    parse_mode="MarkdownV2",
-                )
-                return
-            except Exception as e:
-                self.logger.error(f"Error generating response: {e}")
-                await thinking_message.delete()
-                await message.reply_text(
-                    "Sorry, there was an error processing your request. Please try again later.",
-                    parse_mode="MarkdownV2",
-                )
-                return
-
-            if response is None:
-                await thinking_message.delete()
-                await message.reply_text(
-                    "Sorry, I couldn't generate a response\\. Please try rephrasing your message\\.",
-                    parse_mode="MarkdownV2",
-                )
-                return
-
-            # Split long messages using ResponseFormatter and send them
-            message_chunks = await self.response_formatter.split_long_message(response)
-            await thinking_message.delete()
-
-            # Store the message IDs for potential editing
-            sent_messages = []
-
-            # Get model indicator from the model handler
-            model_indicator = model_handler.get_model_indicator()
-            context.user_data["last_message_indicator"] = model_indicator
-
-            # Determine if this is a reply
-            is_reply = self.context_handler.should_use_reply_format(
-                quoted_text, quoted_message_id
-            )
-
-            for i, chunk in enumerate(message_chunks):
-                try:
-                    # Format response with model indicator using ResponseFormatter
-                    if i == 0:
-                        text_to_send = (
-                            self.response_formatter.format_with_model_indicator(
-                                chunk, model_indicator, is_reply
-                            )
-                        )
-                    else:
-                        text_to_send = chunk
-
-                    # Format with telegramify-markdown using ResponseFormatter
-                    formatted_chunk = (
-                        await self.response_formatter.format_telegram_markdown(
-                            text_to_send
-                        )
-                    )
-
-                    if i == 0:
-                        # For first chunk, use reply_to_message_id if this is a reply
-                        if is_reply:
-                            last_message = await message.reply_text(
-                                formatted_chunk,
-                                parse_mode="MarkdownV2",
-                                disable_web_page_preview=True,
-                                reply_to_message_id=quoted_message_id,
-                            )
-                        else:
-                            last_message = await message.reply_text(
-                                formatted_chunk,
-                                parse_mode="MarkdownV2",
-                                disable_web_page_preview=True,
-                            )
-                    else:
-                        last_message = await context.bot.send_message(
-                            chat_id=update.effective_chat.id,
-                            text=formatted_chunk,
-                            parse_mode="MarkdownV2",
-                            disable_web_page_preview=True,
-                        )
-                    sent_messages.append(last_message)
-                except Exception as formatting_error:
-                    self.logger.error(f"Formatting failed: {str(formatting_error)}")
-                    if i == 0:
-                        last_message = await message.reply_text(
-                            chunk.replace("*", "").replace("_", "").replace("`", ""),
-                            parse_mode=None,
-                        )
-                    else:
-                        last_message = await context.bot.send_message(
-                            chat_id=update.effective_chat.id,
-                            text=chunk.replace("*", "")
-                            .replace("_", "")
-                            .replace("`", ""),
-                            parse_mode=None,
-                        )
-                    sent_messages.append(last_message)
-
-            # Save interaction to conversation history using ConversationManager
-            if response:
-                if quoted_text:
-                    # If there was a quoted message, use special handling
-                    await self.conversation_manager.add_quoted_message_context(
-                        user_id, quoted_text, message_text, response
-                    )
-                else:
-                    # Regular message pair
-                    await self.conversation_manager.save_message_pair(
-                        user_id, message_text, response, preferred_model
-                    )
-
-                # Store the message IDs in context for future editing
-                if "bot_messages" not in context.user_data:
-                    context.user_data["bot_messages"] = {}
-                context.user_data["bot_messages"][message.message_id] = [
-                    msg.message_id for msg in sent_messages
-                ]
-
-            telegram_logger.log_message(f"Text response sent successfully", user_id)
         except Exception as e:
             self.logger.error(f"Error processing text message: {str(e)}")
-            if "thinking_message" in locals():
+            if "thinking_message" in locals() and thinking_message is not None:
                 await thinking_message.delete()
             await update.message.reply_text(
                 "Sorry, I encountered an error\\. Please try again later\\.",
                 parse_mode="MarkdownV2",
             )
 
-    async def handle_image(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        """Handle incoming image messages with AI analysis."""
-        user_id = update.effective_user.id
-        self.logger.info(f"Processing image from user {user_id}")
+    async def _handle_edited_message(self, update, context):
+        """Handle when a user edits their previous message"""
+        original_message_id = update.edited_message.message_id
+        if original_message_id in context.user_data["bot_messages"]:
+            for msg_id in context.user_data["bot_messages"][original_message_id]:
+                if msg_id:
+                    try:
+                        await context.bot.delete_message(
+                            chat_id=update.effective_chat.id, message_id=msg_id
+                        )
+                    except Exception as e:
+                        self.logger.error(f"Error deleting old message: {str(e)}")
+            del context.user_data["bot_messages"][original_message_id]
 
-        try:
-            # Get the largest available photo
-            photo = update.message.photo[-1]
-            caption = update.message.caption or "What's in this image?"
+    async def _extract_media_files(self, update, context):
+        """Extract media files from the update"""
+        has_attached_media = False
+        media_files = []
+        media_type = None
 
-            # Send typing action and initial status message
-            await context.bot.send_chat_action(
-                chat_id=update.effective_chat.id, action=ChatAction.TYPING
-            )
-            status_message = await update.message.reply_text(
-                "Analyzing image... This may take a moment."
-            )
-
-            # Download the image
-            image_file = await context.bot.get_file(photo.file_id)
-            image_bytes_io = io.BytesIO()
-            await image_file.download_to_memory(image_bytes_io)
-            image_bytes_io.seek(0)
-
-            # Store in user context for future reference
-            if "image_history" not in context.user_data:
-                context.user_data["image_history"] = []
-
-            # Add to the beginning (most recent first)
-            context.user_data["image_history"].insert(
-                0,
-                {
-                    "file_id": photo.file_id,
-                    "caption": caption,
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "width": photo.width,
-                    "height": photo.height,
-                },
-            )
-
-            # Limit the history size
-            if len(context.user_data["image_history"]) > 5:
-                context.user_data["image_history"] = context.user_data["image_history"][
-                    :5
-                ]
-
-            # Analyze the image with a prompt
-            response = await self.image_processor.analyze_image(image_bytes_io, caption)
-
-            # Delete status message
-            await status_message.delete()
-
-            if response:
-                # Format the response with model indicator
-                model_indicator = "🧠 Gemini"
-                text_to_send = self.response_formatter.format_with_model_indicator(
-                    response, model_indicator
+        if update.message:
+            if update.message.photo:
+                has_attached_media = True
+                media_type = "photo"
+                photo = update.message.photo[-1]
+                photo_file = await context.bot.get_file(photo.file_id)
+                photo_bytes = await photo_file.download_as_bytearray()
+                media_files.append(
+                    {
+                        "type": "photo",
+                        "data": io.BytesIO(photo_bytes),
+                        "mime": "image/jpeg",
+                        "filename": f"photo_{photo.file_id}.jpg",
+                    }
                 )
 
-                # Format with telegramify-markdown
-                formatted_response = (
-                    await self.response_formatter.format_telegram_markdown(text_to_send)
+            elif update.message.video:
+                has_attached_media = True
+                media_type = "video"
+                video = update.message.video
+                video_file = await context.bot.get_file(video.file_id)
+                video_bytes = await video_file.download_as_bytearray()
+                media_files.append(
+                    {
+                        "type": "video",
+                        "data": io.BytesIO(video_bytes),
+                        "mime": "video/mp4",
+                        "filename": (
+                            video.file_name
+                            if hasattr(video, "file_name")
+                            else f"video_{video.file_id}.mp4"
+                        ),
+                    }
                 )
 
-                # Send the formatted response
-                await update.message.reply_text(
-                    formatted_response,
-                    parse_mode="MarkdownV2",
-                    disable_web_page_preview=True,
+            elif update.message.voice or update.message.audio:
+                has_attached_media = True
+                media_type = "audio"
+                audio = update.message.voice or update.message.audio
+                audio_file = await context.bot.get_file(audio.file_id)
+                audio_bytes = await audio_file.download_as_bytearray()
+                file_name = (
+                    getattr(audio, "file_name", None) or f"audio_{audio.file_id}.ogg"
+                )
+                media_files.append(
+                    {
+                        "type": "audio",
+                        "data": io.BytesIO(audio_bytes),
+                        "mime": "audio/ogg",
+                        "filename": file_name,
+                    }
                 )
 
-                # Save interaction to conversation history using ConversationManager
-                if hasattr(self, "conversation_manager"):
+            elif update.message.document:
+                has_attached_media = True
+                media_type = "document"
+                document = update.message.document
+                document_file = await context.bot.get_file(document.file_id)
+                document_bytes = await document_file.download_as_bytearray()
+                file_ext = os.path.splitext(document.file_name)[1].lower()
+                mime_type = MediaUtilities.get_mime_type(file_ext)
+                media_files.append(
+                    {
+                        "type": "document",
+                        "data": io.BytesIO(document_bytes),
+                        "mime": mime_type,
+                        "filename": document.file_name,
+                    }
+                )
+
+            # Check for media group (multiple files sent together)
+            elif update.message.media_group_id:
+                has_attached_media = True
+                media_type = "media_group"
+
+                # Store the media group ID in context for tracking
+                if "media_groups" not in context.bot_data:
+                    context.bot_data["media_groups"] = {}
+
+                media_group_id = update.message.media_group_id
+
+                # Check if we've already processed this media group partially
+                if media_group_id in context.bot_data["media_groups"]:
+                    # Add this media item to the existing group
+                    if update.message.photo:
+                        photo = update.message.photo[-1]
+                        photo_file = await context.bot.get_file(photo.file_id)
+                        photo_bytes = await photo_file.download_as_bytearray()
+                        context.bot_data["media_groups"][media_group_id].append(
+                            {
+                                "type": "photo",
+                                "data": io.BytesIO(photo_bytes),
+                                "mime": "image/jpeg",
+                                "filename": f"photo_{photo.file_id}.jpg",
+                            }
+                        )
+
+                    elif update.message.document:
+                        document = update.message.document
+                        document_file = await context.bot.get_file(document.file_id)
+                        document_bytes = await document_file.download_as_bytearray()
+                        file_ext = os.path.splitext(document.file_name)[1].lower()
+                        mime_type = MediaUtilities.get_mime_type(file_ext)
+                        context.bot_data["media_groups"][media_group_id].append(
+                            {
+                                "type": "document",
+                                "data": io.BytesIO(document_bytes),
+                                "mime": mime_type,
+                                "filename": document.file_name,
+                            }
+                        )
+
+                    # Do not process each media file individually - return empty for now
+                    # The complete group will be processed once the caption message is received
+                    # or after a short delay
+                    return False, [], None
+                else:
+                    # Start tracking this new media group
+                    context.bot_data["media_groups"][media_group_id] = []
+
+                    # Check the current message's type
+                    if update.message.photo:
+                        photo = update.message.photo[-1]
+                        photo_file = await context.bot.get_file(photo.file_id)
+                        photo_bytes = await photo_file.download_as_bytearray()
+                        context.bot_data["media_groups"][media_group_id].append(
+                            {
+                                "type": "photo",
+                                "data": io.BytesIO(photo_bytes),
+                                "mime": "image/jpeg",
+                                "filename": f"photo_{photo.file_id}.jpg",
+                            }
+                        )
+
+                    elif update.message.document:
+                        document = update.message.document
+                        document_file = await context.bot.get_file(document.file_id)
+                        document_bytes = await document_file.download_as_bytearray()
+                        file_ext = os.path.splitext(document.file_name)[1].lower()
+                        mime_type = MediaUtilities.get_mime_type(file_ext)
+                        context.bot_data["media_groups"][media_group_id].append(
+                            {
+                                "type": "document",
+                                "data": io.BytesIO(document_bytes),
+                                "mime": mime_type,
+                                "filename": document.file_name,
+                            }
+                        )
+
+                    # Schedule a task to process the complete media group after a delay
+                    # This gives time for all media files to be received
+                    asyncio.create_task(
+                        self._process_complete_media_group(
+                            media_group_id,
+                            update.effective_chat.id,
+                            update.effective_user.id,
+                            update.message.caption or "",
+                            context,
+                        )
+                    )
+
+                    # Return empty for now - processing will happen in the scheduled task
+                    return False, [], None
+
+        return has_attached_media, media_files, media_type
+
+    async def _process_complete_media_group(
+        self, media_group_id, chat_id, user_id, caption, context
+    ):
+        """
+        Process a complete media group after a delay to ensure all files are received
+        """
+        # Wait a moment for all media files to be received (Telegram typically sends them in quick succession)
+        await asyncio.sleep(1.5)
+
+        if (
+            "media_groups" in context.bot_data
+            and media_group_id in context.bot_data["media_groups"]
+        ):
+            media_files = context.bot_data["media_groups"][media_group_id]
+
+            # Clean up the stored media group to avoid memory leaks
+            del context.bot_data["media_groups"][media_group_id]
+
+            # Only process if we have files
+            if media_files:
+                # Send a thinking message
+                thinking_message = await context.bot.send_message(
+                    chat_id=chat_id, text="Processing multiple files... 🧠"
+                )
+
+                try:
+                    # Get user's preferred model
+                    from services.user_preferences_manager import UserPreferencesManager
+
+                    preferences_manager = UserPreferencesManager(self.user_data_manager)
+                    preferred_model = (
+                        await preferences_manager.get_user_model_preference(user_id)
+                    )
+
+                    # Process multiple files using our new MultiFileProcessor
+                    from services.media.multi_file_processor import MultiFileProcessor
+
+                    multi_processor = MultiFileProcessor(self.gemini_api)
+
+                    result = await multi_processor.process_multiple_files(
+                        media_files, caption or "Analyze these files"
+                    )
+
+                    # Delete thinking message
+                    try:
+                        await thinking_message.delete()
+                    except Exception:
+                        pass
+
+                    # Format and send the response
+                    model_indicator = (
+                        "🧠 Gemini"
+                        if preferred_model == "gemini"
+                        else f"🤖 {preferred_model.capitalize()}"
+                    )
+
+                    if "intent" in result:
+                        intent_message = f"I'm processing these files with intent: {result['intent']}\n\n"
+                    else:
+                        intent_message = ""
+
+                    if "results" in result:
+                        # Format each file result
+                        formatted_results = []
+                        for filename, content in result["results"].items():
+                            if isinstance(content, str):
+                                header = f"📄 *{filename}*:"
+                                formatted_results.append(f"{header}\n{content}")
+
+                        # Combine results
+                        if formatted_results:
+                            response = (
+                                f"{intent_message}{model_indicator}\n\n"
+                                + "\n\n".join(formatted_results)
+                            )
+
+                            # Split and send
+                            chunks = await self.response_formatter.split_long_message(
+                                response
+                            )
+                            for chunk in chunks:
+                                formatted_chunk = await self.response_formatter.format_telegram_markdown(
+                                    chunk
+                                )
+                                await context.bot.send_message(
+                                    chat_id=chat_id,
+                                    text=formatted_chunk,
+                                    parse_mode="MarkdownV2",
+                                    disable_web_page_preview=True,
+                                )
+                        else:
+                            await context.bot.send_message(
+                                chat_id=chat_id,
+                                text="Sorry, I couldn't process these files properly. Please try again.",
+                            )
+                    else:
+                        await context.bot.send_message(
+                            chat_id=chat_id,
+                            text="Sorry, I couldn't process these files. Please try again with a clearer prompt.",
+                        )
+
+                except Exception as e:
+                    self.logger.error(f"Error processing media group: {e}")
+                    try:
+                        await thinking_message.delete()
+                    except Exception:
+                        pass
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text="Sorry, there was an error processing your files. Please try again later.",
+                    )
+
+    async def _handle_media_analysis(
+        self,
+        update,
+        context,
+        thinking_message,
+        media_files,
+        media_type,
+        message_text,
+        user_id,
+        preferred_model,
+    ):
+        """Handle analysis of media files"""
+        # Check if we have multiple files to process
+        if len(media_files) > 1:
+            # Use MultiFileProcessor for multiple files
+            from services.media.multi_file_processor import MultiFileProcessor
+
+            multi_processor = MultiFileProcessor(self.gemini_api)
+            result = await multi_processor.process_multiple_files(
+                media_files, message_text or "Analyze these files"
+            )
+
+            # Delete thinking message
+            if thinking_message is not None:
+                try:
+                    await thinking_message.delete()
+                    thinking_message = None
+                except Exception:
+                    pass
+
+            # Format and send the response
+            model_indicator = (
+                "🧠 Gemini"
+                if preferred_model == "gemini"
+                else f"🤖 {preferred_model.capitalize()}"
+            )
+
+            if "intent" in result:
+                intent_message = (
+                    f"I'm processing these files with intent: {result['intent']}\n\n"
+                )
+            else:
+                intent_message = ""
+
+            if "results" in result:
+                # Format each file result
+                formatted_results = []
+                for filename, content in result["results"].items():
+                    if isinstance(content, str):
+                        header = f"📄 *{filename}*:"
+                        formatted_results.append(f"{header}\n{content}")
+
+                # Combine results
+                if formatted_results:
+                    response = f"{intent_message}{model_indicator}\n\n" + "\n\n".join(
+                        formatted_results
+                    )
+
+                    # Split and send
+                    chunks = await self.response_formatter.split_long_message(response)
+                    for chunk in chunks:
+                        formatted_chunk = (
+                            await self.response_formatter.format_telegram_markdown(
+                                chunk
+                            )
+                        )
+                        await update.message.reply_text(
+                            formatted_chunk,
+                            parse_mode="MarkdownV2",
+                            disable_web_page_preview=True,
+                        )
+
+                    # Update user stats
+                    if self.user_data_manager:
+                        await self.user_data_manager.update_stats(
+                            user_id, multi_file_analysis=True
+                        )
+
+                    # Save to conversation history
+                    media_description = f"[Multiple files analysis request]"
                     await self.conversation_manager.save_media_interaction(
                         user_id,
-                        "image",
-                        f"[Image shared with caption: {caption}]",
+                        "multi_files",
+                        media_description,
                         response,
+                        preferred_model,
                     )
+
+                    return
+
+            # If we get here, something went wrong with the processing
+            await update.message.reply_text(
+                "Sorry, I couldn't analyze the content you provided. Please try again with a clearer prompt."
+            )
+            return
+
+        # Single file handling (existing code)
+        result = await self.media_analyzer.analyze_media(
+            media_files, message_text, preferred_model
+        )
+
+        # Delete thinking message
+        if thinking_message is not None:
+            try:
+                await thinking_message.delete()
+                thinking_message = None
+            except Exception:
+                pass
+
+        # Format and send the response
+        if result:
+            # Add model indicator
+            model_indicator = (
+                "🧠 Gemini"
+                if preferred_model == "gemini"
+                else f"🤖 {preferred_model.capitalize()}"
+            )
+            text_to_send = self.response_formatter.format_with_model_indicator(
+                result, model_indicator
+            )
+
+            # Format for Telegram
+            formatted_response = await self.response_formatter.format_telegram_markdown(
+                text_to_send
+            )
+
+            # Send the response
+            await update.message.reply_text(
+                formatted_response,
+                parse_mode="MarkdownV2",
+                disable_web_page_preview=True,
+            )
+
+            # Save to conversation history
+            media_description = f"[{media_type.capitalize()} analysis request]"
+            await self.conversation_manager.save_media_interaction(
+                user_id, media_type, media_description, result, preferred_model
+            )
+
+            # Update user stats
+            if self.user_data_manager:
+                await self.user_data_manager.update_stats(user_id, **{media_type: True})
+        else:
+            await update.message.reply_text(
+                "Sorry, I couldn't analyze the content you provided. Please try again."
+            )
+
+    async def _send_appropriate_chat_action(
+        self, update, context, has_attached_media, media_type
+    ):
+        """Send appropriate chat action based on message type"""
+        action = ChatAction.TYPING
+
+        if has_attached_media:
+            if media_type == "photo":
+                action = ChatAction.UPLOAD_PHOTO
+            elif media_type == "video":
+                action = ChatAction.UPLOAD_VIDEO
+            elif media_type == "audio":
+                action = ChatAction.RECORD_AUDIO
+
+        await context.bot.send_chat_action(
+            chat_id=update.effective_chat.id, action=action
+        )
+
+    async def _get_user_preferred_model(self, user_id):
+        """Get user's preferred model"""
+        from services.user_preferences_manager import UserPreferencesManager
+
+        preferences_manager = UserPreferencesManager(self.user_data_manager)
+        preferred_model = await preferences_manager.get_user_model_preference(user_id)
+        self.logger.info(f"Preferred model for user {user_id}: {preferred_model}")
+        return preferred_model
+
+    async def _handle_image_generation(
+        self, update, context, thinking_message, message_text, user_id, preferred_model
+    ):
+        """Handle image generation requests"""
+        # Use our enhanced prompt extraction instead of keyword replacement
+        image_prompt = self.intent_detector.extract_image_prompt(message_text)
+
+        if not image_prompt:
+            # Fallback to simpler extraction if needed
+            image_prompt = (
+                message_text.replace("generate image", "")
+                .replace("create image", "")
+                .strip()
+            )
+
+        # Try to delete the thinking message
+        if thinking_message is not None:
+            try:
+                await thinking_message.delete()
+                thinking_message = None
+            except Exception:
+                pass
+
+        # Inform the user that image generation is starting
+        status_message = await update.message.reply_text(
+            "Generating image based on your description... This may take a moment. 🎨"
+        )
+
+        try:
+            # Generate the image
+            image_bytes = await self.gemini_api.generate_image(image_prompt)
+
+            if image_bytes and len(image_bytes) > 0:
+                # Try to delete the status message
+                if status_message is not None:
+                    try:
+                        await status_message.delete()
+                        status_message = None
+                    except Exception:
+                        try:
+                            await status_message.edit_text(
+                                "✅ Image generated successfully!"
+                            )
+                            status_message = None
+                        except Exception:
+                            pass
+
+                # Send the generated image
+                caption = f"Generated image of: {image_prompt}"
+                await update.message.reply_photo(
+                    photo=io.BytesIO(image_bytes), caption=caption
+                )
 
                 # Update user stats
                 if self.user_data_manager:
-                    self.user_data_manager.update_stats(user_id, image=True)
-            else:
-                await update.message.reply_text(
-                    "Sorry, I couldn't analyze this image. Please try again with a different image or question."
+                    await self.user_data_manager.update_stats(
+                        user_id, image_generation=True
+                    )
+
+                # Save to conversation history
+                await self.conversation_manager.save_media_interaction(
+                    user_id,
+                    "generated_image",
+                    f"Generate an image of: {image_prompt}",
+                    f"Here's the image I generated of {image_prompt}.",
+                    preferred_model,
                 )
+            else:
+                # Image generation failed
+                if status_message is not None:
+                    try:
+                        await status_message.edit_text(
+                            "Sorry, I couldn't generate that image. Please try with a different description."
+                        )
+                    except Exception:
+                        pass
         except Exception as e:
-            self.logger.error(f"Error processing image: {str(e)}")
-            await update.message.reply_text(
-                "Sorry, I encountered an error while processing your image. Please try again later."
+            self.logger.error(f"Error generating image: {e}")
+            if status_message is not None:
+                try:
+                    await status_message.edit_text(
+                        "Sorry, there was an error generating your image. Please try again later."
+                    )
+                except Exception:
+                    pass
+
+    async def _handle_text_conversation(
+        self,
+        update,
+        context,
+        thinking_message,
+        message_text,
+        quoted_text,
+        quoted_message_id,
+        history_context,
+        user_id,
+        preferred_model,
+    ):
+        """Handle regular text conversation"""
+        message = update.message or update.edited_message
+
+        # Build enhanced prompt with context
+        enhanced_prompt = message_text
+
+        # Add quoted text context if this is a reply
+        if quoted_text:
+            enhanced_prompt = self.prompt_formatter.add_context(
+                message_text, "quote", quoted_text
             )
+
+        # Add any reference to previously shared media
+        if (
+            self.context_handler.detect_reference_to_image(message_text)
+            and "image_history" in context.user_data
+        ):
+            image_context = await self.media_context_extractor.get_image_context(
+                context.user_data
+            )
+            enhanced_prompt = self.prompt_formatter.add_context(
+                enhanced_prompt, "image", image_context
+            )
+
+        if (
+            self.context_handler.detect_reference_to_document(message_text)
+            and "document_history" in context.user_data
+        ):
+            document_context = await self.media_context_extractor.get_document_context(
+                context.user_data
+            )
+            enhanced_prompt = self.prompt_formatter.add_context(
+                enhanced_prompt, "document", document_context
+            )
+
+        # Apply response style guidelines
+        enhanced_prompt_with_guidelines = (
+            await self.prompt_formatter.apply_response_guidelines(
+                enhanced_prompt,
+                ModelHandlerFactory.get_model_handler(
+                    preferred_model,
+                    gemini_api=self.gemini_api,
+                    openrouter_api=self.openrouter_api,
+                    deepseek_api=self.deepseek_api,
+                ),
+                context,
+            )
+        )
+
+        # Get model timeout
+        model_timeout = 60.0
+        if self.user_model_manager:
+            model_config = self.user_model_manager.get_user_model_config(user_id)
+            model_timeout = model_config.timeout_seconds if model_config else 60.0
+
+        try:
+            # Get the model handler
+            model_handler = ModelHandlerFactory.get_model_handler(
+                preferred_model,
+                gemini_api=self.gemini_api,
+                openrouter_api=self.openrouter_api,
+                deepseek_api=self.deepseek_api,
+            )
+
+            # Generate response
+            response = await asyncio.wait_for(
+                model_handler.generate_response(
+                    prompt=enhanced_prompt_with_guidelines,
+                    context=history_context,
+                    temperature=0.7,
+                    max_tokens=4000,
+                    quoted_message=quoted_text,
+                ),
+                timeout=model_timeout,
+            )
+
+            # Delete thinking message
+            if thinking_message is not None:
+                try:
+                    await thinking_message.delete()
+                    thinking_message = None
+                except Exception:
+                    pass
+
+            if response is None:
+                await message.reply_text(
+                    "Sorry, I couldn't generate a response\\. Please try rephrasing your message\\.",
+                    parse_mode="MarkdownV2",
+                )
+                return
+
+            # Send the response
+            await self._send_formatted_response(
+                update,
+                context,
+                message,
+                response,
+                model_handler.get_model_indicator(),
+                quoted_text,
+                quoted_message_id,
+            )
+
+            # Save to conversation history
+            if response:
+                if quoted_text:
+                    await self.conversation_manager.add_quoted_message_context(
+                        user_id, quoted_text, message_text, response, preferred_model
+                    )
+                else:
+                    await self.conversation_manager.save_message_pair(
+                        user_id, message_text, response, preferred_model
+                    )
+
+            telegram_logger.log_message("Text response sent successfully", user_id)
+
+        except asyncio.TimeoutError:
+            if thinking_message is not None:
+                await thinking_message.delete()
+            await message.reply_text(
+                "Sorry, the request took too long to process. Please try again later.",
+                parse_mode="MarkdownV2",
+            )
+        except Exception as e:
+            self.logger.error(f"Error generating response: {e}")
+            if thinking_message is not None:
+                await thinking_message.delete()
+            await message.reply_text(
+                "Sorry, there was an error processing your request. Please try again later.",
+                parse_mode="MarkdownV2",
+            )
+
+    async def _send_formatted_response(
+        self,
+        update,
+        context,
+        message,
+        response,
+        model_indicator,
+        quoted_text,
+        quoted_message_id,
+    ):
+        """Format and send the AI response"""
+        # Split long messages
+        message_chunks = await self.response_formatter.split_long_message(response)
+        sent_messages = []
+
+        # Store indicator for editing functionality
+        context.user_data["last_message_indicator"] = model_indicator
+
+        # Determine if this is a reply
+        is_reply = self.context_handler.should_use_reply_format(
+            quoted_text, quoted_message_id
+        )
+
+        # Send each chunk
+        for i, chunk in enumerate(message_chunks):
+            try:
+                # Format first chunk with model indicator
+                if i == 0:
+                    text_to_send = self.response_formatter.format_with_model_indicator(
+                        chunk, model_indicator, is_reply
+                    )
+                else:
+                    text_to_send = chunk
+
+                # Format with markdown
+                formatted_chunk = (
+                    await self.response_formatter.format_telegram_markdown(text_to_send)
+                )
+
+                # Send the message with appropriate reply if needed
+                if i == 0 and is_reply:
+                    last_message = await message.reply_text(
+                        formatted_chunk,
+                        parse_mode="MarkdownV2",
+                        disable_web_page_preview=True,
+                        reply_to_message_id=quoted_message_id,
+                    )
+                elif i == 0:
+                    last_message = await message.reply_text(
+                        formatted_chunk,
+                        parse_mode="MarkdownV2",
+                        disable_web_page_preview=True,
+                    )
+                else:
+                    last_message = await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=formatted_chunk,
+                        parse_mode="MarkdownV2",
+                        disable_web_page_preview=True,
+                    )
+                sent_messages.append(last_message)
+            except Exception as formatting_error:
+                # Fallback without formatting
+                self.logger.error(f"Formatting failed: {str(formatting_error)}")
+                if i == 0:
+                    last_message = await message.reply_text(
+                        chunk.replace("*", "").replace("_", "").replace("`", ""),
+                        parse_mode=None,
+                    )
+                else:
+                    last_message = await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=chunk.replace("*", "").replace("_", "").replace("`", ""),
+                        parse_mode=None,
+                    )
+                sent_messages.append(last_message)
+
+        # Store message IDs for future editing
+        if sent_messages:
+            if "bot_messages" not in context.user_data:
+                context.user_data["bot_messages"] = {}
+            context.user_data["bot_messages"][message.message_id] = [
+                msg.message_id for msg in sent_messages
+            ]
