@@ -13,9 +13,43 @@ class ResponseFormatter:
     async def format_telegram_markdown(self, text: str) -> str:
         """Format text with Telegram's MarkdownV2 parser."""
         try:
-            return convert(text)
+            # Use the telegramify_markdown converter
+            formatted = convert(text)
+
+            # Additional escaping for characters that need special handling in MarkdownV2
+            # These characters need escaping: _ * [ ] ( ) ~ ` > # + - = | { } . !
+            special_chars = [
+                "_",
+                "*",
+                "[",
+                "]",
+                "(",
+                ")",
+                "~",
+                "`",
+                ">",
+                "#",
+                "+",
+                "-",
+                "=",
+                "|",
+                "{",
+                "}",
+                ".",
+                "!",
+            ]
+
+            # Escape special characters that convert() might have missed
+            for char in special_chars:
+                # Don't escape characters that are already escaped
+                formatted = formatted.replace(f"{char}", f"\\{char}")
+                # Fix double escapes that might occur
+                formatted = formatted.replace(f"\\\\{char}", f"\\{char}")
+
+            return formatted
         except Exception as e:
             self.logger.error(f"Error formatting markdown: {str(e)}")
+            # Fallback to plain text without markdown
             return text.replace("*", "").replace("_", "").replace("`", "")
 
     async def split_long_message(self, text: str, max_length: int = 4096) -> List[str]:

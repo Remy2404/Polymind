@@ -79,7 +79,12 @@ class ConversationManager:
         await self.memory_manager.add_assistant_message(conversation_id, response)
 
     async def add_quoted_message_context(
-        self, user_id: int, quoted_text: str, user_reply: str, assistant_response: str
+        self,
+        user_id: int,
+        quoted_text: str,
+        user_reply: str,
+        assistant_response: str,
+        model_id: Optional[str] = None,
     ) -> None:
         """Add a quoted message interaction to the conversation history."""
         conversation_id = f"user_{user_id}"
@@ -100,6 +105,12 @@ class ConversationManager:
         await self.memory_manager.add_assistant_message(
             conversation_id, assistant_response
         )
+
+        # Also save to model-specific history if model_id is provided
+        if model_id:
+            await self.model_history_manager.save_message_pair(
+                user_id, formatted_user_message, assistant_response, model_id
+            )
 
     async def get_short_term_memory(
         self, user_id: int, limit: int = 5
