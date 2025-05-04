@@ -1,6 +1,7 @@
 import logging
 from typing import List, Optional
 from telegram import Message
+import re
 from telegramify_markdown import convert
 
 
@@ -11,49 +12,15 @@ class ResponseFormatter:
         self.logger = logging.getLogger(__name__)
 
     async def format_telegram_markdown(self, text: str) -> str:
-        """Format text with Telegram's MarkdownV2 parser."""
         try:
-            # Use the telegramify_markdown converter
-            formatted = convert(text)
 
-            # Additional escaping for characters that need special handling in MarkdownV2
-            # These characters need escaping: _ * [ ] ( ) ~ ` > # + - = | { } . !
-            special_chars = [
-                "_",
-                "*",
-                "[",
-                "]",
-                "(",
-                ")",
-                "~",
-                "`",
-                ">",
-                "#",
-                "+",
-                "-",
-                "=",
-                "|",
-                "{",
-                "}",
-                ".",
-                "!",
-            ]
-
-            # Escape special characters that convert() might have missed
-            for char in special_chars:
-                # Don't escape characters that are already escaped
-                formatted = formatted.replace(f"{char}", f"\\{char}")
-                # Fix double escapes that might occur
-                formatted = formatted.replace(f"\\\\{char}", f"\\{char}")
-
-            return formatted
+            formatted_text = convert(text)
+            return formatted_text
         except Exception as e:
             self.logger.error(f"Error formatting markdown: {str(e)}")
-            # Fallback to plain text without markdown
             return text.replace("*", "").replace("_", "").replace("`", "")
 
     async def split_long_message(self, text: str, max_length: int = 4096) -> List[str]:
-        """Split long message into chunks respecting Telegram's message size limit."""
         if len(text) <= max_length:
             return [text]
 

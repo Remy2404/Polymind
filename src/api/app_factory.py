@@ -14,6 +14,7 @@ import src.api.routes.webhook as webhook_module
 from src.api.routes import health, webhook
 from src.api.middleware.request_tracking import RequestTrackingMiddleware
 from src.bot.telegram_bot import TelegramBot
+from starlette.middleware.cors import CORSMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -109,9 +110,17 @@ def create_application():
     # Add request tracking middleware
     app.add_middleware(RequestTrackingMiddleware)
 
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     # Configure dependency injection for bot instance
     # Set the actual bot instance in the webhook module's global variable
-
     webhook_module._BOT_INSTANCE = bot
 
     # Set up exception handlers for webhook exceptions

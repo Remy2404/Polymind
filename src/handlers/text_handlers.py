@@ -956,20 +956,67 @@ class TextHandler:
                     )
                 sent_messages.append(last_message)
             except Exception as formatting_error:
-                # Fallback without formatting
-                self.logger.error(f"Formatting failed: {str(formatting_error)}")
-                if i == 0:
-                    last_message = await message.reply_text(
-                        chunk.replace("*", "").replace("_", "").replace("`", ""),
-                        parse_mode=None,
-                    )
-                else:
-                    last_message = await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text=chunk.replace("*", "").replace("_", "").replace("`", ""),
-                        parse_mode=None,
-                    )
-                sent_messages.append(last_message)
+                # Log the error with the problematic text
+                self.logger.error(
+                    f"Formatting error: {str(formatting_error)}\nProblematic text: {text_to_send[:100]}..."
+                )
+
+                try:
+                    # Try with simpler formatting - strip all markdown formatting characters
+                    simplified_text = text_to_send
+                    for char in [
+                        "*",
+                        "_",
+                        "`",
+                        "[",
+                        "]",
+                        "(",
+                        ")",
+                        "~",
+                        ">",
+                        "#",
+                        "+",
+                        "=",
+                        "|",
+                        "{",
+                        "}",
+                        "!",
+                    ]:
+                        simplified_text = simplified_text.replace(char, "")
+
+                    if i == 0 and is_reply:
+                        last_message = await message.reply_text(
+                            simplified_text,
+                            parse_mode=None,
+                            disable_web_page_preview=True,
+                            reply_to_message_id=quoted_message_id,
+                        )
+                    elif i == 0:
+                        last_message = await message.reply_text(
+                            simplified_text,
+                            parse_mode=None,
+                            disable_web_page_preview=True,
+                        )
+                    else:
+                        last_message = await context.bot.send_message(
+                            chat_id=update.effective_chat.id,
+                            text=simplified_text,
+                            parse_mode=None,
+                            disable_web_page_preview=True,
+                        )
+                    sent_messages.append(last_message)
+                except Exception as final_error:
+                    # Last resort fallback - send a generic message
+                    self.logger.error(f"Final fallback failed: {str(final_error)}")
+                    fallback_text = "Sorry, I had trouble formatting the response. Please try again."
+
+                    if i == 0:
+                        last_message = await message.reply_text(fallback_text)
+                    else:
+                        last_message = await context.bot.send_message(
+                            chat_id=update.effective_chat.id, text=fallback_text
+                        )
+                    sent_messages.append(last_message)
 
         # Store message IDs for future editing
         if sent_messages:
