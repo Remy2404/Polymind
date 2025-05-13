@@ -1,7 +1,6 @@
 import logging
-from typing import List, Optional
-from telegram import Message
-import re
+import html
+from typing import List
 from telegramify_markdown import convert
 
 
@@ -18,7 +17,40 @@ class ResponseFormatter:
             return formatted_text
         except Exception as e:
             self.logger.error(f"Error formatting markdown: {str(e)}")
-            return text.replace("*", "").replace("_", "").replace("`", "")
+            # escape Telegram MarkdownV2 reserved characters if conversion fails
+            for ch in [
+                "_",
+                "*",
+                "[",
+                "]",
+                "(",
+                ")",
+                "~",
+                "`",
+                ">",
+                "#",
+                "+",
+                "-",
+                "=",
+                "|",
+                "{",
+                "}",
+                ".",
+                "!",
+            ]:
+                text = text.replace(ch, f"\\{ch}")
+            return text
+
+    async def format_telegram_html(self, text: str) -> str:
+        """Formats text for sending via Telegram using HTML parse mode."""
+        try:
+            # Escape HTML special characters
+            escaped_text = html.escape(text)
+            return escaped_text
+        except Exception as e:
+            self.logger.error(f"Error escaping HTML: {e}")
+            # Fallback: escape text again
+            return html.escape(text)
 
     async def split_long_message(self, text: str, max_length: int = 4096) -> List[str]:
         if len(text) <= max_length:
@@ -43,6 +75,10 @@ class ResponseFormatter:
         self, text: str, model_indicator: str, is_reply: bool = False
     ) -> str:
         """Add model indicator and optional reply indicator to the response."""
+        # Ensure text is a string
+        if not isinstance(text, str):
+            text = str(text)
+
         if is_reply:
             reply_indicator = "↪️ Replying to message"
             return f"{model_indicator}\n{reply_indicator}\n\n{text}"

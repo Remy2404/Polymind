@@ -2,14 +2,16 @@ import os, io
 import re
 import tempfile
 import logging
+import uuid
 import speech_recognition as sr
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Message
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 from pydub import AudioSegment
 from handlers.text_handlers import TextHandler
 from services.user_data_manager import UserDataManager
 from telegram.ext import MessageHandler, filters
+import aiohttp
 import datetime
 from services.gemini_api import GeminiAPI
 import asyncio
@@ -394,18 +396,98 @@ class MessageHandlers:
                 text,
                 f"I've transcribed your voice message which said: {text}",
             )
+
+            # NEW CODE: Process the transcribed text with the AI model
+            await context.bot.send_chat_action(
+                chat_id=update.effective_chat.id, action=ChatAction.TYPING
+            )
+
+            # Treat the transcribed text as a regular text message for AI processing
+            # Pass the quoted text context if it exists
+            prompt = text
+            if quoted_text:
+                prompt = self.context_handler.format_prompt_with_quote(text, quoted_text)
+
+            # Get the user's selected model
+            user_settings = await self.user_data_manager.get_user_settings(str(user_id))
+            
+            # First check if there's a preferred_model in the user preferences
+            preferred_model = await self.user_data_manager.get_user_preference(user_id, "preferred_model", None)
+            
+            # If preferred_model is set, use that, otherwise fall back to the active_model setting or default to gemini
+            active_model = preferred_model if preferred_model else user_settings.get("active_model", "gemini")
+
+            # Log the model being used
+            self.logger.info(f"Using model '{active_model}' for voice response. Prompt: {prompt[:50]}...")
+
+            # Get the appropriate model indicator
+            model_indicator = "🔮 Gemini"  # Default
+            if active_model == "deepseek":
+                model_indicator = "🧠 DeepSeek"
+            elif active_model == "deepcoder":
+                model_indicator = "💻 DeepCoder"
+            elif active_model == "llama4_maverick":
+                model_indicator = "🦙 Llama-4"
+
+            # Generate AI response based on active model
+            ai_response = ""
+            if active_model == "gemini":
+                ai_response = await self.gemini_api.generate_response(prompt)
+            elif active_model == "deepseek" and hasattr(self, "deepseek_api"):
+                ai_response = await self.deepseek_api.generate_response(prompt)
+            elif active_model == "llama4_maverick" and hasattr(self, "openrouter_api"):
+                ai_response = await self.openrouter_api.generate_response(prompt, active_model)
+            elif active_model == "deepcoder" and hasattr(self, "openrouter_api"):
+                ai_response = await self.openrouter_api.generate_response(prompt, active_model)
+            elif hasattr(self, "openrouter_api"):
+                ai_response = await self.openrouter_api.generate_response(prompt, active_model)
+
+            if not ai_response:
+                self.logger.warning(f"Empty AI response for user {user_id} with active model {active_model}")
+                ai_response = "I'm sorry, I couldn't generate a response at this time. Please try again later."
+
+            # Format the response with model indicator
+            formatted_response = self.response_formatter.format_with_model_indicator(
+                ai_response, model_indicator, quoted_text is not None
+            )
+
+            # Log successful response generation
+            self.logger.info(f"Generated AI response of length {len(ai_response)} for voice message")
+
+            # Split long messages if needed
+            response_chunks = await self.response_formatter.split_long_message(formatted_response)
+
+            # Send the response chunks
+            for chunk in response_chunks:
+                await update.message.reply_text(chunk)
+
+            # Save the conversation pair
+            await self._conversation_manager.save_message_pair(
+                user_id, prompt, ai_response, active_model
+            )
+
         except Exception as e:
-            self.logger.error(f"Error processing voice message: {str(e)}")
+            self.logger.error(f"Error processing voice message: {str(e)}", exc_info=True)
+            error_message = "Sorry, there was an error processing your voice message. Please try again later."
+            
+            # Check if we're at the transcription step but have no text
+            if 'text' in locals() and not text:
+                error_message = "Sorry, I couldn't transcribe your voice message. Please try speaking more clearly or in a quieter environment."
+            # Check if we're at the AI response step
+            elif 'prompt' in locals() and 'ai_response' not in locals():
+                error_message = "I understood your voice message, but I'm having trouble generating a response right now. Please try again later."
+            
             try:
                 if "status_message" in locals() and status_message:
                     try:
-                        await status_message.edit_text(
-                            "Sorry, there was an error processing your voice message. Please try again later."
-                        )
-                    except:
-                        pass
-            except:
-                pass
+                        await status_message.edit_text(error_message)
+                    except Exception as edit_error:
+                        self.logger.warning(f"Could not edit status message: {str(edit_error)}")
+                        await update.message.reply_text(error_message)
+                else:
+                    await update.message.reply_text(error_message)
+            except Exception as reply_error:
+                self.logger.error(f"Failed to send error message: {str(reply_error)}")
 
     async def _safe_reply(
         self, message, text, parse_mode=None, retry_delay=5, max_retries=3
