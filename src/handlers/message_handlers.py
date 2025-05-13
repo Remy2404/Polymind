@@ -388,6 +388,27 @@ class MessageHandlers:
                     text_handler.memory_manager, text_handler.model_history_manager
                 )
 
+            # Make sure model history manager knows about user's model preference
+            if hasattr(text_handler, "model_history_manager"):
+                # Get the user's selected model early
+                user_settings = await self.user_data_manager.get_user_settings(
+                    str(user_id)
+                )
+                preferred_model = await self.user_data_manager.get_user_preference(
+                    user_id, "preferred_model", None
+                )
+                active_model = (
+                    preferred_model
+                    if preferred_model
+                    else user_settings.get("active_model", "gemini")
+                )
+
+                # Set the selected model in model history manager
+                if hasattr(text_handler.model_history_manager, "select_model_for_user"):
+                    text_handler.model_history_manager.select_model_for_user(
+                        user_id, active_model
+                    )
+
             # Use ConversationManager to save voice interaction to memory
             language_label = "km" if is_khmer else lang.split("-")[0]
             await self._conversation_manager.save_media_interaction(
@@ -406,19 +427,36 @@ class MessageHandlers:
             # Pass the quoted text context if it exists
             prompt = text
             if quoted_text:
-                prompt = self.context_handler.format_prompt_with_quote(text, quoted_text)
+                prompt = self.context_handler.format_prompt_with_quote(
+                    text, quoted_text
+                )
 
             # Get the user's selected model
             user_settings = await self.user_data_manager.get_user_settings(str(user_id))
-            
+
             # First check if there's a preferred_model in the user preferences
-            preferred_model = await self.user_data_manager.get_user_preference(user_id, "preferred_model", None)
-            
+            preferred_model = await self.user_data_manager.get_user_preference(
+                user_id, "preferred_model", None
+            )
+
+            # Log detailed model selection information
+            self.logger.info(f"Voice message model selection - User: {user_id}")
+            self.logger.info(f"  - preferred_model from preferences: {preferred_model}")
+            self.logger.info(
+                f"  - active_model from user settings: {user_settings.get('active_model', 'not set')}"
+            )
+
             # If preferred_model is set, use that, otherwise fall back to the active_model setting or default to gemini
-            active_model = preferred_model if preferred_model else user_settings.get("active_model", "gemini")
+            active_model = (
+                preferred_model
+                if preferred_model
+                else user_settings.get("active_model", "gemini")
+            )
 
             # Log the model being used
-            self.logger.info(f"Using model '{active_model}' for voice response. Prompt: {prompt[:50]}...")
+            self.logger.info(
+                f"SELECTED MODEL: '{active_model}' for voice response. Prompt: {prompt[:50]}..."
+            )
 
             # Get the appropriate model indicator
             model_indicator = "🔮 Gemini"  # Default
@@ -429,21 +467,67 @@ class MessageHandlers:
             elif active_model == "llama4_maverick":
                 model_indicator = "🦙 Llama-4"
 
+            # Log the model indicator for debugging
+            self.logger.info(
+                f"Using model indicator: {model_indicator} for model: {active_model}"
+            )
+
             # Generate AI response based on active model
             ai_response = ""
-            if active_model == "gemini":
-                ai_response = await self.gemini_api.generate_response(prompt)
-            elif active_model == "deepseek" and hasattr(self, "deepseek_api"):
-                ai_response = await self.deepseek_api.generate_response(prompt)
-            elif active_model == "llama4_maverick" and hasattr(self, "openrouter_api"):
-                ai_response = await self.openrouter_api.generate_response(prompt, active_model)
-            elif active_model == "deepcoder" and hasattr(self, "openrouter_api"):
-                ai_response = await self.openrouter_api.generate_response(prompt, active_model)
-            elif hasattr(self, "openrouter_api"):
-                ai_response = await self.openrouter_api.generate_response(prompt, active_model)
+            try:
+                self.logger.info(f"Generating response with model: {active_model}")
+
+                if active_model == "gemini":
+                    ai_response = await self.gemini_api.generate_response(prompt)
+                    self.logger.info("Used Gemini API for response")
+
+                elif active_model == "deepseek" and hasattr(self, "deepseek_api"):
+                    ai_response = await self.deepseek_api.generate_response(prompt)
+                    self.logger.info("Used DeepSeek API for response")
+
+                elif active_model == "llama4_maverick" and hasattr(
+                    self, "openrouter_api"
+                ):
+                    self.logger.info(
+                        "Attempting to use OpenRouter API with llama4_maverick model"
+                    )
+                    ai_response = await self.openrouter_api.generate_response(
+                        prompt, active_model
+                    )
+                    self.logger.info(
+                        "Successfully used OpenRouter API with llama4_maverick"
+                    )
+
+                elif active_model == "deepcoder" and hasattr(self, "openrouter_api"):
+                    ai_response = await self.openrouter_api.generate_response(
+                        prompt, active_model
+                    )
+                    self.logger.info("Used OpenRouter API with deepcoder model")
+
+                elif hasattr(self, "openrouter_api"):
+                    self.logger.info(
+                        f"Using fallback to OpenRouter API with model: {active_model}"
+                    )
+                    ai_response = await self.openrouter_api.generate_response(
+                        prompt, active_model
+                    )
+
+                else:
+                    self.logger.warning(
+                        f"No suitable API found for model: {active_model}"
+                    )
+                    ai_response = "Sorry, I couldn't process your voice message with the selected model. Please try with a different model."
+            except Exception as e:
+                self.logger.error(
+                    f"Error generating response with {active_model}: {str(e)}",
+                    exc_info=True,
+                )
+                ai_response = f"Sorry, there was an error generating a response with the {active_model} model. Technical details: {str(e)}"
 
             if not ai_response:
-                self.logger.warning(f"Empty AI response for user {user_id} with active model {active_model}")
+                self.logger.warning(
+                    f"Empty AI response for user {user_id} with active model {active_model}"
+                )
                 ai_response = "I'm sorry, I couldn't generate a response at this time. Please try again later."
 
             # Format the response with model indicator
@@ -452,10 +536,14 @@ class MessageHandlers:
             )
 
             # Log successful response generation
-            self.logger.info(f"Generated AI response of length {len(ai_response)} for voice message")
+            self.logger.info(
+                f"Generated AI response of length {len(ai_response)} for voice message"
+            )
 
             # Split long messages if needed
-            response_chunks = await self.response_formatter.split_long_message(formatted_response)
+            response_chunks = await self.response_formatter.split_long_message(
+                formatted_response
+            )
 
             # Send the response chunks
             for chunk in response_chunks:
@@ -467,22 +555,26 @@ class MessageHandlers:
             )
 
         except Exception as e:
-            self.logger.error(f"Error processing voice message: {str(e)}", exc_info=True)
+            self.logger.error(
+                f"Error processing voice message: {str(e)}", exc_info=True
+            )
             error_message = "Sorry, there was an error processing your voice message. Please try again later."
-            
+
             # Check if we're at the transcription step but have no text
-            if 'text' in locals() and not text:
+            if "text" in locals() and not text:
                 error_message = "Sorry, I couldn't transcribe your voice message. Please try speaking more clearly or in a quieter environment."
             # Check if we're at the AI response step
-            elif 'prompt' in locals() and 'ai_response' not in locals():
+            elif "prompt" in locals() and "ai_response" not in locals():
                 error_message = "I understood your voice message, but I'm having trouble generating a response right now. Please try again later."
-            
+
             try:
                 if "status_message" in locals() and status_message:
                     try:
                         await status_message.edit_text(error_message)
                     except Exception as edit_error:
-                        self.logger.warning(f"Could not edit status message: {str(edit_error)}")
+                        self.logger.warning(
+                            f"Could not edit status message: {str(edit_error)}"
+                        )
                         await update.message.reply_text(error_message)
                 else:
                     await update.message.reply_text(error_message)

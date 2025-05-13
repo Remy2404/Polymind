@@ -1,9 +1,18 @@
+# Python cache files
 __pycache__
 *.pyc
 *.pyo
 *.pyd
 .Python
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Environment and IDE
 .git
+.github
 .env
 .venv
 env/
@@ -11,14 +20,36 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
 .idea/
 .vscode/
+*.swp
+.DS_Store
+
+# Logs and databases
 *.log
 *.sqlite
-data/
-logs/
+*.db
+conversation_states.pickle
+
+# Large data files (keep folder structure)
+data/*
+!data/.gitkeep
+!data/memory/.gitkeep
+logs/*
+!logs/.gitkeep
 temp/
+
+# Documentation and tests
+tests/
+SECURITY.md
+LICENSE
+*.md
+!README.md
+
+# Build files
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+render.yaml
+vercel.json
+Procfile

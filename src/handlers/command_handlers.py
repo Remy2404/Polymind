@@ -1445,11 +1445,14 @@ class CommandHandlers:
             }
             model_name = fallback_model_names.get(
                 selected_model_from_callback, selected_model_from_callback.capitalize()
-            )
-
-            # Save the CORRECTED ID to user preferences if using legacy
+            )            # Save the CORRECTED ID to user preferences if using legacy
             await self.user_data_manager.set_user_preference(
                 user_id, "preferred_model", selected_model_id_for_backend
+            )
+            
+            # Also update the active_model in user settings for better compatibility
+            await self.user_data_manager.update_user_settings_async(
+                user_id, {"active_model": selected_model_id_for_backend}
             )
 
             # Log the model change

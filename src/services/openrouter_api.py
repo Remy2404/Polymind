@@ -68,7 +68,7 @@ class OpenRouterAPI:
         self,
         prompt: str,
         context: List[Dict] = None,
-        model: str = "openrouter/optimus-alpha",
+        model: str = "llama4_maverick",
         temperature: float = 0.7,
         max_tokens: int = 4000,
     ) -> Optional[str]:
@@ -79,12 +79,28 @@ class OpenRouterAPI:
             # Ensure we have a session
             session = await self.ensure_session()
 
+            # Map model ID to OpenRouter model path
+            openrouter_model = self.available_models.get(model, model)
+
+            # Log the model mapping
+            self.logger.info(f"OpenRouter model mapping: {model} -> {openrouter_model}")
+
             # Prepare the messages
             messages = []  # Add system message
+
+            # Customize system message based on model
+            system_message = "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."
+            if model == "llama4_maverick":
+                system_message = (
+                    "You are Llama-4 Maverick, an advanced AI assistant by Meta."
+                )
+            elif model == "deepcoder":
+                system_message = "You are DeepCoder, an AI specialized in programming and software development."
+
             messages.append(
                 {
                     "role": "system",
-                    "content": "You are Optimus Alpha, an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate.",
+                    "content": system_message,
                 }
             )
 
@@ -95,17 +111,17 @@ class OpenRouterAPI:
                         messages.append(msg)
 
             # Add the current prompt
-            messages.append({"role": "user", "content": prompt})
-
-            # Prepare the payload
+            messages.append({"role": "user", "content": prompt})  # Prepare the payload
             payload = {
-                "model": model,
+                "model": openrouter_model,
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
             }
 
-            self.logger.info(f"Sending request to OpenRouter API with model {model}")
+            self.logger.info(
+                f"Sending request to OpenRouter API with model {model} (mapped to {openrouter_model})"
+            )
 
             # Send the request
             async with session.post(
@@ -120,9 +136,31 @@ class OpenRouterAPI:
                 else:
                     self.logger.warning("No valid response from OpenRouter API")
                     return None
+        except aiohttp.ClientResponseError as e:
+            self.api_failures += 1
+            self.logger.error(f"OpenRouter API HTTP error: {e.status} - {e.message}")
+            error_message = f"Error {e.status}: {e.message}"
+            if e.status == 404:
+                error_message = f"Model not found: {model}. Please check if the model ID is correct."
+            elif e.status == 401:
+                error_message = (
+                    "Authentication error. Please check your OpenRouter API key."
+                )
+            return f"OpenRouter API error: {error_message}"
+
+        except aiohttp.ClientError as e:
+            self.api_failures += 1
+            self.logger.error(f"OpenRouter API connection error: {str(e)}")
+            self.logger.error(traceback.format_exc())
+            return "OpenRouter API connection error. Please try again later."
+
+        except json.JSONDecodeError as e:
+            self.api_failures += 1
+            self.logger.error(f"OpenRouter API JSON decode error: {str(e)}")
+            return "Could not parse OpenRouter API response."
 
         except Exception as e:
             self.api_failures += 1
             self.logger.error(f"OpenRouter API error: {str(e)}")
             self.logger.error(traceback.format_exc())
-            return None
+            return f"Unexpected error when calling OpenRouter API: {str(e)}"

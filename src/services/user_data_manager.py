@@ -252,6 +252,40 @@ class UserDataManager:
             self.logger.error(f"Error updating settings for user {user_id}: {str(e)}")
             raise
 
+    async def update_user_settings_async(
+        self, user_id: str, new_settings: Dict[str, Any]
+    ) -> None:
+        """
+        Update user settings asynchronously.
+
+        :param user_id: Unique identifier for the user
+        :param new_settings: Dictionary of settings to update
+        """
+        try:
+            user_data = await self.get_user_data(user_id)
+            current_settings = user_data.get("settings", {})
+            current_settings.update(new_settings)
+
+            # Update in database
+            self.users_collection.update_one(
+                {"user_id": user_id}, {"$set": {"settings": current_settings}}
+            )
+
+            # Update in memory cache if exists
+            if hasattr(self, "user_data_cache") and user_id in self.user_data_cache:
+                if "settings" not in self.user_data_cache[user_id]:
+                    self.user_data_cache[user_id]["settings"] = {}
+                self.user_data_cache[user_id]["settings"].update(new_settings)
+
+            self.logger.info(
+                f"Async updated settings for user: {user_id} - {new_settings}"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Error updating settings asynchronously for user {user_id}: {str(e)}"
+            )
+            raise
+
     def cleanup_inactive_users(self, days_threshold: int = 30) -> None:
         """
         Remove data for inactive users.
