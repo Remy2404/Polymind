@@ -776,15 +776,29 @@ class TextHandler:
             )
 
         # Add any reference to previously shared media
-        if (
-            self.context_handler.detect_reference_to_image(message_text)
-            and "image_history" in context.user_data
-        ):
+        # Check both our detection method and the media context extractor's method
+        is_referring_to_image = (
+            self.context_handler.detect_reference_to_image(message_text) or 
+            self.media_context_extractor.is_referring_to_image(message_text)
+        )
+        
+        if is_referring_to_image and "image_history" in context.user_data:
+            # Generate context from previous images
             image_context = await self.media_context_extractor.get_image_context(
                 context.user_data
             )
+            
+            # Add an explicit instruction for the model about handling images
+            instruction = (
+                "The user is referring to an image they previously shared. "
+                "Use the following image information to answer their question. "
+                "DO NOT say you don't have access to images - you've previously analyzed "
+                "these images and should use that analysis to answer."
+            )
+            
+            # Add both the context and instruction
             enhanced_prompt = self.prompt_formatter.add_context(
-                enhanced_prompt, "image", image_context
+                enhanced_prompt, "image", f"{instruction}\n\n{image_context}"
             )
 
         if (

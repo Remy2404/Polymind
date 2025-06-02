@@ -208,6 +208,63 @@ class MessageHandlers:
                     await self._safe_reply(
                         update.message, response, parse_mode="Markdown"
                     )
+
+                    # Save the image interaction to memory for future reference with enhanced metadata
+                    try:
+                        # Get conversation manager
+                        conversation_manager = self._get_conversation_manager()
+                        
+                        # Create timestamp for reference
+                        timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        # Prepare image metadata for better memory recall
+                        image_metadata = {
+                            "timestamp": timestamp_str,
+                            "file_id": photo.file_id,
+                            "width": photo.width,
+                            "height": photo.height,
+                            "file_size": photo.file_size
+                        }
+                        
+                        # Extract key image content for user data storage
+                        image_data_entry = {
+                            "timestamp": timestamp_str,
+                            "caption": caption,
+                            "description": response,
+                            "file_id": photo.file_id
+                        }
+                        
+                        # Initialize or update user's image history in user_data
+                        if "image_history" not in context.user_data:
+                            context.user_data["image_history"] = []
+                        
+                        # Add to image history with a reasonable limit
+                        context.user_data["image_history"].append(image_data_entry)
+                        if len(context.user_data["image_history"]) > 10:  # Keep last 10 images
+                            context.user_data["image_history"] = context.user_data["image_history"][-10:]
+                        
+                        # Save image interaction with both caption and response and enhanced metadata
+                        await conversation_manager.save_media_interaction(
+                            user_id,
+                            "image",
+                            caption,
+                            response,
+                            **image_metadata
+                        )
+                        
+                        # Also save to model-specific history if text_handler has model history manager
+                        if hasattr(self.text_handler, 'model_history_manager') and self.text_handler.model_history_manager:
+                            await self.text_handler.model_history_manager.save_image_interaction(
+                                user_id,
+                                caption,
+                                response,
+                                metadata=image_metadata
+                            )
+                        
+                        self.logger.info(f"Enhanced image interaction saved to memory for user {user_id}")
+                        
+                    except Exception as memory_error:
+                        self.logger.error(f"Error saving image interaction to memory: {str(memory_error)}")
                 else:
                     await update.message.reply_text(
                         "Sorry, I couldn't analyze this image. Please try again with a different image."
@@ -989,3 +1046,23 @@ class MessageHandlers:
                 chat_id=update.effective_chat.id,
                 text="An error occurred while processing your document. Please try again later.",
             )
+
+    def _get_conversation_manager(self):
+        """Lazy-load conversation manager with proper dependencies."""
+        if self._conversation_manager is None:
+            # Get memory manager and model history manager from text_handler
+            if hasattr(self.text_handler, 'memory_manager') and hasattr(self.text_handler, 'model_history_manager'):
+                self._conversation_manager = ConversationManager(
+                    self.text_handler.memory_manager,
+                    self.text_handler.model_history_manager
+                )
+            else:
+                # Fallback - create basic conversation manager
+                from services.memory_manager import MemoryManager
+                from services.model_handlers.model_history_manager import ModelHistoryManager
+                
+                memory_manager = MemoryManager()
+                model_history_manager = ModelHistoryManager(memory_manager, self.user_data_manager)
+                self._conversation_manager = ConversationManager(memory_manager, model_history_manager)
+        
+        return self._conversation_manager

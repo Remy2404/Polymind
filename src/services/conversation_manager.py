@@ -61,22 +61,53 @@ class ConversationManager:
         await self.model_history_manager.clear_history(user_id)
 
     async def save_media_interaction(
-        self, user_id: int, media_type: str, prompt: str, response: str
+        self, user_id: int, media_type: str, prompt: str, response: str, **metadata
     ) -> None:
         """Save an interaction with media (image, document, voice) to the conversation history."""
         conversation_id = f"user_{user_id}"
-
-        # Add user message with media indicator
+        
+        # Format the content based on media type
+        content = f"[{media_type.capitalize()} message: {prompt}]"
+        
+        # Determine importance - images should have higher importance to ensure they're preserved in memory
+        importance = 0.8 if media_type.lower() == "image" else 0.6
+        
+        # Create a timestamp for reference
+        timestamp = metadata.get("timestamp", None)
+        
+        # Enhanced metadata for better context retrieval
+        enhanced_metadata = {
+            "is_media": True,
+            "media_type": media_type,
+            "prompt": prompt,
+            "timestamp": timestamp,
+            **metadata  # Include any additional metadata passed in
+        }
+        
+        # Add user message with media indicator and high importance
         await self.memory_manager.add_user_message(
             conversation_id,
-            f"[{media_type.capitalize()} message: {prompt}]",
+            content,
             str(user_id),
-            is_media=True,
-            media_type=media_type,
+            message_type=media_type,
+            importance=importance,
+            **enhanced_metadata
         )
 
-        # Add assistant response
-        await self.memory_manager.add_assistant_message(conversation_id, response)
+        # For images, also store the AI's description/analysis as high importance
+        if media_type.lower() == "image":
+            # Store the AI's analysis of the image with high importance for future reference
+            await self.memory_manager.add_assistant_message(
+                conversation_id, 
+                response,
+                message_type="image_analysis",
+                importance=0.85,  # Even higher importance for the AI's analysis
+                media_description=True,
+                related_media_type="image"
+            )
+        else:
+            # Add standard assistant response for other media types
+            await self.memory_manager.add_assistant_message(conversation_id, response)
 
     async def add_quoted_message_context(
         self,

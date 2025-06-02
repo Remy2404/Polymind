@@ -511,29 +511,58 @@ class MemoryManager:
         user_id: str,
         limit: int = 10,
         include_long_term: bool = True,
+        include_media_context: bool = True,
     ) -> List[Dict]:
-        """Get the conversation context with tiered memory integration, highlighting recent questions."""
+        """Get the conversation context with tiered memory integration, highlighting recent questions and media."""
         # Load memory if not already loaded
         await self._load_memory(conversation_id, user_id)
 
         # Combine contexts with priority to short-term
         context = []
         recent_user_questions = []  # Track recent questions
-
+        recent_media_interactions = []  # Track recent media interactions (especially images)
+        
         # Add short-term memory (most recent conversations)
         short_term = self.short_term_memory.get(conversation_id, [])
         recent_short_term = short_term[-limit:]
         context.extend(recent_short_term)
 
-        # Identify recent user questions from short-term memory
+        # Identify recent user questions and media interactions from short-term memory
         for msg in reversed(recent_short_term):  # Check most recent first
+            # Track questions
             if msg.get("sender") == "user" and "?" in msg.get("content", ""):
                 recent_user_questions.append(msg.get("content"))
-                if (
-                    len(recent_user_questions) >= 2
-                ):  # Limit to last 2 questions for context summary
+                if len(recent_user_questions) >= 2:  # Limit to last 2 questions for context summary
                     break
-        recent_user_questions.reverse()  # Put them back in chronological order
+                
+            # Track media interactions (especially images)
+            if include_media_context and (
+                msg.get("metadata", {}).get("is_media", False) or 
+                msg.get("type") in ["image", "image_analysis"] or
+                msg.get("metadata", {}).get("media_type") in ["image", "photo"] or
+                (msg.get("content", "").startswith("[Image") and "message:" in msg.get("content", ""))
+            ):
+                media_item = {
+                    "content": msg.get("content", ""),
+                    "timestamp": msg.get("timestamp", 0),
+                    "media_type": msg.get("metadata", {}).get("media_type", 
+                                    msg.get("type", "unknown")),
+                }
+                
+                # Also check for the AI's analysis of this media if it exists
+                if msg.get("sender") == "user" and msg.get("metadata", {}).get("media_type") == "image":
+                    # Look for the next message which should be the AI's analysis
+                    msg_index = short_term.index(msg)
+                    if msg_index + 1 < len(short_term):
+                        analysis_msg = short_term[msg_index + 1]
+                        if analysis_msg.get("sender") == "assistant":
+                            media_item["analysis"] = analysis_msg.get("content", "")
+                
+                recent_media_interactions.append(media_item)
+                
+        # Reverse lists to restore chronological order
+        recent_user_questions.reverse()
+        recent_media_interactions.reverse()
 
         # Add relevant medium-term memory not in short-term
         medium_term = self.medium_term_memory.get(conversation_id, [])
@@ -658,6 +687,43 @@ class MemoryManager:
                         },
                     )
 
+        # Add system messages for recent media interactions if any were found
+        if include_media_context and recent_media_interactions:
+            image_interactions = [m for m in recent_media_interactions 
+                                if m.get("media_type") in ["image", "photo"]]
+            
+            if image_interactions:
+                # Create a summary of recent image interactions
+                image_summary = "You have previously analyzed these images from the user:\n"
+                for idx, img in enumerate(image_interactions):
+                    content = img.get("content", "")
+                    # Extract the image caption if available
+                    caption = ""
+                    caption_match = re.search(r"\[Image.*message: (.*?)\]", content)
+                    if caption_match:
+                        caption = caption_match.group(1)
+                    
+                    image_summary += f"- Image {idx+1}: {caption}\n"
+                    if "analysis" in img:
+                        # Include a condensed version of the analysis
+                        analysis = img["analysis"]
+                        summary = analysis[:150] + "..." if len(analysis) > 150 else analysis
+                        image_summary += f"  Your analysis: {summary}\n"
+                
+                # Add instruction for the model
+                image_summary += "\nWhen the user refers to these images, use your memory of them instead of saying you can't access images."
+                
+                context.insert(
+                    0,  # Add at the beginning of the context
+                    {
+                        "sender": "system",
+                        "content": image_summary,
+                        "type": "image_context_summary",
+                        "importance": 0.98,  # Very high importance
+                        "timestamp": time.time() - 6,  # Ensure it sorts early
+                    },
+                )
+        
         # Add a system message summarizing recent user questions if any were found
         if recent_user_questions:
             questions_summary = "\n".join([f'- "{q}"' for q in recent_user_questions])

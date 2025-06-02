@@ -238,12 +238,24 @@ class AIDocumentGenerator:
 
     def _extract_title(self, content: str) -> Optional[str]:
         """Extract the title from the document content"""
+        if not content:
+            return None
+            
+        # Method 1: Look for a main heading (# Title)
         lines = content.split("\n")
         for line in lines:
-            # Look for a main heading (# Title)
-            if line.startswith("# "):
+            if line.strip().startswith("# "):
                 return line[2:].strip()
-
+                
+        # Method 2: Look for the first line with text content
+        for line in lines:
+            cleaned_line = line.strip()
+            if cleaned_line and not cleaned_line.startswith("```"):
+                # Remove markdown formatting if present (e.g., *bold*, _italic_)
+                cleaned_title = re.sub(r'[*_#\[\]\(\)`]', '', cleaned_line)
+                if cleaned_title:
+                    return cleaned_title[:100]  # Limit title length
+                    
         # If no title found, return None
         return None
 
