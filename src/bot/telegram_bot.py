@@ -142,7 +142,7 @@ class TelegramBot:
     def _init_model_apis(self):
         """Initialize AI model APIs."""
         # Gemini API
-        model_name = "gemini-2.5-pro-exp-03-25"
+        model_name = "gemini-2.0-flash"
         vision_model = genai.GenerativeModel(model_name)
         rate_limiter = RateLimiter(requests_per_minute=30)
         self.gemini_api = GeminiAPI(vision_model=vision_model, rate_limiter=rate_limiter)

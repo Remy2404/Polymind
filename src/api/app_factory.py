@@ -1,8 +1,3 @@
-"""
-Application factory for creating the FastAPI app instance.
-Handles dependency injection, middleware setup, and route registration.
-"""
-
 import os
 import time
 import logging
@@ -83,16 +78,9 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
 
 
 def create_application():
-    """
-    Create and configure the FastAPI application with all dependencies.
 
-    Returns:
-        FastAPI: The configured application instance
-    """
-    # Set the environment variable so our code knows we're using uvicorn
     os.environ["DEV_SERVER"] = "uvicorn"
 
-    # Initialize the bot
     bot = TelegramBot()
 
     # Create lifespan manager that includes the bot instance

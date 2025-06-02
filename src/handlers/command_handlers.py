@@ -180,11 +180,9 @@ class CommandHandlers:
         # Get current model and prompt from context
         model = context.user_data.get("aidoc_model", "gemini")
         doc_type = context.user_data.get("aidoc_type", "article")
-        prompt = context.user_data.get("aidoc_prompt", "")
-
-        # Ensure model name reflects the actual models available
+        prompt = context.user_data.get("aidoc_prompt", "")        # Ensure model name reflects the actual models available
         model_name = (
-            "Gemini-2.5-Pro"
+            "Gemini-2.0-Flash"
             if model == "gemini"
             else "DeepSeek 70B" if model == "deepseek" else "Optimus Alpha"
         )
@@ -246,8 +244,7 @@ class CommandHandlers:
             new_model = data.replace("aidoc_model_", "")
             current_model = context.user_data.get("aidoc_model", "gemini")
 
-            if new_model == current_model:
-                # Model hasn't changed, just acknowledge
+            if new_model == current_model:                # Model hasn't changed, just acknowledge
                 model_name = (
                     "Gemini-2.5-Pro" if current_model == "gemini" else "DeepSeek 70B"
                 )
@@ -304,9 +301,8 @@ class CommandHandlers:
                 )
             return
 
-        try:
-            # Import AI document generator (ensure path is correct)
-            from utils.document_ai_generator import AIDocumentGenerator
+        try:            # Import AI document generator (ensure path is correct)
+            from utils.docgen.document_ai_generator import AIDocumentGenerator
 
             ai_doc_generator = AIDocumentGenerator(self.gemini_api)
 
@@ -1326,9 +1322,8 @@ class CommandHandlers:
 
         else:  # Fallback to hardcoded models if registry not available
             keyboard = [
-                [
-                    InlineKeyboardButton(
-                        "gemini-2.5-Pro", callback_data="model_gemini"
+                [                    InlineKeyboardButton(
+                        "Gemini-2.0-Flash", callback_data="model_gemini"
                     ),
                     InlineKeyboardButton(
                         "DeepSeek 70B", callback_data="model_deepseek"
@@ -1352,11 +1347,9 @@ class CommandHandlers:
             # Get current model using old method
             current_model = await self.user_data_manager.get_user_preference(
                 user_id, "preferred_model", default="gemini"
-            )
-
-            # Map model code to display name
+            )            # Map model code to display name
             model_names = {
-                "gemini": "Gemini-2.5-Pro",
+                "gemini": "Gemini-2.0-Flash",
                 "deepseek": "DeepSeek 70B",
                 "optimus_alpha": "🌀 Optimus Alpha",  # Match button text/callback
                 "deepcoder": "🧑‍💻 DeepCoder",  # Match button text/callback
@@ -1434,10 +1427,9 @@ class CommandHandlers:
             )
         else:
             # Fallback to legacy method
-            model_switched = True
-            # Get display name from hardcoded mapping using the ORIGINAL callback value for lookup
+            model_switched = True            # Get display name from hardcoded mapping using the ORIGINAL callback value for lookup
             fallback_model_names = {
-                "gemini": "Gemini-2.5-Pro",
+                "gemini": "Gemini-2.0-Flash",
                 "deepseek": "DeepSeek 70B",
                 "optimus_alpha": "🌀 Optimus Alpha",  # Use underscore version from callback for lookup
                 "deepcoder": "🧑‍💻 DeepCoder",
@@ -1612,9 +1604,8 @@ class CommandHandlers:
     async def try_generate_document(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, document_format: str
     ) -> None:
-        try:
-            # Import AI document generator
-            from utils.document_ai_generator import AIDocumentGenerator
+        try:            # Import AI document generator
+            from utils.docgen.document_ai_generator import AIDocumentGenerator
 
             ai_doc_generator = AIDocumentGenerator(self.gemini_api)
 

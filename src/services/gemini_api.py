@@ -13,22 +13,7 @@ import io
 import base64
 import json
 import httpx
-import sys
-import os
-from PIL import UnidentifiedImageError
-import io
-
-# Avoid importing Any from pyparsing as it conflicts with typing.Any
-from services.rate_limiter import RateLimiter, rate_limit
-from utils.telegramlog import telegram_logger
-from dotenv import load_dotenv
-from services.image_processing import ImageProcessor
-from database.connection import get_database, get_image_cache_collection
-
-# import httpx
-import time
 import aiohttp
-import traceback
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -41,6 +26,13 @@ from google.api_core.exceptions import (
     ServiceUnavailable,
     GoogleAPIError,
 )
+
+# Avoid importing Any from pyparsing as it conflicts with typing.Any
+from services.rate_limiter import RateLimiter, rate_limit
+from utils.telegramlog import telegram_logger
+from dotenv import load_dotenv
+from services.image_processing import ImageProcessor
+from database.connection import get_database, get_image_cache_collection
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -280,21 +272,6 @@ class GeminiAPI:
     async def handle_multimodal_input(
         self, prompt: str, media_files: List[Dict] = None
     ) -> str:
-        """
-        Process a multimodal input with various file types (images, audio, video, text)
-        and generate a comprehensive response.
-
-        Args:
-            prompt: The user's text prompt
-            media_files: List of dictionaries with media file data
-                Each dict should have:
-                - type: "photo", "video", "audio", "document"
-                - data: BytesIO object containing the file data
-                - mime: MIME type of the file
-
-        Returns:
-            Generated text response
-        """
         await self.rate_limiter.acquire()
 
         try:
@@ -334,16 +311,6 @@ class GeminiAPI:
             return f"I'm sorry, I had trouble processing your {media_type if 'media_type' in locals() else 'media'}. Please try again or describe what you're looking for."
 
     async def generate_image(self, prompt: str) -> Optional[bytes]:
-        """
-        Generate an image based on a text prompt using Gemini's image generation capabilities.
-
-        Args:
-            prompt: Text description of the image to generate
-
-        Returns:
-            Image data as bytes
-        """
-        # Check cache first
         if self.image_cache is not None:
             cached_image = await asyncio.to_thread(
                 self.image_cache.find_one, {"prompt": prompt}
@@ -414,17 +381,6 @@ class GeminiAPI:
     async def analyze_contents(
         self, file_data: io.BytesIO, file_type: str, prompt: str
     ) -> str:
-        """
-        Analyze the contents of various file types (improved version)
-
-        Args:
-            file_data: BytesIO containing the file data
-            file_type: The type of file ("image", "video", "audio", "document", etc.)
-            prompt: User's prompt or question about the file
-
-        Returns:
-            Analysis text response
-        """
         try:
             if file_type == "image":
                 # Use existing image analysis logic
@@ -566,16 +522,6 @@ class GeminiAPI:
     async def generate_content(
         self, prompt: str, image_data: List = None
     ) -> Dict[str, Any]:
-        """
-        Generate content from prompt with optional image
-
-        Args:
-            prompt: The text prompt
-            image_data: Optional list of image data
-
-        Returns:
-            Dictionary with response content
-        """
         try:
             # Ensure we have a session
             await self.ensure_session()
@@ -685,7 +631,6 @@ class GeminiAPI:
     async def generate_content_with_retry(
         self, content, generation_config, max_retries=5
     ):
-        """Generate content with automatic retries and exponential backoff"""
         retry_delay = 1  # Start with 1 second
 
         for attempt in range(max_retries):

@@ -12,6 +12,9 @@ class ResponseFormatter:
 
     async def format_telegram_markdown(self, text: str) -> str:
         try:
+            # Ensure text is properly formatted
+            if not isinstance(text, str):
+                text = str(text)
 
             formatted_text = convert(text)
             return formatted_text
@@ -53,6 +56,13 @@ class ResponseFormatter:
             return html.escape(text)
 
     async def split_long_message(self, text: str, max_length: int = 4096) -> List[str]:
+        # Validate inputs
+        if not text or not isinstance(text, str):
+            return [""]
+
+        if max_length <= 0:
+            max_length = 4096
+
         if len(text) <= max_length:
             return [text]
 
@@ -60,8 +70,35 @@ class ResponseFormatter:
         current_chunk = ""
 
         for line in text.split("\n"):
-            if len(current_chunk) + len(line) + 1 > max_length:
-                chunks.append(current_chunk)
+            # Handle lines that are too long by themselves
+            if len(line) > max_length:
+                # Add current chunk if it exists
+                if current_chunk:
+                    chunks.append(current_chunk)
+                    current_chunk = ""
+
+                # Split the long line into smaller pieces
+                words = line.split(" ")
+                temp_line = ""
+                for word in words:
+                    if len(temp_line + " " + word) > max_length:
+                        if temp_line:
+                            chunks.append(temp_line)
+                            temp_line = word
+                        else:
+                            # Single word is too long, force split
+                            chunks.append(word[:max_length])
+                            temp_line = (
+                                word[max_length:] if len(word) > max_length else ""
+                            )
+                    else:
+                        temp_line += " " + word if temp_line else word
+
+                if temp_line:
+                    current_chunk = temp_line
+            elif len(current_chunk) + len(line) + 1 > max_length:
+                if current_chunk:
+                    chunks.append(current_chunk)
                 current_chunk = line
             else:
                 current_chunk += "\n" + line if current_chunk else line

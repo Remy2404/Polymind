@@ -34,9 +34,8 @@ class TestGeminiAPI(unittest.TestCase):
             self.skipTest("GEMINI_API_KEY environment variable not set")
         
         genai.configure(api_key=api_key)
-        
-        # Create a mock vision model and rate limiter
-        self.vision_model = genai.GenerativeModel("gemini-2.5-pro-exp-03-25")
+          # Create a mock vision model and rate limiter
+        self.vision_model = genai.GenerativeModel("gemini-2.0-flash")
         self.rate_limiter = RateLimiter(requests_per_minute=20)
         
         # Create a GeminiAPI instance
