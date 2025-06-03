@@ -1,96 +1,252 @@
-import sys, os
+"""
+Model switching and listing commands for the Telegram bot.
+Provides categorized model lists and easy switching between AI models.
+"""
 
+import os
+import sys
+import logging
+from typing import List, Dict, Any, Optional
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes, CallbackQueryHandler, CommandHandler
+
+# Import model configurations
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
-from services.model_handlers.simple_api_manager import (
+
+from src.services.model_handlers.simple_api_manager import (
     SuperSimpleAPIManager,
     APIProvider,
 )
-import logging
+from src.services.user_data_manager import UserDataManager
+
+logger = logging.getLogger(__name__)
 
 
 class ModelCommands:
     def __init__(
-        self,
-        user_data_manager,
-        telegram_logger,
-        deepseek_api=None,
-        openrouter_api=None,
-        gemini_api=None,
+        self, api_manager: SuperSimpleAPIManager, user_data_manager: UserDataManager
     ):
+        self.api_manager = api_manager
         self.user_data_manager = user_data_manager
-        self.telegram_logger = telegram_logger
-        self.logger = logging.getLogger(__name__)
 
-        # 🚀 Initialize the super simple API manager
-        self.api_manager = SuperSimpleAPIManager(
-            gemini_api=gemini_api,
-            deepseek_api=deepseek_api,
-            openrouter_api=openrouter_api,
-        )
-
-    async def switch_model_command(
+    async def switchmodel_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """🔄 Handle model switching with a nice UI"""
+        """🔄 Main switchmodel command - shows category selection"""
         user_id = update.effective_user.id
 
         # Get current model
         current_model = await self.user_data_manager.get_user_preference(
             user_id, "preferred_model", default="gemini"
         )
-
         current_config = self.api_manager.get_model_config(current_model)
-        current_name = current_config.display_name if current_config else "Unknown"
+        current_name = current_config.display_name if current_config else current_model
 
-        # Build keyboard with all available models
+        # Get categorized models
+        categories = self.api_manager.get_models_by_category()
+
+        # Create inline keyboard with model categories
         keyboard = []
-        row = []
 
-        all_models = self.api_manager.get_all_models()
-
-        # Sort by provider for better organization
-        providers_order = [
-            APIProvider.GEMINI,
-            APIProvider.DEEPSEEK,
-            APIProvider.OPENROUTER,
-        ]
-        sorted_models = []
-
-        for provider in providers_order:
-            provider_models = [
-                (k, v) for k, v in all_models.items() if v.provider == provider
-            ]
-            sorted_models.extend(provider_models)
-
-        # Create buttons (2 per row)
-        for i, (model_id, model_config) in enumerate(sorted_models):
-            button_text = f"{model_config.emoji} {model_config.display_name}"
-            button = InlineKeyboardButton(
-                button_text, callback_data=f"model_{model_id}"
+        # Add category buttons (2 per row)
+        category_buttons = []
+        for category_id, category_info in categories.items():
+            model_count = len(category_info["models"])
+            button_text = (
+                f"{category_info['emoji']} {category_info['name']} ({model_count})"
             )
-            row.append(button)
+            button = InlineKeyboardButton(
+                button_text, callback_data=f"category_{category_id}"
+            )
+            category_buttons.append(button)
 
-            # New row every 2 buttons
-            if (i + 1) % 2 == 0 or i == len(sorted_models) - 1:
-                keyboard.append(row)
-                row = []
+            # Add row every 2 buttons
+            if len(category_buttons) == 2:
+                keyboard.append(category_buttons)
+                category_buttons = []
+
+        # Add remaining button if odd number
+        if category_buttons:
+            keyboard.append(category_buttons)
+
+        # Add special buttons
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "📊 All Models (A-Z)", callback_data="category_all"
+                ),
+                InlineKeyboardButton("ℹ️ Current Model", callback_data="current_model"),
+            ]
+        )
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
+        message = (
+            f"🤖 **Model Selection Center**\n\n"
+            f"Current Model: **{current_name}** {current_config.emoji if current_config else '🤖'}\n\n"
+            f"📂 Choose a category to browse models:\n"
+            f"• Select any category to see available models\n"
+            f"• All OpenRouter models are **completely free** 🆓\n"
+            f"• Switch instantly between any model ⚡"
+        )
+
         await update.message.reply_text(
-            f"🔄 Current model: *{current_name}*\n\n" "Choose your AI model:",
-            reply_markup=reply_markup,
-            parse_mode="Markdown",
+            message, reply_markup=reply_markup, parse_mode="Markdown"
+        )
+
+    async def handle_category_selection(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle when user selects a model category"""
+        query = update.callback_query
+        await query.answer()
+
+        category_id = query.data.replace("category_", "")
+
+        if category_id == "all":
+            await self._show_all_models(query)
+        elif category_id == "current":
+            await self._show_current_model(query)
+        else:
+            await self._show_category_models(query, category_id)
+
+    async def _show_category_models(self, query, category_id: str) -> None:
+        """Show models in a specific category"""
+        categories = self.api_manager.get_models_by_category()
+        category_info = categories.get(category_id)
+
+        if not category_info:
+            await query.edit_message_text("❌ Category not found.")
+            return
+
+        models = category_info["models"]
+
+        # Create model selection keyboard
+        keyboard = []
+
+        for model_id, config in models.items():
+            # Show model with OpenRouter key if available
+            display_text = f"{config.emoji} {config.display_name}"
+            if config.openrouter_key:
+                # Show the actual OpenRouter model key for transparency
+                display_text += f"\n({config.openrouter_key})"
+
+            button = InlineKeyboardButton(
+                display_text, callback_data=f"model_{model_id}"
+            )
+
+            # Add row (each model gets its own row for better readability)
+            keyboard.append([button])
+
+        # Add back button
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "⬅️ Back to Categories", callback_data="back_to_categories"
+                )
+            ]
+        )
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        message = (
+            f"{category_info['emoji']} **{category_info['name']}**\n\n"
+            f"📋 Available models in this category:\n"
+            f"• Click any model to switch instantly\n"
+            f"• Total models: **{len(models)}**\n\n"
+            f"🔄 Select a model to switch:"
+        )
+
+        await query.edit_message_text(
+            message, reply_markup=reply_markup, parse_mode="Markdown"
+        )
+
+    async def _show_all_models(self, query) -> None:
+        """Show all models alphabetically"""
+        all_models = self.api_manager.get_all_models()
+
+        # Sort models alphabetically
+        sorted_models = sorted(all_models.items(), key=lambda x: x[1].display_name)
+
+        # Create model selection keyboard (1 per row for readability)
+        keyboard = []
+
+        for model_id, config in sorted_models:
+            display_text = f"{config.emoji} {config.display_name}"
+            if config.openrouter_key:
+                display_text += f"\n({config.openrouter_key})"
+
+            button = InlineKeyboardButton(
+                display_text, callback_data=f"model_{model_id}"
+            )
+            keyboard.append([button])
+
+        # Add back button
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "⬅️ Back to Categories", callback_data="back_to_categories"
+                )
+            ]
+        )
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        message = (
+            f"📊 **All Available Models** (A-Z)\n\n"
+            f"📋 Complete list of {len(all_models)} models:\n"
+            f"• Sorted alphabetically for easy browsing\n"
+            f"• Click any model to switch instantly\n\n"
+            f"🔄 Select a model:"
+        )
+
+        await query.edit_message_text(
+            message, reply_markup=reply_markup, parse_mode="Markdown"
+        )
+
+    async def _show_current_model(self, query) -> None:
+        """Show current model information"""
+        user_id = query.from_user.id
+        current_model = await self.user_data_manager.get_user_preference(
+            user_id, "preferred_model", default="gemini"
+        )
+        current_config = self.api_manager.get_model_config(current_model)
+
+        if current_config:
+            message = (
+                f"ℹ️ **Current Model Information**\n\n"
+                f"**Name:** {current_config.emoji} {current_config.display_name}\n"
+                f"**Provider:** {current_config.provider.value.title()}\n"
+                f"**Description:** {current_config.description}\n"
+            )
+
+            if current_config.openrouter_key:
+                message += f"**OpenRouter Key:** `{current_config.openrouter_key}`\n"
+
+            message += f"\n✅ This model is currently active and ready to use!"
+        else:
+            message = f"❌ Current model '{current_model}' not found in configuration."
+
+        # Add back button
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "⬅️ Back to Categories", callback_data="back_to_categories"
+                )
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            message, reply_markup=reply_markup, parse_mode="Markdown"
         )
 
     async def handle_model_selection(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """✅ Handle when user selects a model"""
+        """Handle when user selects a specific model"""
         query = update.callback_query
         user_id = query.from_user.id
         await query.answer()
@@ -108,49 +264,166 @@ class ModelCommands:
             user_id, "preferred_model", selected_model
         )
 
-        self.logger.info(f"User {user_id} switched to: {selected_model}")
+        logger.info(f"User {user_id} switched to: {selected_model}")
 
         # Confirmation message
-        await query.edit_message_text(
-            f"✅ Switched to *{model_config.display_name}*\n\n"
-            f"{model_config.description}\n\n"
-            "Ready to chat! 🚀",
-            parse_mode="Markdown",
+        message = (
+            f"✅ **Successfully switched to:**\n\n"
+            f"**{model_config.emoji} {model_config.display_name}**\n\n"
+            f"📝 {model_config.description}\n"
         )
+
+        if model_config.openrouter_key:
+            message += f"\n🔗 **OpenRouter Model:** `{model_config.openrouter_key}`\n"
+
+        message += f"\n🚀 **Ready to chat!** Send me any message to test the new model."
+
+        # Add options to switch again or go back
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "🔄 Switch Again", callback_data="back_to_categories"
+                )
+            ],
+            [InlineKeyboardButton("ℹ️ Model Info", callback_data="current_model")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            message, reply_markup=reply_markup, parse_mode="Markdown"
+        )
+
+    async def handle_back_to_categories(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle back to categories button"""
+        query = update.callback_query
+        await query.answer()
+
+        # Simulate the original switchmodel command
+        # Get current model
+        user_id = query.from_user.id
+        current_model = await self.user_data_manager.get_user_preference(
+            user_id, "preferred_model", default="gemini"
+        )
+        current_config = self.api_manager.get_model_config(current_model)
+        current_name = current_config.display_name if current_config else current_model
+
+        # Get categorized models
+        categories = self.api_manager.get_models_by_category()
+
+        # Create inline keyboard with model categories
+        keyboard = []
+
+        # Add category buttons (2 per row)
+        category_buttons = []
+        for category_id, category_info in categories.items():
+            model_count = len(category_info["models"])
+            button_text = (
+                f"{category_info['emoji']} {category_info['name']} ({model_count})"
+            )
+            button = InlineKeyboardButton(
+                button_text, callback_data=f"category_{category_id}"
+            )
+            category_buttons.append(button)
+
+            # Add row every 2 buttons
+            if len(category_buttons) == 2:
+                keyboard.append(category_buttons)
+                category_buttons = []
+
+        # Add remaining button if odd number
+        if category_buttons:
+            keyboard.append(category_buttons)
+
+        # Add special buttons
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "📊 All Models (A-Z)", callback_data="category_all"
+                ),
+                InlineKeyboardButton("ℹ️ Current Model", callback_data="current_model"),
+            ]
+        )
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        message = (
+            f"🤖 **Model Selection Center**\n\n"
+            f"Current Model: **{current_name}** {current_config.emoji if current_config else '🤖'}\n\n"
+            f"📂 Choose a category to browse models:\n"
+            f"• Select any category to see available models\n"
+            f"• All OpenRouter models are **completely free** 🆓\n"
+            f"• Switch instantly between any model ⚡"
+        )
+
+        await query.edit_message_text(
+            message, reply_markup=reply_markup, parse_mode="Markdown"
+        )
+
+    async def current_model_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Show current model information (standalone command)"""
+        user_id = update.effective_user.id
+        current_model = await self.user_data_manager.get_user_preference(
+            user_id, "preferred_model", default="gemini"
+        )
+        current_config = self.api_manager.get_model_config(current_model)
+
+        if current_config:
+            message = (
+                f"ℹ️ **Current Active Model**\n\n"
+                f"**{current_config.emoji} {current_config.display_name}**\n\n"
+                f"**Provider:** {current_config.provider.value.title()}\n"
+                f"**Description:** {current_config.description}\n"
+            )
+
+            if current_config.openrouter_key:
+                message += f"**OpenRouter Key:** `{current_config.openrouter_key}`\n"
+
+            message += f"\n✅ This model is ready to use! Send any message to chat."
+        else:
+            message = f"❌ Current model '{current_model}' not found in configuration."
+
+        await update.message.reply_text(message, parse_mode="Markdown")
 
     async def list_models_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """📋 Show all available models"""
+        """List all available models by category (text-only)"""
+        categories = self.api_manager.get_models_by_category()
 
-        # Group by provider
-        providers_data = {
-            APIProvider.GEMINI: {"title": "*🧠 Gemini Models:*", "models": []},
-            APIProvider.DEEPSEEK: {"title": "*🔮 DeepSeek Models:*", "models": []},
-            APIProvider.OPENROUTER: {
-                "title": "*🌐 OpenRouter Models (Free):*",
-                "models": [],
-            },
-        }
+        message_parts = ["🤖 **Available AI Models by Category**\n"]
 
-        # Organize models by provider
-        for model_id, config in self.api_manager.get_all_models().items():
-            model_line = f"• {config.emoji} *{config.display_name}*"
-            if config.description:
-                model_line += f" - {config.description}"
+        for category_id, category_info in categories.items():
+            message_parts.append(
+                f"\n{category_info['emoji']} **{category_info['name']}:**"
+            )
 
-            if config.provider in providers_data:
-                providers_data[config.provider]["models"].append(model_line)
+            for model_id, config in category_info["models"].items():
+                model_line = f"• {config.emoji} {config.display_name}"
+                if config.openrouter_key:
+                    model_line += f" (`{config.openrouter_key}`)"
+                message_parts.append(model_line)
 
-        # Build message
-        message_parts = ["🤖 *Available AI Models*\n"]
-
-        for provider_info in providers_data.values():
-            if provider_info["models"]:
-                message_parts.append(provider_info["title"])
-                message_parts.extend(provider_info["models"])
-                message_parts.append("")
-
-        message_parts.append("💡 Use /switchmodel to change your model.")
+        message_parts.append(
+            f"\n💡 Use `/switchmodel` for interactive model selection."
+        )
+        message_parts.append(f"💡 Use `/currentmodel` to see your active model.")
 
         await update.message.reply_text("\n".join(message_parts), parse_mode="Markdown")
+
+
+# Callback query handlers mapping
+def get_model_command_handlers(model_commands: ModelCommands) -> List[tuple]:
+    """Get list of callback handlers for model commands"""
+    return [
+        ("category_", model_commands.handle_category_selection),
+        ("model_", model_commands.handle_model_selection),
+        ("back_to_categories", model_commands.handle_back_to_categories),
+        (
+            "current_model",
+            model_commands.handle_category_selection,
+        ),
+    ]

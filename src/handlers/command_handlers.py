@@ -14,9 +14,12 @@ from telegram.ext import (
 )
 from services.user_data_manager import UserDataManager
 from services.gemini_api import GeminiAPI
-from src.utils.log.telegramlog import TelegramLogger as telegram_logger
+from services.model_handlers.simple_api_manager import SuperSimpleAPIManager
+from utils.log.telegramlog import TelegramLogger as telegram_logger
 import logging
-from services.flux_lora_img import FluxLoraImageGenerator as flux_lora_image_generator
+from services.flux_lora_img import (
+    FluxLoraImageGenerator as flux_lora_image_generator,
+)
 import time, asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -94,7 +97,14 @@ class CommandHandlers:
         self.telegram_logger = telegram_logger
         self.image_handler = ImageGenerationHandler()
         self.deepseek_api = deepseek_api
-        self.openrouter_api = openrouter_api  # Initialize command modules
+        self.openrouter_api = openrouter_api
+
+        # Create SuperSimpleAPIManager for model handling
+        self.api_manager = SuperSimpleAPIManager(
+            gemini_api, deepseek_api, openrouter_api
+        )
+
+        # Initialize command modules
         self.basic_commands = BasicCommands(user_data_manager, telegram_logger)
         self.settings_commands = SettingsCommands(user_data_manager, telegram_logger)
         self.image_commands = ImageCommands(
@@ -103,9 +113,7 @@ class CommandHandlers:
             telegram_logger,
             self.image_handler,
         )
-        self.model_commands = ModelCommands(
-            user_data_manager, telegram_logger, deepseek_api, openrouter_api, gemini_api
-        )
+        self.model_commands = ModelCommands(self.api_manager, user_data_manager)
         self.document_commands = DocumentCommands(
             gemini_api, user_data_manager, telegram_logger
         )
@@ -165,17 +173,17 @@ class CommandHandlers:
     async def switch_model_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        return await self.model_commands.switch_model_command(update, context)
+        return await self.model_commands.switchmodel_command(update, context)
 
     async def list_models_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.model_commands.list_models_command(update, context)
 
-    async def handle_model_selection(
+    async def current_model_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        return await self.model_commands.handle_model_selection(update, context)
+        return await self.model_commands.current_model_command(update, context)
 
     # Delegate document commands
     async def generate_ai_document_command(
@@ -222,6 +230,12 @@ class CommandHandlers:
             await self.image_commands.handle_image_settings(update, context, data)
         elif data.startswith("pref_"):
             await self.settings_commands.handle_user_preferences(update, context, data)
+        # Route hierarchical model selection callbacks to CallbackHandlers
+        elif data.startswith(("category_", "model_")) or data in (
+            "back_to_categories",
+            "current_model",
+        ):
+            await self.callback_handlers.handle_callback_query(update, context)
         elif data.startswith(("aidoc_type_", "aidoc_format_", "aidoc_model_")):
             await self.document_commands.handle_ai_document_callback(
                 update, context, data
@@ -269,21 +283,18 @@ class CommandHandlers:
                 CommandHandler("listmodels", self.list_models_command)
             )
             application.add_handler(
-                CommandHandler("exportdoc", self.export_to_document)
+                CommandHandler("currentmodel", self.current_model_command)
             )
+            application.add_handler(
+                CommandHandler("exportdoc", self.export_to_document)            )
             application.add_handler(
                 CommandHandler("gendoc", self.generate_ai_document_command)
-            )
-
-            # Specific callback handlers FIRST
-            application.add_handler(
-                CallbackQueryHandler(self.handle_model_selection, pattern="^model_")
             )
 
             # Save cache for use in command handlers if needed
             self.response_cache = cache
 
-            # General callback handler LAST
+            # General callback handler LAST (handles all callbacks including model selection)
             application.add_handler(CallbackQueryHandler(self.handle_callback_query))
 
             self.logger.info("Modular command handlers registered successfully")

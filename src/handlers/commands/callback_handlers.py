@@ -27,14 +27,19 @@ class CallbackHandlers:
             # Route AI document callbacks
             if callback_data.startswith(("aidoc_type_", "aidoc_format_", "aidoc_model_")):
                 await self.document_commands.handle_ai_document_callback(update, context, callback_data)
-            
-            # Route document format callbacks
+              # Route document format callbacks
             elif callback_data.startswith("doc_format_"):
                 await self.document_commands.handle_document_format_callback(update, context)
             
-            # Route model selection callbacks
+            # Route model selection callbacks - hierarchical selection
+            elif callback_data.startswith("category_"):
+                await self.model_commands.handle_category_selection(update, context)
             elif callback_data.startswith("model_"):
-                await self.model_commands.handle_model_callback(update, context)
+                await self.model_commands.handle_model_selection(update, context)
+            elif callback_data == "back_to_categories":
+                await self.model_commands.handle_back_to_categories(update, context)
+            elif callback_data == "current_model":
+                await self.model_commands.handle_category_selection(update, context)
             
             # Route export format callbacks
             elif callback_data.startswith("export_"):
