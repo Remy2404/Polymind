@@ -1,4 +1,5 @@
 import sys, os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from telegram import (
     Update,
@@ -33,7 +34,7 @@ from .commands import (
     ModelCommands,
     DocumentCommands,
     ExportCommands,
-    CallbackHandlers
+    CallbackHandlers,
 )
 
 
@@ -93,20 +94,17 @@ class CommandHandlers:
         self.telegram_logger = telegram_logger
         self.image_handler = ImageGenerationHandler()
         self.deepseek_api = deepseek_api
-        self.openrouter_api = openrouter_api
-
-        # Initialize command modules
-        self.basic_commands = BasicCommands(
-            user_data_manager, telegram_logger, self.logger
-        )
-        self.settings_commands = SettingsCommands(
-            user_data_manager, telegram_logger
-        )
+        self.openrouter_api = openrouter_api  # Initialize command modules
+        self.basic_commands = BasicCommands(user_data_manager, telegram_logger)
+        self.settings_commands = SettingsCommands(user_data_manager, telegram_logger)
         self.image_commands = ImageCommands(
-            flux_lora_image_generator, user_data_manager, telegram_logger, self.image_handler
+            flux_lora_image_generator,
+            user_data_manager,
+            telegram_logger,
+            self.image_handler,
         )
         self.model_commands = ModelCommands(
-            user_data_manager, telegram_logger, deepseek_api, openrouter_api
+            user_data_manager, telegram_logger, deepseek_api, openrouter_api, gemini_api
         )
         self.document_commands = DocumentCommands(
             gemini_api, user_data_manager, telegram_logger
@@ -114,65 +112,103 @@ class CommandHandlers:
         self.export_commands = ExportCommands(
             gemini_api, user_data_manager, telegram_logger
         )
-        
+
         # Initialize callback handlers
         self.callback_handlers = CallbackHandlers(
-            self.document_commands, 
-            self.model_commands, 
-            self.export_commands
+            self.document_commands, self.model_commands, self.export_commands
         )
 
     # Delegate basic commands
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def start_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         return await self.basic_commands.start_command(update, context)
 
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def help_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         return await self.basic_commands.help_command(update, context)
 
-    async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def reset_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         return await self.basic_commands.reset_command(update, context)
 
     # Delegate settings commands
-    async def settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def settings(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         return await self.settings_commands.settings(update, context)
 
-    async def handle_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def handle_stats(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         return await self.settings_commands.handle_stats(update, context)
 
-    async def handle_preferences(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def handle_preferences(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         return await self.settings_commands.handle_preferences(update, context)
 
     # Delegate image commands
-    async def generate_image_advanced(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def generate_image_advanced(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         return await self.image_commands.generate_image_advanced(update, context)
 
-    async def generate_together_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def generate_together_image(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         return await self.image_commands.generate_together_image(update, context)
 
     # Delegate model commands
-    async def switch_model_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def switch_model_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         return await self.model_commands.switch_model_command(update, context)
 
-    async def handle_model_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def list_models_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.model_commands.list_models_command(update, context)
+
+    async def handle_model_selection(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         return await self.model_commands.handle_model_selection(update, context)
 
     # Delegate document commands
-    async def generate_ai_document_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        return await self.document_commands.generate_ai_document_command(update, context)
+    async def generate_ai_document_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.document_commands.generate_ai_document_command(
+            update, context
+        )
 
     # Delegate export commands
-    async def export_to_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def export_to_document(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         return await self.export_commands.export_to_document(update, context)
 
-    async def handle_export(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def handle_export(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         return await self.export_commands.handle_export(update, context)
 
-    async def handle_export_conversation(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        return await self.export_commands.handle_export_conversation(update, context)    # Main callback query handler - delegate to central callback handler
-    async def handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def handle_export_conversation(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.export_commands.handle_export_conversation(
+            update, context
+        )  # Main callback query handler - delegate to central callback handler
+
+    async def handle_callback_query(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         query = update.callback_query
         data = query.data
-        
+
         # Handle basic callbacks that don't need special routing
         if data == "help":
             await self.help_command(update, context)
@@ -187,10 +223,14 @@ class CommandHandlers:
         elif data.startswith("pref_"):
             await self.settings_commands.handle_user_preferences(update, context, data)
         elif data.startswith(("aidoc_type_", "aidoc_format_", "aidoc_model_")):
-            await self.document_commands.handle_ai_document_callback(update, context, data)
+            await self.document_commands.handle_ai_document_callback(
+                update, context, data
+            )
         elif data.startswith("export_format_"):
             document_format = data.replace("export_format_", "")
-            await self.export_commands.generate_document(update, context, document_format)
+            await self.export_commands.generate_document(
+                update, context, document_format
+            )
         elif data == "export_conversation":
             await self.export_commands.handle_export_conversation(update, context)
         elif data == "export_custom":
@@ -213,12 +253,27 @@ class CommandHandlers:
             application.add_handler(CommandHandler("settings", self.settings))
             application.add_handler(CommandHandler("stats", self.handle_stats))
             application.add_handler(CommandHandler("export", self.handle_export))
-            application.add_handler(CommandHandler("preferences", self.handle_preferences))
-            application.add_handler(CommandHandler("imagen3", self.generate_image_advanced))
-            application.add_handler(CommandHandler("genimg", self.generate_together_image))
-            application.add_handler(CommandHandler("switchmodel", self.switch_model_command))
-            application.add_handler(CommandHandler("exportdoc", self.export_to_document))
-            application.add_handler(CommandHandler("gendoc", self.generate_ai_document_command))
+            application.add_handler(
+                CommandHandler("preferences", self.handle_preferences)
+            )
+            application.add_handler(
+                CommandHandler("imagen3", self.generate_image_advanced)
+            )
+            application.add_handler(
+                CommandHandler("genimg", self.generate_together_image)
+            )
+            application.add_handler(
+                CommandHandler("switchmodel", self.switch_model_command)
+            )
+            application.add_handler(
+                CommandHandler("listmodels", self.list_models_command)
+            )
+            application.add_handler(
+                CommandHandler("exportdoc", self.export_to_document)
+            )
+            application.add_handler(
+                CommandHandler("gendoc", self.generate_ai_document_command)
+            )
 
             # Specific callback handlers FIRST
             application.add_handler(

@@ -31,13 +31,84 @@ class OpenRouterAPI:
         self.headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
-        }
-
-        # Available models
+        }        # Available models - Free models from OpenRouter
         self.available_models = {
-            "optimus-alpha": "openrouter/optimus-alpha",
-            "deepcoder": "agentica-org/deepcoder-14b-preview:free",
+            # DeepSeek Models (Free)
+            "deepseek-r1-0528-qwen3-8b": "deepseek/deepseek-r1-0528-qwen3-8b:free",
+            "deepseek-r1-zero": "deepseek/deepseek-r1-zero:free",
+            "deepseek-prover-v2": "deepseek/deepseek-prover-v2:free",
+            "deepseek-v3-base": "deepseek/deepseek-v3-base:free",
+            "deepseek-chat-v3-0324": "deepseek/deepseek-chat-v3-0324:free",
+            "deepseek-r1-distill-llama-70b": "deepseek/deepseek-r1-distill-llama-70b:free",
+            "deepseek-r1": "deepseek/deepseek-r1:free",
+            
+            # Meta LLaMA Models (Free)
             "llama4_maverick": "meta-llama/llama-4-maverick:free",
+            "llama-3.2-11b-vision": "meta-llama/llama-3.2-11b-vision-instruct:free",
+            "llama-3.2-3b": "meta-llama/llama-3.2-3b-instruct:free",
+            "llama-3.2-1b": "meta-llama/llama-3.2-1b-instruct:free",
+            "llama-3.1-8b": "meta-llama/llama-3.1-8b-instruct:free",
+            "llama-3-8b": "meta-llama/llama-3-8b-instruct:free",
+            
+            # Mistral Models (Free)
+            "devstral-small": "mistralai/devstral-small:free",
+            "mistral-small-3-1": "mistralai/mistral-small-3.1-24b-instruct:free",
+            "mistral-small-3": "mistralai/mistral-small-24b-instruct-2501:free",
+            "mistral-7b": "mistralai/mistral-7b-instruct:free",
+            
+            # Qwen Models (Free)
+            "qwen3-32b-a3b": "qwen/qwen3-32b-a3b:free",
+            "qwen3-8b": "qwen/qwen3-8b:free",
+            "qwen3-14b": "qwen/qwen3-14b:free",
+            "qwen2.5-vl-3b": "qwen/qwen2.5-vl-3b-instruct:free",
+            "qwen2.5-vl-7b": "qwen/qwen2.5-vl-7b-instruct:free",
+            "qwen2.5-vl-72b": "qwen/qwen2.5-vl-72b-instruct:free",
+            "qwen2.5-coder-32b": "qwen/qwen2.5-coder-32b-instruct:free",
+            
+            # Google Gemma Models (Free)
+            "gemma-2-9b": "google/gemma-2-9b-it:free",
+            
+            # Microsoft Phi Models (Free)
+            "phi-4-reasoning-plus": "microsoft/phi-4-reasoning-plus:free",
+            
+            # NVIDIA LLaMA Models (Free)
+            "llama-3.1-nemotron-70b-reasoning": "nvidia/llama-3.1-nemotron-70b-reasoning:free",
+            "llama-3.1-nemotron-ultra-253b": "nvidia/llama-3.1-nemotron-ultra-253b-v1:free",
+            
+            # THUDM Models (Free)
+            "glm-4-32b": "thudm/glm-4-32b:free",
+            
+            # Nous Research Models (Free)
+            "deephermes-3-llama-3-8b": "nousresearch/deephermes-3-llama-3-8b-preview:free",
+            
+            # Coding & Programming Models (Free)
+            "deepcoder": "agentica-org/deepcoder-14b-preview:free",
+            "olympiccoder-32b": "olympiccoder/olympiccoder-32b:free",
+            
+            # Creative Writing Models (Free)  
+            "magnum-v4-72b": "anthracite-org/magnum-v4-72b:free",
+            
+            # Other Free Models
+            "optimus-alpha": "openrouter/optimus-alpha",
+            "liquid-lfm-40b": "liquid/lfm-40b:free",
+            "hermes-3-llama-3.1-405b": "nousresearch/hermes-3-llama-3.1-405b:free",
+            "qwen1.5-110b": "qwen/qwen-1.5-110b-chat:free",
+            "fimbulvetr-11b": "sao10k/fimbulvetr-11b-v2:free",
+            "mythomax-l2-13b": "gryphe/mythomax-l2-13b:free",
+            
+            # Additional Free Models for Extended Collection
+            "command-r": "cohere/command-r:free",
+            "yi-large": "01-ai/yi-large:free",
+            "claude-3-haiku": "anthropic/claude-3-haiku:free",
+            "gpt-3.5-turbo": "openai/gpt-3.5-turbo:free",
+            "gemini-flash-1.5": "google/gemini-flash-1.5:free",
+            "mixtral-8x7b": "mistralai/mixtral-8x7b-instruct:free",
+            "codellama-70b": "codellama/codellama-70b-instruct:free",
+            "solar-10.7b": "upstage/solar-10.7b-instruct:free",
+            "openchat-3.5": "openchat/openchat-3.5-1210:free",
+            "zephyr-7b": "huggingfaceh4/zephyr-7b-beta:free",
+            "starling-lm-7b": "berkeley-nest/starling-lm-7b-alpha:free",
+            "airoboros-70b": "jondurbin/airoboros-l2-70b:free",
         }
 
         # Circuit breaker properties
@@ -86,16 +157,33 @@ class OpenRouterAPI:
             self.logger.info(f"OpenRouter model mapping: {model} -> {openrouter_model}")
 
             # Prepare the messages
-            messages = []  # Add system message
-
-            # Customize system message based on model
+            messages = []  # Add system message            # Customize system message based on model
             system_message = "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."
+            
             if model == "llama4_maverick":
-                system_message = (
-                    "You are Llama-4 Maverick, an advanced AI assistant by Meta."
-                )
+                system_message = "You are Llama-4 Maverick, an advanced AI assistant by Meta."
             elif model == "deepcoder":
                 system_message = "You are DeepCoder, an AI specialized in programming and software development."
+            elif "deepseek" in model:
+                system_message = "You are DeepSeek, an advanced reasoning AI model that excels at complex problem-solving."
+            elif "qwen" in model:
+                system_message = "You are Qwen, a multilingual AI assistant created by Alibaba Cloud."
+            elif "gemma" in model:
+                system_message = "You are Gemma, a lightweight and efficient AI assistant by Google."
+            elif "mistral" in model:
+                system_message = "You are Mistral, a high-performance European AI language model."
+            elif "phi" in model:
+                system_message = "You are Phi, a compact and efficient AI model by Microsoft, specialized in reasoning."
+            elif "llama" in model:
+                system_message = "You are LLaMA, an advanced AI assistant created by Meta."
+            elif "claude" in model:
+                system_message = "You are Claude, a helpful AI assistant created by Anthropic."
+            elif "hermes" in model:
+                system_message = "You are Hermes, a versatile AI assistant optimized for helpful conversations."
+            elif "olympic" in model:
+                system_message = "You are OlympicCoder, an AI specialized in competitive programming and complex algorithms."
+            elif "magnum" in model:
+                system_message = "You are Magnum, an AI optimized for creative writing and storytelling."
 
             messages.append(
                 {

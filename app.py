@@ -1,8 +1,3 @@
-"""
-Telegram Bot API entry point.
-Uses application factory pattern for improved modularity and testability.
-"""
-
 import sys
 import os
 import logging

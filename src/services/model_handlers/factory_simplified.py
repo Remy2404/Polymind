@@ -31,7 +31,18 @@ class ModelHandlerFactory:
         deepseek_api: DeepSeekLLM = None,
         openrouter_api: OpenRouterAPI = None,
     ) -> ModelHandler:
+        """
+        Get or create a model handler for the specified model.
 
+        Args:
+            model_name: The model identifier
+            gemini_api: Gemini API instance
+            deepseek_api: DeepSeek API instance
+            openrouter_api: OpenRouter API instance
+
+        Returns:
+            ModelHandler instance for the specified model
+        """
         if model_name not in cls._handlers:
             # Get model configuration
             model_config = cls._model_configs.get(model_name)
