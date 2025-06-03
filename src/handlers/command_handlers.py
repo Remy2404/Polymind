@@ -13,7 +13,7 @@ from telegram.ext import (
 )
 from services.user_data_manager import UserDataManager
 from services.gemini_api import GeminiAPI
-from utils.telegramlog import TelegramLogger as telegram_logger
+from src.utils.log.telegramlog import TelegramLogger as telegram_logger
 import logging
 from services.flux_lora_img import FluxLoraImageGenerator as flux_lora_image_generator
 import time, asyncio

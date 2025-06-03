@@ -6,7 +6,7 @@ import traceback
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 from services.rate_limiter import RateLimiter, rate_limit
-from utils.telegramlog import telegram_logger
+from src.utils.log.telegramlog import telegram_logger
 
 # Load environment variables
 load_dotenv()

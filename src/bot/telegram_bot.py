@@ -24,9 +24,9 @@ from src.handlers.command_handlers import CommandHandlers
 from src.handlers.text_handlers import TextHandler
 from src.services.DeepSeek_R1_Distill_Llama_70B import DeepSeekLLM
 from src.handlers.message_handlers import MessageHandlers
-from src.utils.telegramlog import telegram_logger
+from src.utils.log.telegramlog import telegram_logger
 from src.services.reminder_manager import ReminderManager
-from src.utils.language_manager import LanguageManager
+from src.utils.lang.language_manager import LanguageManager
 from src.services.rate_limiter import RateLimiter
 from src.services.flux_lora_img import flux_lora_image_generator
 from src.services.document_processing import DocumentProcessor
@@ -204,7 +204,7 @@ class TelegramBot:
         )
 
         # Initialize ConversationManager
-        from src.services.conversation_manager import ConversationManager
+        from src.services.memory_context.conversation_manager import ConversationManager
         self.conversation_manager = ConversationManager(
             self.text_handler.memory_manager, self.text_handler.model_history_manager
         )

@@ -88,17 +88,17 @@ class MemoryManager:
         os.makedirs(storage_path, exist_ok=True)
 
         # Initialize memory structures
-        self.short_term_memory = {}  # Most recent interactions (last 10)
-        self.medium_term_memory = {}  # Important context (last 50)
-        self.long_term_memory = {}  # Persistent user preferences and critical info
+        self.short_term_memory = {}
+        self.medium_term_memory = {}  
+        self.long_term_memory = {}  
 
         # Conversation memory limits
         self.short_term_limit = 10
         self.medium_term_limit = 50
         self.conversation_expiry = timedelta(
             hours=24
-        )  # When to move to long-term storage
-        self.token_limit = 8192  # Default token limit
+        )
+        self.token_limit = 8192 
 
         # Setup message importance classification patterns
         self._init_importance_patterns()
@@ -787,20 +787,9 @@ class MemoryManager:
 
         # Prepend system prompts if any
         if system_prompts:
-            # Gemini prefers system instructions at the start or potentially as part of the first user message
-            # Let's add it as a separate system message if the model supports it,
-            # otherwise prepend to the first user message or handle according to model docs.
-            # For now, let's assume a separate system message is okay or handled by the caller.
-            # We will return it separately or integrate based on the calling function's needs.
-            # This function's primary goal is context assembly.
-            # The calling function (`generate_response`) should handle final formatting for Gemini.
+            formatted_model_context = [{"role": "user", "content": "\n".join(system_prompts)}] + formatted_model_context
 
-            # Returning the raw context list including system messages.
-            # The calling code will format it for the specific model.
-            pass  # System messages are already included in model_context
-
-        # Return the assembled context, ready for final formatting by the caller
-        return model_context  # Return the list of dicts with role/content
+        return formatted_model_context
 
     async def search_memory(
         self, user_id: str, query: str, limit: int = 5

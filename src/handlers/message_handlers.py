@@ -26,7 +26,7 @@ from telegram import Update, Message, Document
 from telegram.ext import MessageHandler, filters, ContextTypes, CallbackContext
 from src.services.gemini_api import GeminiAPI
 from src.services.user_data_manager import user_data_manager
-from src.utils.telegramlog import TelegramLogger
+from src.utils.log.telegramlog import TelegramLogger
 from src.services.document_processing import DocumentProcessor
 from src.handlers.text_handlers import TextHandler
 
@@ -38,7 +38,7 @@ from services.media.image_processor import ImageProcessor
 from services.media.voice_processor import VoiceProcessor
 from services.model_handlers.prompt_formatter import PromptFormatter
 from services.user_preferences_manager import UserPreferencesManager
-from services.conversation_manager import ConversationManager
+from src.services.memory_context.conversation_manager import ConversationManager
 
 logger = logging.getLogger(__name__)
 
@@ -1058,8 +1058,8 @@ class MessageHandlers:
                 )
             else:
                 # Fallback - create basic conversation manager
-                from services.memory_manager import MemoryManager
-                from services.model_handlers.model_history_manager import ModelHistoryManager
+                from src.services.memory_context.memory_manager import MemoryManager
+                from src.services.memory_context.model_history_manager import ModelHistoryManager
                 
                 memory_manager = MemoryManager()
                 model_history_manager = ModelHistoryManager(memory_manager, self.user_data_manager)

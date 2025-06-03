@@ -4,7 +4,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
-from utils.telegramlog import telegram_logger
+from src.utils.log.telegramlog import telegram_logger
 from services.gemini_api import GeminiAPI
 from services.user_data_manager import UserDataManager
 from typing import List, Dict, Any
@@ -16,12 +16,12 @@ from .response_formatter import ResponseFormatter
 from .media_context_extractor import MediaContextExtractor
 
 # Import model and service utilities
-from services.memory_manager import MemoryManager
-from services.model_handlers.model_history_manager import ModelHistoryManager
+from src.services.memory_context.memory_manager import MemoryManager
+from src.services.memory_context.model_history_manager import ModelHistoryManager
 from services.model_handlers.factory import ModelHandlerFactory
 from services.media.image_processor import ImageProcessor
 from services.model_handlers.prompt_formatter import PromptFormatter
-from services.conversation_manager import ConversationManager
+from src.services.memory_context.conversation_manager import ConversationManager
 
 # Import our newly modularized code
 from .text_processing.intent_detector import IntentDetector

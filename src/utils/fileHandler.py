@@ -11,7 +11,7 @@ from telegram.ext import Application
 
 # External services and utilities
 from services.gemini_api import GeminiAPI
-from utils.telegramlog import TelegramLogger
+from src.utils.log.telegramlog import TelegramLogger
 from services.user_data_manager import UserDataManager
 
 # Caching

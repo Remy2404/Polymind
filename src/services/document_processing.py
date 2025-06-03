@@ -38,7 +38,6 @@ class DocumentProcessor:
         "md": "text/markdown",
         "rtf": "text/rtf",
         "xml": "text/xml",
-        # Code formats (all treated as text/plain)
         "py": "text/plain",
         "js": "text/plain",
         "java": "text/plain",

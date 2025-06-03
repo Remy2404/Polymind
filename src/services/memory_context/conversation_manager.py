@@ -1,7 +1,7 @@
 import logging
 from typing import List, Dict, Any, Optional
-from services.memory_manager import MemoryManager
-from services.model_handlers.model_history_manager import ModelHistoryManager
+from src.services.memory_context.memory_manager import MemoryManager
+from src.services.memory_context.model_history_manager import ModelHistoryManager
 
 
 class ConversationManager:

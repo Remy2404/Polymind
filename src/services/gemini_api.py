@@ -29,7 +29,7 @@ from google.api_core.exceptions import (
 
 # Avoid importing Any from pyparsing as it conflicts with typing.Any
 from services.rate_limiter import RateLimiter, rate_limit
-from utils.telegramlog import telegram_logger
+from src.utils.log.telegramlog import telegram_logger
 from dotenv import load_dotenv
 from services.image_processing import ImageProcessor
 from database.connection import get_database, get_image_cache_collection

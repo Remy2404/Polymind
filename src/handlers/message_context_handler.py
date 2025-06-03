@@ -223,32 +223,11 @@ class MessageContextHandler:
         return any(keyword in text.lower() for keyword in document_related_keywords)
 
     def should_use_reply_format(self, quoted_text: str, quoted_message_id: int) -> bool:
-        """
-        Determine if the response should use the reply format.
-
-        Args:
-            quoted_text: The extracted quoted text
-            quoted_message_id: The ID of the quoted message
-
-        Returns:
-            True if reply formatting should be used
-        """
         return quoted_text is not None and quoted_message_id is not None
 
     def format_response_with_quote_indicator(
         self, response: str, model_indicator: str, is_reply: bool = False
     ) -> str:
-        """
-        Format the AI response with appropriate indicators.
-
-        Args:
-            response: The original AI response text
-            model_indicator: The model indicator (e.g., "🧠 Gemini")
-            is_reply: Whether this is a reply to a quoted message
-
-        Returns:
-            Formatted response with appropriate indicators
-        """
         if is_reply:
             reply_indicator = "↪️ Replying to message"
             return f"{model_indicator}\n{reply_indicator}\n\n{response}"
