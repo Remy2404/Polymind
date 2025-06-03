@@ -286,12 +286,13 @@ class CommandHandlers:
                 CommandHandler("currentmodel", self.current_model_command)
             )
             application.add_handler(
-                CommandHandler("exportdoc", self.export_to_document)            )
+                CommandHandler("exportdoc", self.export_to_document)
+            )
             application.add_handler(
                 CommandHandler("gendoc", self.generate_ai_document_command)
             )
 
-            # Save cache for use in command handlers if needed
+            # Specific callback handlers if needed
             self.response_cache = cache
 
             # General callback handler LAST (handles all callbacks including model selection)

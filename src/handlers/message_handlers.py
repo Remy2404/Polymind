@@ -1,43 +1,43 @@
-import os, io
+# Standard library imports
+import os
+import io
 import re
 import tempfile
 import logging
 import uuid
-import speech_recognition as sr
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Message
-from telegram.constants import ChatAction
-from telegram.ext import ContextTypes
-from pydub import AudioSegment
-from handlers.text_handlers import TextHandler
-from services.user_data_manager import UserDataManager
-from telegram.ext import MessageHandler, filters
-import aiohttp
-import datetime
-from services.gemini_api import GeminiAPI
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Any, Optional, List, Union
-from functools import partial
+import datetime
 import traceback
 import gc
 import time
 import weakref
-from telegram import Update, Message, Document
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, Any, Optional, List, Union
+from functools import partial
+
+# Third-party imports
+import speech_recognition as sr
+import aiohttp
+from pydub import AudioSegment
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Message, Document
+from telegram.constants import ChatAction
 from telegram.ext import MessageHandler, filters, ContextTypes, CallbackContext
+
+# Local imports
 from src.services.gemini_api import GeminiAPI
-from src.services.user_data_manager import user_data_manager
+from src.services.user_data_manager import UserDataManager
 from src.utils.log.telegramlog import TelegramLogger
 from src.services.document_processing import DocumentProcessor
 from src.handlers.text_handlers import TextHandler
 
-# Import new utility classes
-from handlers.message_context_handler import MessageContextHandler
-from handlers.response_formatter import ResponseFormatter
-from handlers.media_context_extractor import MediaContextExtractor
-from services.media.image_processor import ImageProcessor
-from services.media.voice_processor import VoiceProcessor
-from services.model_handlers.prompt_formatter import PromptFormatter
-from services.user_preferences_manager import UserPreferencesManager
+# Import utility classes
+from src.handlers.message_context_handler import MessageContextHandler
+from src.handlers.response_formatter import ResponseFormatter
+from src.handlers.media_context_extractor import MediaContextExtractor
+from src.services.media.image_processor import ImageProcessor
+from src.services.media.voice_processor import VoiceProcessor
+from src.services.model_handlers.prompt_formatter import PromptFormatter
+from src.services.user_preferences_manager import UserPreferencesManager
 from src.services.memory_context.conversation_manager import ConversationManager
 
 logger = logging.getLogger(__name__)
@@ -890,16 +890,6 @@ class MessageHandlers:
         for char in escape_chars:
             text = text.replace(char, f"\\{char}")
         return text
-
-    async def _error_handler(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        """Handle errors occurring in the dispatcher."""
-        self.logger.error(f"Update {update} caused error: {context.error}")
-        if update and update.effective_message:
-            await update.effective_message.reply_text(
-                "An error occurred while processing your request. Please try again later."
-            )
 
     async def _error_handler(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
