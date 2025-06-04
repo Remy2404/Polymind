@@ -9,21 +9,15 @@ from services.gemini_api import GeminiAPI
 from services.user_data_manager import UserDataManager
 from typing import List, Dict, Any
 import asyncio
-
-# Import core handler utilities
 from .message_context_handler import MessageContextHandler
 from .response_formatter import ResponseFormatter
 from .media_context_extractor import MediaContextExtractor
-
-# Import model and service utilities
 from src.services.memory_context.memory_manager import MemoryManager
 from src.services.memory_context.model_history_manager import ModelHistoryManager
 from services.model_handlers.factory import ModelHandlerFactory
 from services.media.image_processor import ImageProcessor
 from services.model_handlers.prompt_formatter import PromptFormatter
 from src.services.memory_context.conversation_manager import ConversationManager
-
-# Import our newly modularized code
 from .text_processing.intent_detector import IntentDetector
 from .text_processing.media_analyzer import MediaAnalyzer
 from .text_processing.utilities import MediaUtilities, MessagePreprocessor
@@ -99,6 +93,34 @@ class TextHandler:
         message = update.message or update.edited_message
         message_text = message.text
 
+        # Check if this is a group chat and handle accordingly
+        chat = update.effective_chat
+        is_group = chat and chat.type in ["group", "supergroup"]
+
+        if (
+            is_group
+            and hasattr(self, "_group_chat_integration")
+            and self._group_chat_integration
+        ):
+            # Process message through group chat integration first
+            enhanced_message = await self._group_chat_integration.process_message(
+                update, context
+            )
+            if enhanced_message:
+                # Update message text with enhanced context if available
+                if enhanced_message.get("enhanced_text"):
+                    message_text = enhanced_message["enhanced_text"]
+
+        # Check for enhanced group message
+        if "enhanced_message" in context.user_data:
+            enhanced_message_text = context.user_data["enhanced_message"]
+            group_metadata = context.user_data.get("group_context", {})
+
+            # Use enhanced message for group processing
+            if update.effective_chat.type in ["group", "supergroup"]:
+                message_text = enhanced_message_text
+                self.logger.info(f"Using enhanced group message for processing")
+
         # Extract quoted message context if this is a reply
         quoted_text, quoted_message_id = self.context_handler.extract_reply_context(
             message
@@ -141,10 +163,25 @@ class TextHandler:
             # Get user's preferred model
             preferred_model = await self._get_user_preferred_model(user_id)
 
+            # Extract user information from message and save for future context
+            await self._extract_and_save_user_info(user_id, message_text)
+
             # Get conversation history for context
             history_context = await self.conversation_manager.get_conversation_history(
                 user_id, max_messages=self.max_context_length, model=preferred_model
             )
+
+            # Load user context and personal information to enhance conversation
+            user_context = await self._load_user_context(user_id, update)
+
+            # Enhance conversation history with user context if available
+            if user_context and history_context:
+                # Add user context to the beginning of history to maintain continuity
+                user_context_message = {
+                    "role": "system",
+                    "content": f"User information: {user_context}",
+                }
+                history_context.insert(0, user_context_message)
 
             # Handle the request based on detected intent
             if user_intent == "generate_image":
@@ -777,17 +814,16 @@ class TextHandler:
 
         # Add any reference to previously shared media
         # Check both our detection method and the media context extractor's method
-        is_referring_to_image = (
-            self.context_handler.detect_reference_to_image(message_text) or 
-            self.media_context_extractor.is_referring_to_image(message_text)
-        )
-        
+        is_referring_to_image = self.context_handler.detect_reference_to_image(
+            message_text
+        ) or self.media_context_extractor.is_referring_to_image(message_text)
+
         if is_referring_to_image and "image_history" in context.user_data:
             # Generate context from previous images
             image_context = await self.media_context_extractor.get_image_context(
                 context.user_data
             )
-            
+
             # Add an explicit instruction for the model about handling images
             instruction = (
                 "The user is referring to an image they previously shared. "
@@ -795,7 +831,7 @@ class TextHandler:
                 "DO NOT say you don't have access to images - you've previously analyzed "
                 "these images and should use that analysis to answer."
             )
-            
+
             # Add both the context and instruction
             enhanced_prompt = self.prompt_formatter.add_context(
                 enhanced_prompt, "image", f"{instruction}\n\n{image_context}"
@@ -826,6 +862,29 @@ class TextHandler:
             )
         )
 
+        # Detect if this is a long-form request and adjust max_tokens accordingly
+        long_form_indicators = [
+            "100",
+            "list",
+            "q&a",
+            "qcm",
+            "questions",
+            "examples",
+            "write me",
+            "generate",
+            "create",
+            "explain in detail",
+            "step by step",
+            "tutorial",
+            "guide",
+            "comprehensive",
+        ]
+
+        is_long_form_request = any(
+            indicator in message_text.lower() for indicator in long_form_indicators
+        )
+        max_tokens = 8000 if is_long_form_request else 4000
+
         # Get model timeout
         model_timeout = 60.0
         if self.user_model_manager:
@@ -847,11 +906,24 @@ class TextHandler:
                     prompt=enhanced_prompt_with_guidelines,
                     context=history_context,
                     temperature=0.7,
-                    max_tokens=4000,
+                    max_tokens=max_tokens,
                     quoted_message=quoted_text,
                 ),
                 timeout=model_timeout,
             )
+
+            # Log response length and first part for debugging
+            if response:
+                response_length = len(response)
+                response_preview = (
+                    response[:200] + "..." if len(response) > 200 else response
+                )
+                self.logger.info(
+                    f"Generated response length: {response_length} characters"
+                )
+                self.logger.debug(f"Response preview: {response_preview}")
+            else:
+                self.logger.warning("No response generated from model")
 
             # Delete thinking message
             if thinking_message is not None:
@@ -881,6 +953,11 @@ class TextHandler:
 
             # Save to conversation history
             if response:
+                # Extract and save user information from the message (like name)
+                await self.memory_manager.extract_and_save_user_info(
+                    user_id, message_text
+                )
+
                 if quoted_text:
                     await self.conversation_manager.add_quoted_message_context(
                         user_id, quoted_text, message_text, response, preferred_model
@@ -1039,3 +1116,112 @@ class TextHandler:
             context.user_data["bot_messages"][message.message_id] = [
                 msg.message_id for msg in sent_messages
             ]
+
+    async def _load_user_context(self, user_id: int, update: Update) -> str:
+        """Load user context including name and profile information from MongoDB."""
+        try:
+            user_context_parts = []
+
+            # Get user's Telegram profile information
+            user = update.effective_user
+            if user:
+                if user.first_name:
+                    user_context_parts.append(f"Name: {user.first_name}")
+                if user.last_name:
+                    user_context_parts.append(f"Last name: {user.last_name}")
+                if user.username:
+                    user_context_parts.append(f"Username: @{user.username}")
+
+            # Load stored user profile from MongoDB via memory manager
+            try:
+                user_profile = await self.memory_manager.get_user_profile(user_id)
+                if user_profile:
+                    # Extract relevant user information
+                    if user_profile.get("name"):
+                        user_context_parts.append(
+                            f"Preferred name: {user_profile['name']}"
+                        )
+
+                    if user_profile.get("conversation_count"):
+                        count = user_profile["conversation_count"]
+                        user_context_parts.append(f"Previous conversations: {count}")
+
+                    # Add any other stored personal information
+                    for key, value in user_profile.items():
+                        if (
+                            key
+                            not in [
+                                "name",
+                                "conversation_count",
+                                "created_at",
+                                "last_updated",
+                            ]
+                            and value
+                        ):
+                            user_context_parts.append(f"{key.capitalize()}: {value}")
+
+                # Also load any stored user preferences from user_data_manager
+                user_data = await self.user_data_manager.get_user_data(user_id)
+                if user_data:
+                    user_prefs = user_data.get("preferences", {})
+                    if (
+                        user_prefs.get("name")
+                        and f"Preferred name: {user_prefs['name']}"
+                        not in user_context_parts
+                    ):
+                        user_context_parts.append(
+                            f"Preferred name: {user_prefs['name']}"
+                        )
+
+            except Exception as e:
+                self.logger.debug(f"Could not load user profile from MongoDB: {e}")
+
+            return "; ".join(user_context_parts) if user_context_parts else ""
+
+        except Exception as e:
+            self.logger.error(f"Error loading user context: {e}")
+            return ""
+
+    async def _save_user_information(self, user_id: int, update: Update):
+        """Save user information for future context."""
+        try:
+            user = update.effective_user
+            if user:
+                user_info = {}
+                if user.first_name:
+                    user_info["first_name"] = user.first_name
+                if user.last_name:
+                    user_info["last_name"] = user.last_name
+                if user.username:
+                    user_info["username"] = user.username
+
+                # Save to user data manager
+                existing_data = (
+                    await self.user_data_manager.get_user_data(user_id) or {}
+                )
+                if "profile" not in existing_data:
+                    existing_data["profile"] = {}
+                existing_data["profile"].update(user_info)
+
+                # Increment conversation count
+                existing_data["conversation_count"] = (
+                    existing_data.get("conversation_count", 0) + 1
+                )
+
+                await self.user_data_manager.save_user_data(user_id, existing_data)
+
+            # Also extract user information from message text using memory manager
+            message_text = update.message.text if update.message else ""
+            if message_text:
+                await self.memory_manager.extract_and_save_user_info(user_id, message_text)
+
+        except Exception as e:
+            self.logger.debug(f"Could not save user information: {e}")
+
+    async def _extract_and_save_user_info(self, user_id: int, message_text: str):
+        """Extract and save user information from their message."""
+        try:
+            # Extract user information using the memory manager
+            await self.memory_manager.extract_and_save_user_info(user_id, message_text)
+        except Exception as e:
+            self.logger.debug(f"Could not extract user info from message: {e}")

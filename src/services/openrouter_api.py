@@ -219,7 +219,20 @@ class OpenRouterAPI:
                 data = await response.json()
 
                 if "choices" in data and len(data["choices"]) > 0:
-                    message_content = data["choices"][0]["message"]["content"]
+                    choice = data["choices"][0]
+                    message_content = choice["message"]["content"]
+                    
+                    # Check if the response was truncated
+                    finish_reason = choice.get("finish_reason", "unknown")
+                    if finish_reason == "length":
+                        self.logger.warning(f"Response was truncated due to max_tokens limit. Consider increasing max_tokens from {max_tokens}")
+                    elif finish_reason != "stop":
+                        self.logger.warning(f"Unexpected finish reason: {finish_reason}")
+                    
+                    # Log response details for debugging
+                    response_length = len(message_content) if message_content else 0
+                    self.logger.info(f"OpenRouter response length: {response_length} characters, finish_reason: {finish_reason}")
+                    
                     return message_content
                 else:
                     self.logger.warning("No valid response from OpenRouter API")

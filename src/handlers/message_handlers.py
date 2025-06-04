@@ -19,7 +19,13 @@ from functools import partial
 import speech_recognition as sr
 import aiohttp
 from pydub import AudioSegment
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Message, Document
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Update,
+    Message,
+    Document,
+)
 from telegram.constants import ChatAction
 from telegram.ext import MessageHandler, filters, ContextTypes, CallbackContext
 
@@ -39,6 +45,7 @@ from src.services.media.voice_processor import VoiceProcessor
 from src.services.model_handlers.prompt_formatter import PromptFormatter
 from src.services.user_preferences_manager import UserPreferencesManager
 from src.services.memory_context.conversation_manager import ConversationManager
+from src.services.group_chat.integration import GroupChatIntegration
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +81,9 @@ class MessageHandlers:
 
         # Initialize conversation manager (will be lazy-loaded with proper dependencies)
         self._conversation_manager = None
+
+        # Initialize group chat integration
+        self._group_chat_integration = None
 
     async def _handle_text_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -124,10 +134,38 @@ class MessageHandlers:
             # Initialize user data if not already initialized
             await self.user_data_manager.initialize_user(user_id)
 
+            # Initialize group chat integration if needed
+            if self._group_chat_integration is None and self._conversation_manager:
+                self._group_chat_integration = GroupChatIntegration(
+                    self.user_data_manager, self._conversation_manager
+                )
+
+            # Process group chat features if applicable
+            enhanced_message_text = message_text
+            group_metadata = {}
+
+            chat = update.effective_chat
+            if (
+                self._group_chat_integration
+                and chat
+                and chat.type in ["group", "supergroup"]
+            ):
+
+                try:
+                    enhanced_message_text, group_metadata = (
+                        await self._group_chat_integration.process_group_message(
+                            update, context, message_text
+                        )
+                    )
+                    self.logger.info(f"Enhanced group message for chat {chat.id}")
+                except Exception as e:
+                    self.logger.error(f"Error processing group message: {e}")
+                    # Fall back to original message if group processing fails
+
             # Check if the bot is mentioned but don't send an automatic reply
             # Just log it for tracking purposes
             bot_username = "@Gemini_AIAssistBot"
-            if bot_username in message_text:
+            if bot_username in enhanced_message_text:
                 self.logger.info(f"Bot mentioned by user {user_id}")
                 # Remove the automatic greeting that was causing duplicate responses
                 # We'll let the text handler process the full message instead
@@ -140,7 +178,18 @@ class MessageHandlers:
                 deepseek_api=self.deepseek_api,  # Pass the deepseek_api for deepseek model
             )
 
-            # Process the message
+            # Process the message (use enhanced message for group chats)
+            # Create a temporary update with enhanced message for group processing
+            if (
+                enhanced_message_text != message_text
+                and chat
+                and chat.type in ["group", "supergroup"]
+            ):
+                # Store original message and metadata in context for the text handler
+                context.user_data["group_context"] = group_metadata
+                context.user_data["original_message"] = message_text
+                context.user_data["enhanced_message"] = enhanced_message_text
+
             await text_handler.handle_text_message(update, context)
             await self.user_data_manager.update_stats(
                 user_id, {"text_messages": 1, "total_messages": 1}
@@ -213,58 +262,64 @@ class MessageHandlers:
                     try:
                         # Get conversation manager
                         conversation_manager = self._get_conversation_manager()
-                        
+
                         # Create timestamp for reference
-                        timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        
+                        timestamp_str = datetime.datetime.now().strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
+
                         # Prepare image metadata for better memory recall
                         image_metadata = {
                             "timestamp": timestamp_str,
                             "file_id": photo.file_id,
                             "width": photo.width,
                             "height": photo.height,
-                            "file_size": photo.file_size
+                            "file_size": photo.file_size,
                         }
-                        
+
                         # Extract key image content for user data storage
                         image_data_entry = {
                             "timestamp": timestamp_str,
                             "caption": caption,
                             "description": response,
-                            "file_id": photo.file_id
+                            "file_id": photo.file_id,
                         }
-                        
+
                         # Initialize or update user's image history in user_data
                         if "image_history" not in context.user_data:
                             context.user_data["image_history"] = []
-                        
+
                         # Add to image history with a reasonable limit
                         context.user_data["image_history"].append(image_data_entry)
-                        if len(context.user_data["image_history"]) > 10:  # Keep last 10 images
-                            context.user_data["image_history"] = context.user_data["image_history"][-10:]
-                        
+                        if (
+                            len(context.user_data["image_history"]) > 10
+                        ):  # Keep last 10 images
+                            context.user_data["image_history"] = context.user_data[
+                                "image_history"
+                            ][-10:]
+
                         # Save image interaction with both caption and response and enhanced metadata
                         await conversation_manager.save_media_interaction(
-                            user_id,
-                            "image",
-                            caption,
-                            response,
-                            **image_metadata
+                            user_id, "image", caption, response, **image_metadata
                         )
-                        
+
                         # Also save to model-specific history if text_handler has model history manager
-                        if hasattr(self.text_handler, 'model_history_manager') and self.text_handler.model_history_manager:
+                        if (
+                            hasattr(self.text_handler, "model_history_manager")
+                            and self.text_handler.model_history_manager
+                        ):
                             await self.text_handler.model_history_manager.save_image_interaction(
-                                user_id,
-                                caption,
-                                response,
-                                metadata=image_metadata
+                                user_id, caption, response, metadata=image_metadata
                             )
-                        
-                        self.logger.info(f"Enhanced image interaction saved to memory for user {user_id}")
-                        
+
+                        self.logger.info(
+                            f"Enhanced image interaction saved to memory for user {user_id}"
+                        )
+
                     except Exception as memory_error:
-                        self.logger.error(f"Error saving image interaction to memory: {str(memory_error)}")
+                        self.logger.error(
+                            f"Error saving image interaction to memory: {str(memory_error)}"
+                        )
                 else:
                     await update.message.reply_text(
                         "Sorry, I couldn't analyze this image. Please try again with a different image."
@@ -1041,18 +1096,26 @@ class MessageHandlers:
         """Lazy-load conversation manager with proper dependencies."""
         if self._conversation_manager is None:
             # Get memory manager and model history manager from text_handler
-            if hasattr(self.text_handler, 'memory_manager') and hasattr(self.text_handler, 'model_history_manager'):
+            if hasattr(self.text_handler, "memory_manager") and hasattr(
+                self.text_handler, "model_history_manager"
+            ):
                 self._conversation_manager = ConversationManager(
                     self.text_handler.memory_manager,
-                    self.text_handler.model_history_manager
+                    self.text_handler.model_history_manager,
                 )
             else:
                 # Fallback - create basic conversation manager
                 from src.services.memory_context.memory_manager import MemoryManager
-                from src.services.memory_context.model_history_manager import ModelHistoryManager
-                
+                from src.services.memory_context.model_history_manager import (
+                    ModelHistoryManager,
+                )
+
                 memory_manager = MemoryManager()
-                model_history_manager = ModelHistoryManager(memory_manager, self.user_data_manager)
-                self._conversation_manager = ConversationManager(memory_manager, model_history_manager)
-        
+                model_history_manager = ModelHistoryManager(
+                    memory_manager, self.user_data_manager
+                )
+                self._conversation_manager = ConversationManager(
+                    memory_manager, model_history_manager
+                )
+
         return self._conversation_manager

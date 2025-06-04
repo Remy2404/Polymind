@@ -1,8 +1,3 @@
-"""
-TelegramBot implementation module.
-Contains the core TelegramBot class that handles interactions with the Telegram API.
-"""
-
 import os
 import logging
 import asyncio
@@ -11,7 +6,7 @@ import aiohttp
 import traceback
 from telegram import Update
 from telegram.ext import (
-    Application, 
+    Application,
     CommandHandler,
 )
 from cachetools import TTLCache, LRUCache
@@ -32,15 +27,25 @@ from src.services.flux_lora_img import flux_lora_image_generator
 from src.services.document_processing import DocumentProcessor
 from src.utils.ignore_message import message_filter
 import google.generativeai as genai
+from src.services.group_chat.integration import GroupChatIntegration
 
 logger = logging.getLogger(__name__)
+
+
+class GroupChatIntegration:
+    """Integration layer for group chat functionality. Extends the existing bot with advanced group features."""
+
+    def __init__(self, user_data_manager, conversation_manager):
+        self.user_data_manager = user_data_manager
+        self.conversation_manager = conversation_manager
+
 
 class TelegramBot:
     """
     TelegramBot class that handles interactions with the Telegram API.
     Manages bot initialization, message handling, and service management.
     """
-    
+
     def __init__(self):
         # Initialize essential services at startup
         self.logger = logging.getLogger(__name__)
@@ -128,13 +133,13 @@ class TelegramBot:
         try:
             # Initialize model APIs
             self._init_model_apis()
-            
+
             # Initialize utility classes
             self._init_utility_classes()
-            
+
             # Initialize handlers
             self._init_handlers()
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing services: {e}")
             raise
@@ -145,7 +150,9 @@ class TelegramBot:
         model_name = "gemini-2.0-flash"
         vision_model = genai.GenerativeModel(model_name)
         rate_limiter = RateLimiter(requests_per_minute=30)
-        self.gemini_api = GeminiAPI(vision_model=vision_model, rate_limiter=rate_limiter)
+        self.gemini_api = GeminiAPI(
+            vision_model=vision_model, rate_limiter=rate_limiter
+        )
 
         # OpenRouter API
         openrouter_rate_limiter = RateLimiter(requests_per_minute=20)
@@ -170,7 +177,7 @@ class TelegramBot:
         from src.services.media.voice_processor import VoiceProcessor
         from src.services.model_handlers.prompt_formatter import PromptFormatter
         from src.services.user_preferences_manager import UserPreferencesManager
-        
+
         # User data management
         self.user_data_manager = UserDataManager(self.db)
         self.telegram_logger = telegram_logger
@@ -187,7 +194,9 @@ class TelegramBot:
         # Store in application context
         self.application.bot_data["context_handler"] = self.context_handler
         self.application.bot_data["response_formatter"] = self.response_formatter
-        self.application.bot_data["media_context_extractor"] = self.media_context_extractor
+        self.application.bot_data["media_context_extractor"] = (
+            self.media_context_extractor
+        )
         self.application.bot_data["image_processor"] = self.image_processor
         self.application.bot_data["voice_processor"] = self.voice_processor
         self.application.bot_data["prompt_formatter"] = self.prompt_formatter
@@ -205,6 +214,7 @@ class TelegramBot:
 
         # Initialize ConversationManager
         from src.services.memory_context.conversation_manager import ConversationManager
+
         self.conversation_manager = ConversationManager(
             self.text_handler.memory_manager, self.text_handler.model_history_manager
         )
@@ -246,6 +256,18 @@ class TelegramBot:
         self.reminder_manager = ReminderManager(self.application.bot)
         self.language_manager = LanguageManager()
 
+        # Initialize GroupChatIntegration
+
+        self.group_chat_integration = GroupChatIntegration(
+            self.user_data_manager, self.conversation_manager
+        )
+        self.application.bot_data["group_chat_integration"] = (
+            self.group_chat_integration
+        )
+
+        # Share group chat integration with message handlers
+        self.message_handlers._group_chat_integration = self.group_chat_integration
+
     async def shutdown(self):
         """Properly clean up resources on shutdown."""
         # Close aiohttp session if it exists
@@ -262,14 +284,20 @@ class TelegramBot:
         self.response_cache = TTLCache(maxsize=1000, ttl=300)
 
         # Register command handlers
-        self.command_handler.register_handlers(self.application, cache=self.response_cache)
-        
+        self.command_handler.register_handlers(
+            self.application, cache=self.response_cache
+        )
+
         # Register message handlers
         self.message_handlers.register_handlers(self.application)
-        
+
         # Register reminder and language commands separately
-        self.application.add_handler(CommandHandler("remind", self.reminder_manager.set_reminder))
-        self.application.add_handler(CommandHandler("language", self.language_manager.set_language))
+        self.application.add_handler(
+            CommandHandler("remind", self.reminder_manager.set_reminder)
+        )
+        self.application.add_handler(
+            CommandHandler("language", self.language_manager.set_language)
+        )
 
         # Set up error handler
         self.application.error_handlers.clear()
@@ -286,7 +314,12 @@ class TelegramBot:
         # Webhook configuration
         webhook_config = {
             "url": webhook_url,
-            "allowed_updates": ["message", "edited_message", "callback_query", "inline_query"],
+            "allowed_updates": [
+                "message",
+                "edited_message",
+                "callback_query",
+                "inline_query",
+            ],
             "max_connections": 150,
         }
 
@@ -313,31 +346,23 @@ class TelegramBot:
         """Process updates with task management."""
         task = None
         try:
-            # Check if update should be ignored
-            bot_username = getattr(self.application.bot, "username", "Gemini_AIAssistBot")
-            if message_filter.should_ignore_update(update_data, bot_username):
-                self.logger.info(f"Ignoring update {update_data.get('update_id', 'unknown')}")
+            from telegram import Update
+
+            # Convert dict to Update object
+            update = Update.de_json(update_data, self.application.bot)
+
+            if update is None:
+                self.logger.warning(f"Failed to parse update: {update_data}")
                 return
 
-            # Ensure application is running
-            if not self.application.running:
-                await self.application.initialize()
-                await self.application.start()
+            # Use the application's update processor
+            await self.application.process_update(update)
 
-            # Process update
-            update = Update.de_json(update_data, self.application.bot)
-            task = asyncio.create_task(self.application.process_update(update))
-            self._update_tasks.add(task)
-            await task
+            self.logger.debug(f"Successfully processed update {update.update_id}")
 
         except Exception as e:
-            self.logger.error(f"Error in process_update: {str(e)}")
-            # Clean up task if needed
-            if task and task in self._update_tasks:
-                self._update_tasks.remove(task)
-                if not task.done():
-                    task.cancel()
-        finally:
-            # Remove task from tracking set if it exists
-            if task and task in self._update_tasks:
-                self._update_tasks.remove(task)
+            self.logger.error(
+                f"Error processing update {update_data.get('update_id', 'unknown')}: {str(e)}",
+                exc_info=True,
+            )
+            raise

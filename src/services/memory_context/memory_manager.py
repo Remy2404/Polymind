@@ -8,9 +8,13 @@ import os
 import re
 from collections import defaultdict
 import time
-from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
+import hashlib
+import uuid
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -77,1229 +81,848 @@ class Conversation:
 
 
 class MemoryManager:
-    """Manages conversation memory with a tiered approach for different time horizons"""
+    """Enhanced memory manager with semantic search, summarization, and group support"""
 
     def __init__(self, db=None, storage_path="./data/memory"):
-        self.logger = logging.getLogger(__name__)
         self.db = db
         self.storage_path = storage_path
+        self.memory_cache = {}
+        self.group_memory_cache = {}  # Separate cache for group memories
+        self.lock = asyncio.Lock()
+        self.logger = logging.getLogger(__name__)
 
-        # Create storage directory if it doesn't exist
+        # Enhanced memory features
+        self.vectorizer = TfidfVectorizer(max_features=1000, stop_words="english")
+        self.message_vectors = {}
+        self.group_message_vectors = {}  # Separate vectors for group messages
+        self.conversation_summaries = {}
+        self.group_summaries = {}  # Group conversation summaries
+
+        # Memory importance scoring
+        self.importance_factors = {
+            "recency": 0.3,  # How recent the message is
+            "relevance": 0.4,  # How relevant to current context
+            "interaction": 0.2,  # How much interaction it generated
+            "media": 0.1,  # Bonus for media content
+        }
+
+        # Group collaboration features
+        self.group_contexts = {}  # Active group conversation contexts
+        self.shared_knowledge = {}  # Shared knowledge between group members
+
+        # Create storage directory
         os.makedirs(storage_path, exist_ok=True)
 
-        # Initialize memory structures
-        self.short_term_memory = {}
-        self.medium_term_memory = {}  
-        self.long_term_memory = {}  
-
-        # Conversation memory limits
-        self.short_term_limit = 10
-        self.medium_term_limit = 50
-        self.conversation_expiry = timedelta(
-            hours=24
-        )
-        self.token_limit = 8192 
-
-        # Setup message importance classification patterns
-        self._init_importance_patterns()
-
-    def _init_importance_patterns(self):
-        """Initialize patterns for detecting message importance"""
-        self.high_importance_patterns = [
-            # User preferences and personal info
-            r"\bmy name is\b|\bi am called\b|\bplease call me\b|\bi'm (\w+)\b|\bI am (\w+)\b",
-            r"\bi prefer\b|\bi like\b|\bi want\b|\bi need\b",
-            r"\bremember that\b|\bdon\'t forget\b|\bmake sure\b",
-            # Professional or technical information
-            r"\btechnical specs\b|\bspecifications\b|\brequirements\b",
-            r"\bAPI key\b|\bpassword\b|\bcredentials\b|\btoken\b",
-            # Location or time context
-            r"\bi\'m in\b|\bi am in\b|\bmy location\b|\bi live in\b",
-            r"\btime zone\b|\bschedule\b|\bdeadline\b|\bdue date\b",
-            # Document context
-            r"\bdocument ID\b|\bfile reference\b|\breport number\b",
-            r"\bversion\b|\brelease\b|\bupdate\b|\bpatch\b",
-            # User intentions
-            r"\bmy goal is\b|\bi\'m trying to\b|\bi want to achieve\b",
-            r"\bproject\b|\btask\b|\bassignment\b|\bmission\b",
-            # Specific questions about the model's memory
-            r"\bdo you (?:know|remember) (?:my|me)\b",
-        ]
-
-        # Add specific pattern for capturing names
-        self.name_pattern = re.compile(
-            r"\bmy name is\s+(\w+)|\bi am\s+(\w+)|\bcall me\s+(\w+)", re.IGNORECASE
+        logger.info(
+            "Enhanced MemoryManager initialized with semantic search and group support"
         )
 
     async def add_user_message(
         self,
         conversation_id: str,
-        message: str,
+        content: str,
         user_id: str,
         message_type: str = "text",
+        importance: float = 0.5,
+        is_group: bool = False,
+        group_id: Optional[str] = None,
         **metadata,
     ) -> None:
-        """Add a user message to memory with importance classification"""
-        timestamp = metadata.get("timestamp", datetime.now().timestamp())
-
-        # Evaluate message importance
-        importance = self._evaluate_message_importance(message)
-
-        # Create message object
-        message_obj = {
-            "sender": "user",
-            "content": message,
-            "timestamp": timestamp,
-            "type": message_type,
+        """Add a user message with enhanced metadata and group support"""
+        message = {
+            "role": "user",
+            "content": content,
+            "timestamp": time.time(),
+            "user_id": user_id,
+            "message_type": message_type,
             "importance": importance,
+            "is_group": is_group,
+            "group_id": group_id,
             "metadata": metadata,
         }
 
-        # Initialize conversation if needed
-        if conversation_id not in self.short_term_memory:
-            self.short_term_memory[conversation_id] = []
+        async with self.lock:
+            # Store in appropriate cache based on group or individual
+            if is_group and group_id:
+                if group_id not in self.group_memory_cache:
+                    self.group_memory_cache[group_id] = []
+                self.group_memory_cache[group_id].append(message)
 
-        if conversation_id not in self.medium_term_memory:
-            self.medium_term_memory[conversation_id] = []
+                # Update group context
+                await self._update_group_context(group_id, message)
 
-        # Add to short-term memory
-        self.short_term_memory[conversation_id].append(message_obj)
+                # Store group message vectors for semantic search
+                await self._store_group_message_vector(
+                    group_id, content, len(self.group_memory_cache[group_id]) - 1
+                )
+            else:
+                if conversation_id not in self.memory_cache:
+                    self.memory_cache[conversation_id] = []
+                self.memory_cache[conversation_id].append(message)
 
-        # Also add to medium-term memory if important
-        if importance >= 0.6:
-            self.medium_term_memory[conversation_id].append(message_obj)
+                # Store message vectors for semantic search
+                await self._store_message_vector(
+                    conversation_id,
+                    content,
+                    len(self.memory_cache[conversation_id]) - 1,
+                )
 
-        # Add key information to long-term memory
-        if importance >= 0.8:
-            if user_id not in self.long_term_memory:
-                self.long_term_memory[user_id] = {
-                    "preferences": {},
-                    "facts": [],
-                    "contexts": {},
-                }
-
-            # Extract information for long-term memory
-            self._extract_long_term_info(user_id, message, message_obj)
-
-        # Trim memory if needed
-        self._trim_memory(conversation_id)
-
-        # Persist memory periodically (could be optimized with a periodic task)
-        await self._save_memory(conversation_id, user_id)
+            # Persist to storage
+            await self._persist_memory(
+                conversation_id if not is_group else group_id, is_group
+            )
 
     async def add_assistant_message(
         self,
         conversation_id: str,
-        message: str,
+        content: str,
         message_type: str = "text",
+        importance: float = 0.5,
+        is_group: bool = False,
+        group_id: Optional[str] = None,
         **metadata,
     ) -> None:
-        """Add an assistant message to memory"""
-        timestamp = metadata.get("timestamp", datetime.now().timestamp())
-
-        # Create message object
-        message_obj = {
-            "sender": "assistant",
-            "content": message,
-            "timestamp": timestamp,
-            "type": message_type,
+        """Add an assistant message with enhanced metadata and group support"""
+        message = {
+            "role": "assistant",
+            "content": content,
+            "timestamp": time.time(),
+            "message_type": message_type,
+            "importance": importance,
+            "is_group": is_group,
+            "group_id": group_id,
             "metadata": metadata,
         }
 
-        # Initialize conversation if needed
-        if conversation_id not in self.short_term_memory:
-            self.short_term_memory[conversation_id] = []
-
-        # Add to short-term memory
-        self.short_term_memory[conversation_id].append(message_obj)
-
-        # Trim memory if needed
-        self._trim_memory(conversation_id)
-
-        # Persist memory periodically
-        await self._save_memory(
-            conversation_id, ""
-        )  # No user ID needed for assistant messages
-
-    async def get_short_term_memory(self, conversation_id: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Get short term memory messages for a conversation asynchronously.
-
-        Args:
-            conversation_id: The conversation ID to retrieve messages for
-            limit: Maximum number of messages to retrieve
-
-        Returns:
-            List of message dictionaries
-        """
-        # Ensure memory is loaded 
-        await self._load_memory(conversation_id, "")  # Empty user_id as we only need conversation memory
-        
-        # Get messages from short-term memory
-        messages = self.short_term_memory.get(conversation_id, [])
-
-        # Limit to most recent messages if needed
-        if limit > 0 and len(messages) > limit:
-            messages = messages[-limit:]  # Take the most recent 'limit' messages
-        
-        self.logger.info(f"Retrieved {len(messages)} messages from short-term memory for {conversation_id}")
-        
-        return messages
-
-    def get_formatted_history(
-        self, conversation_id: str, max_messages: int = 10
-    ) -> List[Dict[str, Any]]:
-        """
-        Get conversation history formatted for AI model consumption.
-
-        Args:
-            conversation_id: The ID of the conversation to retrieve
-            max_messages: Maximum number of messages to include
-
-        Returns:
-            List of message dictionaries formatted for model context
-        """
-        formatted_history = []
-
-        # Get messages from short-term memory
-        messages = self.short_term_memory.get(conversation_id, [])
-
-        # Only take the most recent messages up to max_messages
-        recent_messages = (
-            messages[-max_messages:] if len(messages) > max_messages else messages
-        )
-
-        # Format the messages for the AI model
-        for msg in recent_messages:
-            sender = msg.get("sender", "")
-            content = msg.get("content", "")
-
-            # Map 'sender' to standard role names expected by AI models
-            role = "user" if sender == "user" else "assistant"
-
-            formatted_history.append({"role": role, "content": content})
-
-        return formatted_history
-
-    def get_messages(self, conversation_id: str) -> List[Message]:
-        """Get all messages for a conversation as Message objects"""
-        messages = []
-
-        # Get raw message data from memory
-        raw_messages = self.short_term_memory.get(conversation_id, [])
-
-        # Convert to Message objects
-        for msg in raw_messages:
-            role = "user" if msg.get("sender") == "user" else "assistant"
-            message = Message(
-                role=role,
-                content=msg.get("content", ""),
-                timestamp=msg.get("timestamp", time.time()),
-                metadata=msg.get("metadata", {}),
-            )
-            messages.append(message)
-
-        return messages
-
-    async def _maybe_manage_context_window(self, conversation_id: str) -> None:
-        """Check if context window is getting too large and trim if needed"""
-        if conversation_id not in self.short_term_memory:
-            return
-
-        # Estimate token count (very rough approximation)
-        total_tokens = sum(
-            len(msg.get("content", "").split()) * 1.3
-            for msg in self.short_term_memory[conversation_id]
-        )
-
-        # If approaching token limit, trim older messages
-        if total_tokens > self.token_limit * 0.8:
-            # Sort by importance first, then timestamp
-            messages = self.short_term_memory[conversation_id]
-            messages.sort(
-                key=lambda x: (x.get("importance", 0), x.get("timestamp", 0)),
-                reverse=True,
-            )
-
-            # Keep most important messages within token limit
-            kept_messages = []
-            token_count = 0
-
-            for msg in messages:
-                msg_tokens = len(msg.get("content", "").split()) * 1.3
-                if token_count + msg_tokens < self.token_limit * 0.7:
-                    kept_messages.append(msg)
-                    token_count += msg_tokens
-
-            # Sort back by timestamp
-            kept_messages.sort(key=lambda x: x.get("timestamp", 0))
-            self.short_term_memory[conversation_id] = kept_messages
-
-            # Log the context management action
-            self.logger.info(
-                f"Managed context window for {conversation_id}: Reduced from {total_tokens:.0f} to {token_count:.0f} tokens"
-            )
-
-    async def add_bot_message(
-        self,
-        conversation_id: str,
-        message: str,
-        user_id: str,
-        message_type: str = "text",
-        **metadata,
-    ) -> None:
-        """Add a bot message to memory"""
-        timestamp = metadata.get("timestamp", datetime.now().timestamp())
-
-        # Create message object
-        message_obj = {
-            "sender": "bot",
-            "content": message,
-            "timestamp": timestamp,
-            "type": message_type,
-            "metadata": metadata,
-        }
-
-        # Initialize conversation if needed
-        if conversation_id not in self.short_term_memory:
-            self.short_term_memory[conversation_id] = []
-
-        if conversation_id not in self.medium_term_memory:
-            self.medium_term_memory[conversation_id] = []
-
-        # Add to short-term memory
-        self.short_term_memory[conversation_id].append(message_obj)
-
-        # Trim memory if needed
-        self._trim_memory(conversation_id)
-
-        # Persist memory periodically
-        await self._save_memory(conversation_id, user_id)
-
-    def _evaluate_message_importance(self, message: str) -> float:
-        """Evaluate the importance of a message for memory retention (0.0 to 1.0)"""
-        # Basic importance score
-        importance = 0.5
-
-        # Check for high importance patterns
-        for pattern in self.high_importance_patterns:
-            if re.search(pattern, message, re.IGNORECASE):
-                importance = min(importance + 0.2, 1.0)
-
-        # Length-based importance (longer messages might contain more info)
-        if len(message) > 200:
-            importance = min(importance + 0.1, 1.0)
-
-        # Question importance
-        if "?" in message:
-            importance = min(importance + 0.1, 1.0)
-
-        # Check for code blocks or structured data
-        if "```" in message or re.search(r"\[.*?\]\(.*?\)", message):
-            importance = min(importance + 0.2, 1.0)
-
-        return importance
-
-    def _extract_long_term_info(
-        self, user_id: str, message: str, message_obj: Dict
-    ) -> None:
-        """Extract information for long-term memory"""
-        # Extract user preferences
-        preference_patterns = [
-            (r"I prefer (.*?)(?:\.|\n|$)", "preference"),
-            (r"I like (.*?)(?:\.|\n|$)", "preference"),
-            (r"I want (.*?)(?:\.|\n|$)", "preference"),
-            (r"I need (.*?)(?:\.|\n|$)", "need"),
-            (r"My favorite (.*?) is (.*?)(?:\.|\n|$)", "favorite"),
-            (r"I don\'t like (.*?)(?:\.|\n|$)", "dislike"),
-        ]
-
-        # Extract name information specifically - this is high priority
-        name_match = self.name_pattern.search(message)
-        if name_match:
-            # Get the first non-None group (the actual name)
-            name = next(
-                (group for group in name_match.groups() if group is not None), None
-            )
-            if (
-                name and len(name) > 1
-            ):  # Ensure it's a reasonable name (more than one character)
-                self.long_term_memory[user_id]["preferences"]["name"] = name
-                # Also add this as a high-importance fact
-                name_fact = {
-                    "content": f"The user's name is {name}",
-                    "timestamp": message_obj.get(
-                        "timestamp", datetime.now().timestamp()
-                    ),
-                    "type": "personal_info",
-                    "importance": 1.0,  # Maximum importance
-                }
-                # Add at the beginning of facts
-                self.long_term_memory[user_id]["facts"].insert(0, name_fact)
-                self.logger.info(f"Extracted user name '{name}' for user {user_id}")
-
-        # Check for direct questions about name, set a flag to remember these
-        if re.search(r"\bdo you (?:know|remember) my name\b", message, re.IGNORECASE):
-            self.long_term_memory[user_id]["context_flags"] = self.long_term_memory[
-                user_id
-            ].get("context_flags", {})
-            self.long_term_memory[user_id]["context_flags"]["asked_about_name"] = True
-
-        for pattern, pref_type in preference_patterns:
-            matches = re.finditer(pattern, message, re.IGNORECASE)
-            for match in matches:
-                if pref_type == "favorite" and len(match.groups()) > 1:
-                    category = match.group(1).strip()
-                    value = match.group(2).strip()
-                    self.long_term_memory[user_id]["preferences"][
-                        f"favorite_{category}"
-                    ] = value
-                else:
-                    preference = match.group(1).strip()
-                    self.long_term_memory[user_id]["preferences"][
-                        pref_type
-                    ] = preference
-
-        # Extract factual information
-        if message_obj.get("importance", 0) > 0.7:
-            # Only store high importance messages as facts
-            truncated_msg = message[:200] + "..." if len(message) > 200 else message
-            fact = {
-                "content": truncated_msg,
-                "timestamp": message_obj.get("timestamp", datetime.now().timestamp()),
-                "type": message_obj.get("type", "text"),
-                "importance": message_obj.get("importance", 0.7),
-            }
-            self.long_term_memory[user_id]["facts"].append(fact)
-
-            # Limit facts to most recent/important 50
-            if len(self.long_term_memory[user_id]["facts"]) > 50:
-                self.long_term_memory[user_id]["facts"].sort(
-                    key=lambda x: (x.get("importance", 0), x.get("timestamp", 0)),
-                    reverse=True,
-                )
-                self.long_term_memory[user_id]["facts"] = self.long_term_memory[
-                    user_id
-                ]["facts"][:50]
-
-    def _trim_memory(self, conversation_id: str) -> None:
-        """Trim memory to stay within limits"""
-        # Trim short-term memory
-        if conversation_id in self.short_term_memory:
-            if len(self.short_term_memory[conversation_id]) > self.short_term_limit:
-                # Keep the most recent messages
-                self.short_term_memory[conversation_id] = self.short_term_memory[
-                    conversation_id
-                ][-self.short_term_limit :]
-
-        # Trim medium-term memory
-        if conversation_id in self.medium_term_memory:
-            if len(self.medium_term_memory[conversation_id]) > self.medium_term_limit:
-                # Sort by importance and timestamp, keep most relevant
-                messages = self.medium_term_memory[conversation_id]
-                messages.sort(
-                    key=lambda x: (x.get("importance", 0), x.get("timestamp", 0)),
-                    reverse=True,
-                )
-                self.medium_term_memory[conversation_id] = messages[
-                    : self.medium_term_limit
-                ]
-
-    async def get_conversation_context(
-        self,
-        conversation_id: str,
-        user_id: str,
-        limit: int = 10,
-        include_long_term: bool = True,
-        include_media_context: bool = True,
-    ) -> List[Dict]:
-        """Get the conversation context with tiered memory integration, highlighting recent questions and media."""
-        # Load memory if not already loaded
-        await self._load_memory(conversation_id, user_id)
-
-        # Combine contexts with priority to short-term
-        context = []
-        recent_user_questions = []  # Track recent questions
-        recent_media_interactions = []  # Track recent media interactions (especially images)
-        
-        # Add short-term memory (most recent conversations)
-        short_term = self.short_term_memory.get(conversation_id, [])
-        recent_short_term = short_term[-limit:]
-        context.extend(recent_short_term)
-
-        # Identify recent user questions and media interactions from short-term memory
-        for msg in reversed(recent_short_term):  # Check most recent first
-            # Track questions
-            if msg.get("sender") == "user" and "?" in msg.get("content", ""):
-                recent_user_questions.append(msg.get("content"))
-                if len(recent_user_questions) >= 2:  # Limit to last 2 questions for context summary
-                    break
-                
-            # Track media interactions (especially images)
-            if include_media_context and (
-                msg.get("metadata", {}).get("is_media", False) or 
-                msg.get("type") in ["image", "image_analysis"] or
-                msg.get("metadata", {}).get("media_type") in ["image", "photo"] or
-                (msg.get("content", "").startswith("[Image") and "message:" in msg.get("content", ""))
-            ):
-                media_item = {
-                    "content": msg.get("content", ""),
-                    "timestamp": msg.get("timestamp", 0),
-                    "media_type": msg.get("metadata", {}).get("media_type", 
-                                    msg.get("type", "unknown")),
-                }
-                
-                # Also check for the AI's analysis of this media if it exists
-                if msg.get("sender") == "user" and msg.get("metadata", {}).get("media_type") == "image":
-                    # Look for the next message which should be the AI's analysis
-                    msg_index = short_term.index(msg)
-                    if msg_index + 1 < len(short_term):
-                        analysis_msg = short_term[msg_index + 1]
-                        if analysis_msg.get("sender") == "assistant":
-                            media_item["analysis"] = analysis_msg.get("content", "")
-                
-                recent_media_interactions.append(media_item)
-                
-        # Reverse lists to restore chronological order
-        recent_user_questions.reverse()
-        recent_media_interactions.reverse()
-
-        # Add relevant medium-term memory not in short-term
-        medium_term = self.medium_term_memory.get(conversation_id, [])
-        # Only add medium-term messages not already in the context
-        short_term_timestamps = {msg.get("timestamp") for msg in context}
-        medium_term_added_count = 0
-        for msg in reversed(medium_term):  # Prioritize more recent medium-term
-            if (
-                msg.get("timestamp") not in short_term_timestamps
-                and msg.get("importance", 0) >= 0.7
-                and medium_term_added_count
-                < (limit // 2)  # Limit medium-term additions
-            ):
-                context.append(msg)
-                medium_term_added_count += 1
-
-                # Limit how many medium-term messages we add overall
-                if len(context) >= limit * 1.5:
-                    break
-
-        # Add long-term memory context if requested
-        if include_long_term and user_id in self.long_term_memory:
-            long_term = self.long_term_memory[user_id]
-
-            # First check if there are any critical personal information to include (like name)
-            personal_info = []
-            user_name = long_term.get("preferences", {}).get("name")
-
-            if user_name:
-                personal_info.append(f"User's name is {user_name}")
-
-            # Add any collected personal info at the top with high importance
-            if personal_info:
-                personal_info_text = "Important user information: " + "; ".join(
-                    personal_info
-                )
-                context.insert(
-                    0,
-                    {
-                        "sender": "system",
-                        "content": personal_info_text,
-                        "type": "personal_info",
-                        "importance": 1.0,
-                        "timestamp": time.time() - 10,  # Ensure it sorts early
-                    },
-                )
-
-            # Add user preferences as context
-            if long_term.get("preferences"):
-                preferences = long_term["preferences"]
-                if preferences:  # Only add if we have actual preferences
-                    preference_text = "User preferences: " + ", ".join(
-                        [
-                            f"{k}: {v}" for k, v in preferences.items() if k != "name"
-                        ]  # Exclude name, handled separately
-                    )
-                    if preference_text != "User preferences: ":  # Only add if not empty
-                        context.insert(
-                            (
-                                0 if not personal_info else 1
-                            ),  # Insert after personal info if it exists
-                            {
-                                "sender": "system",
-                                "content": preference_text,
-                                "type": "memory",
-                                "importance": 0.9,
-                                "timestamp": time.time() - 9,  # Ensure it sorts early
-                            },
-                        )
-
-            # Check for specific context flags
-            if long_term.get("context_flags", {}).get("asked_about_name"):
-                # The user has previously asked if we know their name, prioritize this information
-                if user_name:
-                    context.insert(
-                        0,
-                        {
-                            "sender": "system",
-                            "content": f"IMPORTANT: User asked if you know their name. Their name is {user_name}.",
-                            "type": "memory",
-                            "importance": 1.0,
-                            "timestamp": time.time() - 11,  # Ensure it sorts earliest
-                        },
-                    )
-                    # Reset this flag after it's been addressed once
-                    long_term["context_flags"]["asked_about_name"] = False
-                    await self._save_memory("", user_id)
-
-            # Add relevant facts from long-term memory
-            if long_term.get("facts"):
-                # Take the 5 most important facts, sorted by importance then recency
-                important_facts = sorted(
-                    long_term["facts"],
-                    key=lambda x: (x.get("importance", 0), x.get("timestamp", 0)),
-                    reverse=True,
-                )[:5]
-
-                fact_insert_index = 1  # Default insert index
-                if personal_info:
-                    fact_insert_index += 1
-                if (
-                    long_term.get("preferences")
-                    and preference_text != "User preferences: "
-                ):
-                    fact_insert_index += 1
-
-                for fact in important_facts:
-                    # Skip personal info facts if we've already added personal info
-                    if fact.get("type") == "personal_info" and personal_info:
-                        continue
-
-                    context.insert(
-                        fact_insert_index,
-                        {
-                            "sender": "system",
-                            "content": f"User previously mentioned: {fact['content']}",
-                            "type": "memory",
-                            "importance": fact.get("importance", 0.8),
-                            "timestamp": fact.get(
-                                "timestamp", time.time() - 8
-                            ),  # Ensure it sorts early
-                        },
-                    )
-
-        # Add system messages for recent media interactions if any were found
-        if include_media_context and recent_media_interactions:
-            image_interactions = [m for m in recent_media_interactions 
-                                if m.get("media_type") in ["image", "photo"]]
-            
-            if image_interactions:
-                # Create a summary of recent image interactions
-                image_summary = "You have previously analyzed these images from the user:\n"
-                for idx, img in enumerate(image_interactions):
-                    content = img.get("content", "")
-                    # Extract the image caption if available
-                    caption = ""
-                    caption_match = re.search(r"\[Image.*message: (.*?)\]", content)
-                    if caption_match:
-                        caption = caption_match.group(1)
-                    
-                    image_summary += f"- Image {idx+1}: {caption}\n"
-                    if "analysis" in img:
-                        # Include a condensed version of the analysis
-                        analysis = img["analysis"]
-                        summary = analysis[:150] + "..." if len(analysis) > 150 else analysis
-                        image_summary += f"  Your analysis: {summary}\n"
-                
-                # Add instruction for the model
-                image_summary += "\nWhen the user refers to these images, use your memory of them instead of saying you can't access images."
-                
-                context.insert(
-                    0,  # Add at the beginning of the context
-                    {
-                        "sender": "system",
-                        "content": image_summary,
-                        "type": "image_context_summary",
-                        "importance": 0.98,  # Very high importance
-                        "timestamp": time.time() - 6,  # Ensure it sorts early
-                    },
-                )
-        
-        # Add a system message summarizing recent user questions if any were found
-        if recent_user_questions:
-            questions_summary = "\n".join([f'- "{q}"' for q in recent_user_questions])
-            context.insert(
-                0,  # Add near the beginning of the context
-                {
-                    "sender": "system",
-                    "content": f"Context: The user's previous questions in this conversation include:\n{questions_summary}",
-                    "type": "context_summary",
-                    "importance": 0.95,  # High importance
-                    "timestamp": time.time() - 5,  # Ensure it sorts relatively early
-                },
-            )
-
-        # Sort context primarily by timestamp, but keep system messages near the top if needed
-        # We added timestamps to system messages to help control sorting
-        context.sort(key=lambda x: x.get("timestamp", 0))
-
-        # Ensure the context doesn't exceed a reasonable limit (e.g., limit * 2)
-        final_context = context[-(limit * 2) :]
-
-        # Reformat for model consumption (role/content)
-        model_context = []
-        for msg in final_context:
-            role = "user" if msg.get("sender") == "user" else "assistant"
-            if msg.get("sender") == "system":
-                role = "system"  # Or potentially map to 'user' or 'assistant' depending on model needs
-
-            # Ensure content exists and is a string
-            content = msg.get("content", "")
-            if not isinstance(content, str):
-                content = str(content)  # Convert non-string content
-
-            # Skip empty messages
-            if not content.strip():
-                continue
-
-            model_context.append({"role": role, "content": content})
-
-        # Gemini specific formatting: alternate user/assistant roles, merge system prompts
-        formatted_model_context = []
-        system_prompts = []
-        last_role = None
-
-        for msg in model_context:
-            role = msg["role"]
-            content = msg["content"]
-
-            if role == "system":
-                system_prompts.append(content)
-                continue
-
-            # Merge consecutive messages from the same role if needed (optional, Gemini handles alternation well)
-            # if formatted_model_context and role == last_role:
-            #    formatted_model_context[-1]["content"] += "\n" + content
-            #    continue
-
-            # Add message
-            formatted_model_context.append({"role": role, "content": content})
-            last_role = role
-
-        # Prepend system prompts if any
-        if system_prompts:
-            formatted_model_context = [{"role": "user", "content": "\n".join(system_prompts)}] + formatted_model_context
-
-        return formatted_model_context
-
-    async def search_memory(
-        self, user_id: str, query: str, limit: int = 5
-    ) -> List[Dict]:
-        """Search memory for relevant messages using keyword matching"""
-        results = []
-        query_terms = set(query.lower().split())
-
-        # Find conversations for this user
-        user_conversations = set()
-        for conv_id, messages in self.medium_term_memory.items():
-            for message in messages:
-                message_user_id = message.get("metadata", {}).get("user_id")
-                if message_user_id == user_id:
-                    user_conversations.add(conv_id)
-                    break
-
-        # Search through medium-term memory for this user
-        for conv_id in user_conversations:
-            for message in self.medium_term_memory.get(conv_id, []):
-                content = message.get("content", "").lower()
-                score = 0
-
-                # Calculate simple relevance score
-                for term in query_terms:
-                    if term in content:
-                        score += 1
-
-                # Adjust for importance
-                score = score * (1 + message.get("importance", 0))
-
-                if score > 0:
-                    result = dict(message)
-                    result["relevance_score"] = score
-                    result["conversation_id"] = conv_id
-                    results.append(result)
-
-        # Sort by relevance and limit results
-        results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
-
-        return results[:limit]
-
-    async def get_document_context(self, user_id: str, limit: int = 3) -> List[Dict]:
-        """Get recent document interactions for a user"""
-        document_contexts = []
-
-        # Find conversations for this user
-        user_conversations = set()
-        for conv_id, messages in self.medium_term_memory.items():
-            for message in messages:
-                message_user_id = message.get("metadata", {}).get("user_id")
-                if message_user_id == user_id:
-                    user_conversations.add(conv_id)
-                    break
-
-        # Collect document-related messages
-        for conv_id in user_conversations:
-            for message in self.medium_term_memory.get(conv_id, []):
-                if message.get("type") == "document" or "document" in message.get(
-                    "metadata", {}
-                ).get("type", ""):
-
-                    # Create document context entry
-                    doc_context = {
-                        "content": message.get("content", ""),
-                        "document_id": message.get("metadata", {}).get(
-                            "document_id", "unknown"
-                        ),
-                        "timestamp": message.get("timestamp", 0),
-                        "conversation_id": conv_id,
-                    }
-                    document_contexts.append(doc_context)
-
-        # Sort by timestamp (most recent first) and limit
-        document_contexts.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-
-        return document_contexts[:limit]
-
-    async def clear_conversation(self, conversation_id: str) -> bool:
-        """Clear a specific conversation from memory"""
-        try:
-            if conversation_id in self.short_term_memory:
-                del self.short_term_memory[conversation_id]
-
-            if conversation_id in self.medium_term_memory:
-                del self.medium_term_memory[conversation_id]
-
-            # Remove conversation file if exists
-            file_path = os.path.join(
-                self.storage_path, f"conversation_{conversation_id}.json"
-            )
-            if os.path.exists(file_path):
-                os.remove(file_path)
-
-            return True
-        except Exception as e:
-            self.logger.error(
-                f"Error clearing conversation {conversation_id}: {str(e)}"
-            )
-            return False
-
-    async def clear_user_data(self, user_id: str) -> bool:
-        """Clear all data for a specific user"""
-        try:
-            # Clear from long-term memory
-            if user_id in self.long_term_memory:
-                del self.long_term_memory[user_id]
-
-            # Find and clear conversations for this user
-            user_conversations = set()
-            for conv_id, messages in list(self.medium_term_memory.items()):
-                for message in messages:
-                    message_user_id = message.get("metadata", {}).get("user_id")
-                    if message_user_id == user_id:
-                        user_conversations.add(conv_id)
-                        break
-
-            # Clear found conversations
-            for conv_id in user_conversations:
-                await self.clear_conversation(conv_id)
-
-            # Remove user file if exists
-            file_path = os.path.join(self.storage_path, f"user_{user_id}.json")
-            if os.path.exists(file_path):
-                os.remove(file_path)
-
-            return True
-        except Exception as e:
-            self.logger.error(f"Error clearing user data {user_id}: {str(e)}")
-            return False
-
-    async def _save_memory(self, conversation_id: str, user_id: str) -> None:
-        """Save memory to persistent storage"""
-        try:
-            # Save conversation memory
-            if conversation_id:
-                conversation_data = {
-                    "short_term": self.short_term_memory.get(conversation_id, []),
-                    "medium_term": self.medium_term_memory.get(conversation_id, []),
-                    "last_updated": datetime.now().isoformat(),
-                }
-
-                file_path = os.path.join(
-                    self.storage_path, f"conversation_{conversation_id}.json"
-                )
-                async with aiofiles.open(file_path, "w") as f:
-                    await f.write(json.dumps(conversation_data, indent=2))
-
-            # Save user long-term memory
-            if user_id and user_id in self.long_term_memory:
-                file_path = os.path.join(self.storage_path, f"user_{user_id}.json")
-                async with aiofiles.open(file_path, "w") as f:
-                    await f.write(json.dumps(self.long_term_memory[user_id], indent=2))
-
-            # Save to database if available
-            if self.db is not None:
-                try:
-                    if conversation_id:
-                        conversation_data = {
-                            "conversation_id": conversation_id,
-                            "short_term": self.short_term_memory.get(
-                                conversation_id, []
-                            ),
-                            "medium_term": self.medium_term_memory.get(
-                                conversation_id, []
-                            ),
-                            "last_updated": datetime.now(),
-                        }
-
-                        await asyncio.to_thread(
-                            self.db.conversations.update_one,
-                            {"conversation_id": conversation_id},
-                            {"$set": conversation_data},
-                            upsert=True,
-                        )
-
-                    if user_id and user_id in self.long_term_memory:
-                        user_data = {
-                            "user_id": user_id,
-                            "long_term_memory": self.long_term_memory[user_id],
-                            "last_updated": datetime.now(),
-                        }
-
-                        await asyncio.to_thread(
-                            self.db.user_memory.update_one,
-                            {"user_id": user_id},
-                            {"$set": user_data},
-                            upsert=True,
-                        )
-                except Exception as db_error:
-                    self.logger.error(f"Failed to save to database: {str(db_error)}")
-
-        except Exception as e:
-            self.logger.error(f"Error saving memory: {str(e)}")
-
-    async def _load_memory(self, conversation_id: str, user_id: str) -> None:
-        """Load memory from persistent storage if not already loaded"""
-        try:
-            # Load conversation memory if not already loaded
-            if conversation_id and (
-                conversation_id not in self.short_term_memory
-                or conversation_id not in self.medium_term_memory
-            ):
-                # Try loading from file
-                file_path = os.path.join(
-                    self.storage_path, f"conversation_{conversation_id}.json"
-                )
-                if os.path.exists(file_path):
-                    async with aiofiles.open(file_path, "r") as f:
-                        conversation_data = json.loads(await f.read())
-
-                        self.short_term_memory[conversation_id] = conversation_data.get(
-                            "short_term", []
-                        )
-                        self.medium_term_memory[conversation_id] = (
-                            conversation_data.get("medium_term", [])
-                        )
-
-                        self.logger.info(
-                            f"Loaded conversation {conversation_id} from file storage"
-                        )
-
-                # If not found in file, try database
-                elif self.db is not None:
-                    conversation_doc = await asyncio.to_thread(
-                        self.db.conversations.find_one,
-                        {"conversation_id": conversation_id},
-                    )
-
-                    if conversation_doc:
-                        self.short_term_memory[conversation_id] = conversation_doc.get(
-                            "short_term", []
-                        )
-                        self.medium_term_memory[conversation_id] = conversation_doc.get(
-                            "medium_term", []
-                        )
-
-                        self.logger.info(
-                            f"Loaded conversation {conversation_id} from database"
-                        )
-
-            # Load user long-term memory if not already loaded
-            if user_id and user_id not in self.long_term_memory:
-                # Try loading from file
-                file_path = os.path.join(self.storage_path, f"user_{user_id}.json")
-                if os.path.exists(file_path):
-                    async with aiofiles.open(file_path, "r") as f:
-                        self.long_term_memory[user_id] = json.loads(await f.read())
-
-                        self.logger.info(
-                            f"Loaded user {user_id} memory from file storage"
-                        )
-
-                # If not found in file, try database
-                elif self.db is not None:
-                    user_doc = await asyncio.to_thread(
-                        self.db.user_memory.find_one, {"user_id": user_id}
-                    )
-
-                    if user_doc and "long_term_memory" in user_doc:
-                        self.long_term_memory[user_id] = user_doc["long_term_memory"]
-
-                        self.logger.info(f"Loaded user {user_id} memory from database")
-
-                # Initialize if not found anywhere
-                if user_id not in self.long_term_memory:
-                    self.long_term_memory[user_id] = {
-                        "preferences": {},
-                        "facts": [],
-                        "contexts": {},
-                    }
-
-        except Exception as e:
-            self.logger.error(f"Error loading memory: {str(e)}")
-            # Initialize with empty structure
-            if conversation_id:
-                self.short_term_memory[conversation_id] = []
-                self.medium_term_memory[conversation_id] = []
-
-            if user_id and user_id not in self.long_term_memory:
-                self.long_term_memory[user_id] = {
-                    "preferences": {},
-                    "facts": [],
-                    "contexts": {},
-                }
-
-    async def update_user_preference(self, user_id: str, key: str, value: Any) -> None:
-        """Update a user preference in long-term memory"""
-        if user_id not in self.long_term_memory:
-            self.long_term_memory[user_id] = {
-                "preferences": {},
-                "facts": [],
-                "contexts": {},
-            }
-
-        self.long_term_memory[user_id]["preferences"][key] = value
-
-        # Save the update
-        await self._save_memory("", user_id)
-
-    async def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
-        """Get all user preferences from long-term memory"""
-        # Ensure memory is loaded
-        await self._load_memory("", user_id)
-
-        if user_id in self.long_term_memory:
-            return self.long_term_memory[user_id].get("preferences", {})
-        return {}
-
-    async def get_memory_text(self, user_id: str) -> str:
-        """
-        Generate a human-readable text summary of what the bot remembers about the user.
-        This is useful for when users ask what the bot knows/remembers about them.
-
-        Args:
-            user_id: The user ID to retrieve memory for
-
-        Returns:
-            Formatted text describing user memory
-        """
-        # Ensure memory is loaded
-        await self._load_memory("", user_id)
-
-        if user_id not in self.long_term_memory:
-            return "I don't have any specific information saved about you yet."
-
-        memory_text = []
-        user_memory = self.long_term_memory[user_id]
-
-        # Add name if it exists (most important)
-        if "name" in user_memory.get("preferences", {}):
-            name = user_memory["preferences"]["name"]
-            memory_text.append(
-                f"I remember your name is {name}."
-            )  # Changed phrasing slightly
-        else:
-            memory_text.append("I don't know your name yet.")
-
-        # Add other preferences
-        other_prefs = {}
-        for k, v in user_memory.get("preferences", {}).items():
-            if k != "name":  # Skip name, already added
-                other_prefs[k] = v
-
-        if other_prefs:
-            memory_text.append(
-                "\nRegarding your preferences, I remember:"
-            )  # Improved section header
-            for pref_type, value in other_prefs.items():
-                # Format the preference type for better readability
-                formatted_type = pref_type.replace("_", " ")
-                memory_text.append(
-                    f"- Your {formatted_type} preference is: {value}"
-                )  # Clearer phrasing
-
-        # Add important facts (up to 5)
-        important_facts = sorted(
-            user_memory.get("facts", []),
-            key=lambda x: (x.get("importance", 0), x.get("timestamp", 0)),
-            reverse=True,
-        )[:5]
-
-        if important_facts:
-            memory_text.append(
-                "\nI also recall these key details from our conversations:"
-            )  # Improved section header
-            for fact in important_facts:
-                # Skip facts that are just about the user's name if already mentioned
-                if (
-                    fact.get("type") == "personal_info"
-                    and "user's name is" in fact.get("content", "")
-                    and "name" in user_memory.get("preferences", {})
-                ):
-                    continue
-
-                content = fact.get("content", "").strip()
-                if content:
-                    # Remove quotes and normalize text
-                    content = content.strip("\"'")
-                    # Make it sound more like recalling a fact
-                    memory_text.append(f'- You mentioned: "{content}"')
-
-        # Handle case where we don't have much information beyond maybe the name
-        if not other_prefs and not important_facts:
-            if "name" in user_memory.get("preferences", {}):
-                memory_text.append(
-                    "\nBeyond your name, we haven't discussed specific preferences or details for me to remember yet."
+        async with self.lock:
+            if is_group and group_id:
+                if group_id not in self.group_memory_cache:
+                    self.group_memory_cache[group_id] = []
+                self.group_memory_cache[group_id].append(message)
+
+                # Update group context and shared knowledge
+                await self._update_group_context(group_id, message)
+                await self._update_shared_knowledge(group_id, content)
+
+                # Store group message vectors
+                await self._store_group_message_vector(
+                    group_id, content, len(self.group_memory_cache[group_id]) - 1
                 )
             else:
-                # This case is covered by the initial check, but added for robustness
-                memory_text = [
-                    "I don't have any specific information saved about you yet."
-                ]
+                if conversation_id not in self.memory_cache:
+                    self.memory_cache[conversation_id] = []
+                self.memory_cache[conversation_id].append(message)
 
-        return "\n".join(memory_text)
+                # Store message vectors
+                await self._store_message_vector(
+                    conversation_id,
+                    content,
+                    len(self.memory_cache[conversation_id]) - 1,
+                )
 
-    async def check_name_memory(
-        self, user_id: str, conversation_id: str, message: str
-    ) -> Optional[str]:
-        """
-        Special handler for when users ask if the bot knows their name.
+            # Auto-generate conversation summary if needed
+            cache_key = group_id if is_group else conversation_id
+            if (
+                len(
+                    self.group_memory_cache.get(group_id, [])
+                    if is_group
+                    else self.memory_cache.get(conversation_id, [])
+                )
+                % 20
+                == 0
+            ):
+                await self._generate_conversation_summary(cache_key, is_group)
 
-        Args:
-            user_id: The user ID
-            conversation_id: The conversation ID
-            message: The user's message
+            await self._persist_memory(
+                conversation_id if not is_group else group_id, is_group
+            )
 
-        Returns:
-            Response about the user's name if pattern matches, None otherwise
-        """
-        # Check if this is a question about the bot knowing the user's name
-        name_question_patterns = [
-            r"(?:do you|can you|could you)?\s*(?:know|remember|recall)\s+my\s+name",
-            r"what(?:'s| is) my name",
-            r"who am i",
-        ]
+    async def get_relevant_memory(
+        self,
+        conversation_id: str,
+        query: str,
+        limit: int = 5,
+        is_group: bool = False,
+        group_id: Optional[str] = None,
+        include_group_knowledge: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Get relevant messages using semantic search with group support"""
+        try:
+            cache_key = group_id if is_group else conversation_id
+            message_cache = (
+                self.group_memory_cache.get(group_id, [])
+                if is_group
+                else self.memory_cache.get(conversation_id, [])
+            )
 
-        is_name_question = any(
-            re.search(pattern, message, re.IGNORECASE)
-            for pattern in name_question_patterns
+            if not message_cache:
+                return []
+
+            # Get semantic similarity scores
+            relevant_messages = await self._semantic_search(cache_key, query, is_group)
+
+            # If this is a group and we want to include shared knowledge
+            if is_group and include_group_knowledge and group_id:
+                shared_knowledge = await self._get_shared_knowledge(group_id, query)
+                relevant_messages.extend(shared_knowledge)
+
+            # Sort by combined relevance and importance score
+            scored_messages = []
+            for msg_idx, similarity in relevant_messages[
+                : limit * 2
+            ]:  # Get more candidates
+                if msg_idx < len(message_cache):
+                    message = message_cache[msg_idx]
+                    combined_score = self._calculate_message_importance(
+                        message, similarity
+                    )
+                    scored_messages.append((message, combined_score))
+
+            # Sort by score and return top results
+            scored_messages.sort(key=lambda x: x[1], reverse=True)
+            return [msg for msg, score in scored_messages[:limit]]
+
+        except Exception as e:
+            logger.error(f"Error in semantic search: {e}")
+            # Fallback to recent messages
+            return await self.get_short_term_memory(
+                conversation_id, limit, is_group, group_id
+            )
+
+    async def get_short_term_memory(
+        self,
+        conversation_id: str,
+        limit: int = 5,
+        is_group: bool = False,
+        group_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get recent messages with group support and auto-loading from storage"""
+        cache_key = group_id if is_group else conversation_id
+        message_cache = (
+            self.group_memory_cache.get(group_id, [])
+            if is_group
+            else self.memory_cache.get(conversation_id, [])
         )
 
-        if is_name_question:
-            # Check if we have the user's name
-            await self._load_memory(conversation_id, user_id)
+        # If cache is empty, try to load from storage
+        if not message_cache:
+            await self.load_memory(cache_key, is_group)
+            message_cache = (
+                self.group_memory_cache.get(group_id, [])
+                if is_group
+                else self.memory_cache.get(conversation_id, [])
+            )
 
-            if user_id in self.long_term_memory:
-                name = self.long_term_memory[user_id].get("preferences", {}).get("name")
+        if not message_cache:
+            return []
 
-                if name:
-                    # Set the flag so the model knows we've addressed this
-                    context_flags = self.long_term_memory[user_id].get(
-                        "context_flags", {}
-                    )
-                    self.long_term_memory[user_id]["context_flags"] = context_flags
-                    self.long_term_memory[user_id]["context_flags"][
-                        "asked_about_name"
-                    ] = False
-                    await self._save_memory("", user_id)
+        return message_cache[-limit:]
 
-                    return f"Yes, I remember your name is {name}!"
-                else:
-                    return "I don't know your name yet. Would you like to tell me?"
-
-        return None
-
-    async def handle_name_introduction(
-        self, user_id: str, conversation_id: str, message: str
+    async def get_conversation_summary(
+        self,
+        conversation_id: str,
+        is_group: bool = False,
+        group_id: Optional[str] = None,
     ) -> Optional[str]:
-        """
-        Handle cases where user is introducing their name for the first time.
+        """Get or generate conversation summary with group support"""
+        cache_key = group_id if is_group else conversation_id
+        summary_cache = (
+            self.group_summaries if is_group else self.conversation_summaries
+        )
 
-        Args:
-            user_id: The user ID
-            conversation_id: The conversation ID
-            message: The user's message
+        if cache_key in summary_cache:
+            return summary_cache[cache_key]
 
-        Returns:
-            Confirmation response if name was extracted, None otherwise
-        """
-        # Extract name from introduction patterns
-        introduction_patterns = [
-            (
-                r"(?:my name is|i am|i'm|call me)\s+(\w+)(?:\.|\s|$)",
-                1,
-            ),  # Group 1 contains the name
-            (r"(?:i'm|i am)\s+called\s+(\w+)(?:\.|\s|$)", 1),
-            (r"(?:you can|please)\s+call\s+me\s+(\w+)(?:\.|\s|$)", 1),
+        # Generate new summary
+        return await self._generate_conversation_summary(cache_key, is_group)
+
+    async def clear_conversation(
+        self,
+        conversation_id: str,
+        is_group: bool = False,
+        group_id: Optional[str] = None,
+    ) -> None:
+        """Clear conversation memory with group support"""
+        async with self.lock:
+            cache_key = group_id if is_group else conversation_id
+
+            if is_group:
+                self.group_memory_cache.pop(group_id, None)
+                self.group_message_vectors.pop(group_id, None)
+                self.group_summaries.pop(group_id, None)
+                self.group_contexts.pop(group_id, None)
+            else:
+                self.memory_cache.pop(conversation_id, None)
+                self.message_vectors.pop(conversation_id, None)
+                self.conversation_summaries.pop(conversation_id, None)
+
+            # Remove from persistent storage
+            file_path = os.path.join(
+                self.storage_path, f"{'group_' if is_group else ''}{cache_key}.json"
+            )
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
+    # Enhanced group-specific methods
+
+    async def get_group_participants(self, group_id: str) -> List[str]:
+        """Get list of participants in a group conversation"""
+        if group_id not in self.group_memory_cache:
+            return []
+
+        participants = set()
+        for message in self.group_memory_cache[group_id]:
+            if message.get("user_id"):
+                participants.add(message["user_id"])
+
+        return list(participants)
+
+    async def get_group_activity_summary(
+        self, group_id: str, days: int = 7
+    ) -> Dict[str, Any]:
+        """Get group activity summary for specified days"""
+        if group_id not in self.group_memory_cache:
+            return {}
+
+        cutoff_time = time.time() - (days * 24 * 60 * 60)
+        recent_messages = [
+            msg
+            for msg in self.group_memory_cache[group_id]
+            if msg.get("timestamp", 0) > cutoff_time
         ]
 
-        name = None
-        for pattern, group in introduction_patterns:
-            match = re.search(pattern, message, re.IGNORECASE)
-            if match and match.group(group):
-                name = match.group(group).strip()
-                # Capitalize first letter
-                name = name[0].upper() + name[1:] if len(name) > 1 else name.upper()
-                break
+        # Analyze activity patterns
+        user_activity = defaultdict(int)
+        message_types = defaultdict(int)
+        topics = []
 
-        if name and len(name) > 1:  # Ensure it's a reasonable name
-            # Store the name
-            if user_id not in self.long_term_memory:
-                self.long_term_memory[user_id] = {
-                    "preferences": {},
-                    "facts": [],
-                    "contexts": {},
-                    "context_flags": {},
-                }
+        for message in recent_messages:
+            if message.get("user_id"):
+                user_activity[message["user_id"]] += 1
+            message_types[message.get("message_type", "text")] += 1
 
-            self.long_term_memory[user_id]["preferences"]["name"] = name
+            # Extract key topics (simplified)
+            content = message.get("content", "")
+            if len(content) > 20:  # Meaningful content
+                topics.append(content[:100])  # First 100 chars as topic indicator
 
-            # Add as a high-importance fact
-            name_fact = {
-                "content": f"The user's name is {name}",
-                "timestamp": time.time(),
-                "type": "personal_info",
-                "importance": 1.0,  # Maximum importance
+        return {
+            "total_messages": len(recent_messages),
+            "active_users": len(user_activity),
+            "user_activity": dict(user_activity),
+            "message_types": dict(message_types),
+            "most_active_user": (
+                max(user_activity.items(), key=lambda x: x[1])[0]
+                if user_activity
+                else None
+            ),
+            "summary": await self.get_conversation_summary("", True, group_id),
+        }
+
+    # Private helper methods
+
+    async def _store_message_vector(
+        self, conversation_id: str, content: str, message_index: int
+    ):
+        """Store message vector for semantic search"""
+        try:
+            if conversation_id not in self.message_vectors:
+                self.message_vectors[conversation_id] = {}
+
+            # Simple TF-IDF vectorization (in production, use better embeddings)
+            words = re.findall(r"\w+", content.lower())
+            word_freq = defaultdict(int)
+            for word in words:
+                word_freq[word] += 1
+
+            self.message_vectors[conversation_id][message_index] = {
+                "content": content,
+                "words": dict(word_freq),
+                "length": len(content),
+            }
+        except Exception as e:
+            logger.error(f"Error storing message vector: {e}")
+
+    async def _store_group_message_vector(
+        self, group_id: str, content: str, message_index: int
+    ):
+        """Store group message vector for semantic search"""
+        try:
+            if group_id not in self.group_message_vectors:
+                self.group_message_vectors[group_id] = {}
+
+            words = re.findall(r"\w+", content.lower())
+            word_freq = defaultdict(int)
+            for word in words:
+                word_freq[word] += 1
+
+            self.group_message_vectors[group_id][message_index] = {
+                "content": content,
+                "words": dict(word_freq),
+                "length": len(content),
+            }
+        except Exception as e:
+            logger.error(f"Error storing group message vector: {e}")
+
+    async def _semantic_search(
+        self, cache_key: str, query: str, is_group: bool = False
+    ) -> List[Tuple[int, float]]:
+        """Perform semantic search on messages"""
+        try:
+            vector_cache = (
+                self.group_message_vectors if is_group else self.message_vectors
+            )
+
+            if cache_key not in vector_cache:
+                return []
+
+            query_words = set(re.findall(r"\w+", query.lower()))
+            similarities = []
+
+            for msg_idx, vector_data in vector_cache[cache_key].items():
+                # Simple cosine similarity based on word overlap
+                msg_words = set(vector_data["words"].keys())
+                intersection = len(query_words & msg_words)
+                union = len(query_words | msg_words)
+
+                if union > 0:
+                    similarity = intersection / union
+                    # Boost similarity for longer, more detailed messages
+                    length_boost = min(vector_data["length"] / 200, 1.5)
+                    final_similarity = similarity * length_boost
+
+                    if final_similarity > 0.1:  # Minimum threshold
+                        similarities.append((msg_idx, final_similarity))
+
+            # Sort by similarity
+            similarities.sort(key=lambda x: x[1], reverse=True)
+            return similarities
+
+        except Exception as e:
+            logger.error(f"Error in semantic search: {e}")
+            return []
+
+    def _calculate_message_importance(
+        self, message: Dict[str, Any], relevance_score: float
+    ) -> float:
+        """Calculate combined importance score for a message"""
+        current_time = time.time()
+        message_time = message.get("timestamp", current_time)
+
+        # Recency factor (newer messages get higher scores)
+        time_diff = current_time - message_time
+        recency_score = max(0, 1 - (time_diff / (7 * 24 * 3600)))  # Decay over 7 days
+
+        # Base importance from message metadata
+        base_importance = message.get("importance", 0.5)
+
+        # Media bonus
+        media_bonus = 0.2 if message.get("message_type") != "text" else 0
+
+        # Calculate weighted score
+        final_score = (
+            relevance_score * self.importance_factors["relevance"]
+            + recency_score * self.importance_factors["recency"]
+            + base_importance * self.importance_factors["interaction"]
+            + media_bonus * self.importance_factors["media"]
+        )
+
+        return final_score
+
+    async def _generate_conversation_summary(
+        self, cache_key: str, is_group: bool = False
+    ) -> str:
+        """Generate a summary of the conversation"""
+        try:
+            message_cache = (
+                self.group_memory_cache.get(cache_key, [])
+                if is_group
+                else self.memory_cache.get(cache_key, [])
+            )
+
+            if not message_cache:
+                return "No conversation history available."
+
+            # Get recent messages for summary
+            recent_messages = message_cache[-50:]  # Last 50 messages
+
+            # Extract key topics and themes
+            topics = []
+            user_contributions = defaultdict(list)
+
+            for message in recent_messages:
+                content = message.get("content", "")
+                user_id = message.get("user_id", "assistant")
+
+                if len(content) > 20:  # Meaningful content
+                    topics.append(content)
+                    user_contributions[user_id].append(content[:100])
+
+            # Generate simple summary
+            if is_group:
+                participants = len(user_contributions)
+                summary = f"Group conversation with {participants} participants. "
+                summary += f"Total messages: {len(recent_messages)}. "
+
+                # Add top contributors
+                if user_contributions:
+                    most_active = max(
+                        user_contributions.items(), key=lambda x: len(x[1])
+                    )
+                    summary += f"Most active participant: User {most_active[0]} ({len(most_active[1])} messages). "
+            else:
+                summary = f"Individual conversation with {len(recent_messages)} recent messages. "
+
+            # Add recent topics (simplified)
+            if topics:
+                recent_topics = topics[-5:]  # Last 5 topics
+                summary += "Recent topics: " + "; ".join(
+                    [t[:50] + "..." for t in recent_topics]
+                )
+
+            # Cache the summary
+            summary_cache = (
+                self.group_summaries if is_group else self.conversation_summaries
+            )
+            summary_cache[cache_key] = summary
+
+            return summary
+
+        except Exception as e:
+            logger.error(f"Error generating conversation summary: {e}")
+            return "Summary generation failed."
+
+    async def _update_group_context(self, group_id: str, message: Dict[str, Any]):
+        """Update active group conversation context"""
+        if group_id not in self.group_contexts:
+            self.group_contexts[group_id] = {
+                "active_users": set(),
+                "current_topic": None,
+                "last_activity": time.time(),
+                "message_count": 0,
             }
 
-            # Add or replace existing name fact
-            facts = self.long_term_memory[user_id].get("facts", [])
-            # Remove any existing name facts
-            facts = [f for f in facts if "user's name" not in f.get("content", "")]
-            # Add the new name fact at the beginning
-            facts.insert(0, name_fact)
-            self.long_term_memory[user_id]["facts"] = facts
+        context = self.group_contexts[group_id]
 
-            # Save immediately
-            await self._save_memory(conversation_id, user_id)
+        # Update active users
+        if message.get("user_id"):
+            context["active_users"].add(message["user_id"])
 
-            return f"Nice to meet you, {name}! I'll remember your name."
+        # Update activity timestamp
+        context["last_activity"] = time.time()
+        context["message_count"] += 1
 
-        return None
+        # Simple topic detection (can be enhanced with NLP)
+        content = message.get("content", "").lower()
+        if any(
+            keyword in content for keyword in ["project", "task", "deadline", "meeting"]
+        ):
+            context["current_topic"] = "work_discussion"
+        elif any(
+            keyword in content for keyword in ["help", "question", "how", "what", "why"]
+        ):
+            context["current_topic"] = "help_request"
+        else:
+            context["current_topic"] = "general_chat"
+
+    async def _update_shared_knowledge(self, group_id: str, content: str):
+        """Update shared knowledge base for the group"""
+        if group_id not in self.shared_knowledge:
+            self.shared_knowledge[group_id] = []
+
+        # Extract potential knowledge items (simplified)
+        # In production, use NLP to extract entities, facts, etc.
+        if len(content) > 50:  # Substantial content
+            knowledge_item = {
+                "content": content,
+                "timestamp": time.time(),
+                "importance": (
+                    0.7
+                    if any(
+                        keyword in content.lower()
+                        for keyword in [
+                            "remember",
+                            "important",
+                            "note",
+                            "fact",
+                            "definition",
+                        ]
+                    )
+                    else 0.5
+                ),
+            }
+
+            self.shared_knowledge[group_id].append(knowledge_item)
+
+            # Keep only the most recent/important knowledge items
+            if len(self.shared_knowledge[group_id]) > 100:
+                # Sort by importance and recency, keep top 100
+                self.shared_knowledge[group_id].sort(
+                    key=lambda x: (x["importance"], x["timestamp"]),
+                    reverse=True,
+                )
+                self.shared_knowledge[group_id] = self.shared_knowledge[group_id][:100]
+
+    async def _get_shared_knowledge(
+        self, group_id: str, query: str
+    ) -> List[Tuple[int, float]]:
+        """Get relevant shared knowledge for a query"""
+        if group_id not in self.shared_knowledge:
+            return []
+
+        query_words = set(re.findall(r"\w+", query.lower()))
+        relevant_knowledge = []
+
+        for idx, knowledge_item in enumerate(self.shared_knowledge[group_id]):
+            content_words = set(re.findall(r"\w+", knowledge_item["content"].lower()))
+            intersection = len(query_words & content_words)
+            union = len(query_words | content_words)
+
+            if union > 0:
+                similarity = intersection / union * knowledge_item["importance"]
+                if similarity > 0.2:
+                    relevant_knowledge.append(
+                        (-(idx + 1000), similarity)
+                    )  # Negative index to distinguish from messages
+
+        return relevant_knowledge
+
+    async def _persist_memory(self, cache_key: str, is_group: bool = False):
+        """Persist memory to MongoDB storage"""
+        try:
+            if self.db is None:
+                # Fallback to file storage if no MongoDB connection
+                await self._persist_memory_file(cache_key, is_group)
+                return
+
+            # Use MongoDB for persistence
+            collection = (
+                self.db.group_conversations if is_group else self.db.conversations
+            )
+
+            memory_data = {
+                "cache_key": cache_key,
+                "messages": (
+                    self.group_memory_cache.get(cache_key, [])
+                    if is_group
+                    else self.memory_cache.get(cache_key, [])
+                ),
+                "summary": (
+                    self.group_summaries.get(cache_key)
+                    if is_group
+                    else self.conversation_summaries.get(cache_key)
+                ),
+                "is_group": is_group,
+                "last_updated": time.time(),
+            }
+
+            if is_group and cache_key in self.shared_knowledge:
+                memory_data["shared_knowledge"] = self.shared_knowledge[cache_key]
+
+            # Update or insert conversation data
+            collection.update_one(
+                {"cache_key": cache_key}, {"$set": memory_data}, upsert=True
+            )
+
+            logger.info(
+                f"Persisted {'group' if is_group else 'conversation'} memory to MongoDB for {cache_key}"
+            )
+
+        except Exception as e:
+            logger.error(f"Error persisting memory to MongoDB: {e}")
+            # Fallback to file storage on error
+            await self._persist_memory_file(cache_key, is_group)
+
+    async def _persist_memory_file(self, cache_key: str, is_group: bool = False):
+        """Fallback file-based persistence"""
+        try:
+            os.makedirs(self.storage_path, exist_ok=True)
+            file_path = os.path.join(
+                self.storage_path, f"{'group_' if is_group else ''}{cache_key}.json"
+            )
+
+            memory_data = {
+                "messages": (
+                    self.group_memory_cache.get(cache_key, [])
+                    if is_group
+                    else self.memory_cache.get(cache_key, [])
+                ),
+                "summary": (
+                    self.group_summaries.get(cache_key)
+                    if is_group
+                    else self.conversation_summaries.get(cache_key)
+                ),
+                "is_group": is_group,
+                "last_updated": time.time(),
+            }
+
+            if is_group and cache_key in self.shared_knowledge:
+                memory_data["shared_knowledge"] = self.shared_knowledge[cache_key]
+
+            async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+                await f.write(json.dumps(memory_data, ensure_ascii=False, indent=2))
+
+        except Exception as e:
+            logger.error(f"Error persisting memory to file: {e}")
+
+    async def load_memory(self, cache_key: str, is_group: bool = False):
+        """Load memory from MongoDB or file storage"""
+        try:
+            if self.db is not None:
+                # Try MongoDB first
+                collection = (
+                    self.db.group_conversations if is_group else self.db.conversations
+                )
+                memory_data = collection.find_one({"cache_key": cache_key})
+
+                if memory_data:
+                    if is_group:
+                        self.group_memory_cache[cache_key] = memory_data.get(
+                            "messages", []
+                        )
+                        if memory_data.get("summary"):
+                            self.group_summaries[cache_key] = memory_data["summary"]
+                        if memory_data.get("shared_knowledge"):
+                            self.shared_knowledge[cache_key] = memory_data[
+                                "shared_knowledge"
+                            ]
+                    else:
+                        self.memory_cache[cache_key] = memory_data.get("messages", [])
+                        if memory_data.get("summary"):
+                            self.conversation_summaries[cache_key] = memory_data[
+                                "summary"
+                            ]
+
+                    logger.info(
+                        f"Loaded memory from MongoDB for {'group' if is_group else 'conversation'} {cache_key}"
+                    )
+                    return
+
+            # Fallback to file storage
+            await self._load_memory_file(cache_key, is_group)
+
+        except Exception as e:
+            logger.error(f"Error loading memory from MongoDB: {e}")
+            # Fallback to file storage on error
+            await self._load_memory_file(cache_key, is_group)
+
+    async def _load_memory_file(self, cache_key: str, is_group: bool = False):
+        """Fallback file-based loading"""
+        try:
+            file_path = os.path.join(
+                self.storage_path, f"{'group_' if is_group else ''}{cache_key}.json"
+            )
+
+            if not os.path.exists(file_path):
+                return
+
+            async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+                content = await f.read()
+                memory_data = json.loads(content)
+
+            if is_group:
+                self.group_memory_cache[cache_key] = memory_data.get("messages", [])
+                if memory_data.get("summary"):
+                    self.group_summaries[cache_key] = memory_data["summary"]
+                if memory_data.get("shared_knowledge"):
+                    self.shared_knowledge[cache_key] = memory_data["shared_knowledge"]
+            else:
+                self.memory_cache[cache_key] = memory_data.get("messages", [])
+                if memory_data.get("summary"):
+                    self.conversation_summaries[cache_key] = memory_data["summary"]
+
+            logger.info(
+                f"Loaded memory from file for {'group' if is_group else 'conversation'} {cache_key}"
+            )
+
+        except Exception as e:
+            logger.error(f"Error loading memory from file: {e}")
+
+    async def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]):
+        """Save user profile information to MongoDB"""
+        try:
+            if self.db is None:
+                logger.warning("No database connection for user profile storage")
+                return
+
+            # Store user profile data including name and other personal info
+            profile_document = {
+                "user_id": user_id,
+                "profile_data": profile_data,
+                "last_updated": time.time(),
+                "created_at": profile_data.get("created_at", time.time()),
+            }
+
+            # Update or insert user profile
+            self.db.user_profiles.update_one(
+                {"user_id": user_id}, {"$set": profile_document}, upsert=True
+            )
+
+            logger.info(f"Saved user profile for user {user_id}")
+
+        except Exception as e:
+            logger.error(f"Error saving user profile for {user_id}: {e}")
+
+    async def get_user_profile(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Retrieve user profile information from MongoDB"""
+        try:
+            if self.db is None:
+                logger.warning("No database connection for user profile retrieval")
+                return None
+
+            profile_doc = self.db.user_profiles.find_one({"user_id": user_id})
+
+            if profile_doc:
+                return profile_doc.get("profile_data", {})
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error retrieving user profile for {user_id}: {e}")
+            return None
+
+    async def update_user_profile_field(self, user_id: int, field: str, value: Any):
+        """Update a specific field in user profile"""
+        try:
+            if self.db is None:
+                logger.warning("No database connection for user profile update")
+                return
+
+            # Update specific field in profile data
+            self.db.user_profiles.update_one(
+                {"user_id": user_id},
+                {"$set": {f"profile_data.{field}": value, "last_updated": time.time()}},
+                upsert=True,
+            )
+
+            logger.info(f"Updated {field} for user {user_id}")
+
+        except Exception as e:
+            logger.error(
+                f"Error updating user profile field {field} for {user_id}: {e}"
+            )
+
+    async def extract_and_save_user_info(self, user_id: int, message_content: str):
+        """Extract and save user information from message content"""
+        try:
+            # Simple pattern matching for name extraction
+            name_patterns = [
+                r"my name is (\w+)",
+                r"i'm (\w+)",
+                r"i am (\w+)",
+                r"call me (\w+)",
+                r"name's (\w+)",
+            ]
+
+            import re
+
+            for pattern in name_patterns:
+                match = re.search(pattern, message_content.lower())
+                if match:
+                    name = match.group(1).capitalize()
+                    await self.update_user_profile_field(user_id, "name", name)
+                    logger.info(f"Extracted and saved name '{name}' for user {user_id}")
+                    break
+
+        except Exception as e:
+            logger.error(f"Error extracting user info from message: {e}")
