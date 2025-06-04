@@ -32,12 +32,7 @@ from src.services.group_chat.integration import GroupChatIntegration
 logger = logging.getLogger(__name__)
 
 
-class GroupChatIntegration:
-    """Integration layer for group chat functionality. Extends the existing bot with advanced group features."""
-
-    def __init__(self, user_data_manager, conversation_manager):
-        self.user_data_manager = user_data_manager
-        self.conversation_manager = conversation_manager
+# Use the proper GroupChatIntegration implementation from integration.py
 
 
 class TelegramBot:

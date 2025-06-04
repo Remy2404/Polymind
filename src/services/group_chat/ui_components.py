@@ -135,15 +135,15 @@ class GroupUIManager:
 
         # Header
         message_parts = [
-            f"{self.EMOJIS['analytics']} **Group Analytics**",
-            f"{self.EMOJIS['group']} **{analytics.get('group_name', 'Unknown Group')}**",
+            f"{self.EMOJIS['analytics']} Group Analytics",
+            f"{self.EMOJIS['group']} {analytics.get('group_name', 'Unknown Group')}",
             "",
         ]
 
         # Participant Statistics
         message_parts.extend(
             [
-                "👥 **Participants:**",
+                "👥 Participants:",
                 f"  • Total: {analytics.get('total_participants', 0)}",
                 f"  • Active: {analytics.get('active_participants', 0)}",
                 f"  • Total Messages: {analytics.get('total_messages', 0)}",
@@ -156,7 +156,7 @@ class GroupUIManager:
             topics = analytics["active_topics"]
             message_parts.extend(
                 [
-                    f"{self.EMOJIS['topic']} **Active Topics:**",
+                    f"{self.EMOJIS['topic']} Active Topics:",
                     f"  {', '.join(topics[:5])}",
                     "",
                 ]
@@ -166,20 +166,17 @@ class GroupUIManager:
         if analytics.get("active_threads", 0) > 0:
             message_parts.extend(
                 [
-                    f"{self.EMOJIS['thread']} **Conversation Threads:**",
+                    f"{self.EMOJIS['thread']} Conversation Threads:",
                     f"  • Active Threads: {analytics.get('active_threads', 0)}",
                     "",
                 ]
-            )
-
-        # Memory Usage
+            )  # Memory Usage
         if analytics.get("shared_memory_items", 0) > 0:
             message_parts.extend(
                 [
-                    f"{self.EMOJIS['memory']} **Shared Memory:**",
+                    f"{self.EMOJIS['memory']} Shared Memory:",
                     f"  • Stored Items: {analytics.get('shared_memory_items', 0)}",
-                    "",
-                ]
+                    "",                ]
             )
 
         # Timeline
@@ -190,7 +187,7 @@ class GroupUIManager:
             try:
                 created_date = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
                 message_parts.append(
-                    f"📅 **Created:** {created_date.strftime('%Y-%m-%d %H:%M')}"
+                    f"📅 Created: {created_date.strftime('%Y-%m-%d %H:%M')}"
                 )
             except:
                 pass
@@ -201,7 +198,7 @@ class GroupUIManager:
                     last_activity.replace("Z", "+00:00")
                 )
                 message_parts.append(
-                    f"🕒 **Last Activity:** {activity_date.strftime('%Y-%m-%d %H:%M')}"
+                    f"🕒 Last Activity: {activity_date.strftime('%Y-%m-%d %H:%M')}"
                 )
             except:
                 pass
@@ -215,7 +212,7 @@ class GroupUIManager:
                 f"{self.EMOJIS['info']} No active conversation threads in this group."
             )
 
-        message_parts = [f"{self.EMOJIS['thread']} **Active Conversation Threads**", ""]
+        message_parts = [f"{self.EMOJIS['thread']} Active Conversation Threads", ""]
 
         active_threads = [t for t in threads.values() if t.get("is_active", True)]
 
@@ -249,7 +246,7 @@ class GroupUIManager:
                     pass
 
             thread_info = (
-                f"**{i}.** {topic}\n"
+                f"{i}. {topic}\n"
                 f"   👥 {participant_count} participants • "
                 f"💬 {message_count} messages{age_str}"
             )
@@ -257,7 +254,7 @@ class GroupUIManager:
             message_parts.append(thread_info)
 
         if len(threads) > 10:
-            message_parts.append(f"\n*... and {len(threads) - 10} more threads*")
+            message_parts.append(f"\n... and {len(threads) - 10} more threads")
 
         return "\n".join(message_parts)
 
@@ -267,8 +264,8 @@ class GroupUIManager:
             return f"{self.EMOJIS['error']} No context information available."
 
         message_parts = [
-            f"{self.EMOJIS['memory']} **Conversation Context Summary**",
-            f"{self.EMOJIS['group']} **{context_info.get('group_name', 'Unknown Group')}**",
+            f"{self.EMOJIS['memory']} Conversation Context Summary",
+            f"{self.EMOJIS['group']} {context_info.get('group_name', 'Unknown Group')}",
             "",
         ]
 
@@ -277,22 +274,21 @@ class GroupUIManager:
             topics = context_info["active_topics"][:8]
             message_parts.extend(
                 [
-                    f"{self.EMOJIS['topic']} **Recent Topics:**",
+                    f"{self.EMOJIS['topic']} Recent Topics:",
                     f"  {', '.join(topics)}",
                     "",
                 ]
             )
 
-        # Shared Memory Highlights
-        if context_info.get("shared_memory"):
+            # Shared Memory Highlights        if context_info.get("shared_memory"):
             memory_items = list(context_info["shared_memory"].items())[:5]
-            message_parts.extend([f"{self.EMOJIS['memory']} **Shared Knowledge:**"])
+            message_parts.extend([f"{self.EMOJIS['memory']} Shared Knowledge:"])
 
             for key, value in memory_items:
                 value_preview = str(value)[:60]
                 if len(str(value)) > 60:
                     value_preview += "..."
-                message_parts.append(f"  • **{key}:** {value_preview}")
+                message_parts.append(f"  • {key}: {value_preview}")
 
             message_parts.append("")
 
@@ -305,7 +301,7 @@ class GroupUIManager:
             if active_threads:
                 message_parts.extend(
                     [
-                        f"{self.EMOJIS['thread']} **Active Threads:** {len(active_threads)}",
+                        f"{self.EMOJIS['thread']} Active Threads: {len(active_threads)}",
                         "",
                     ]
                 )
@@ -315,12 +311,10 @@ class GroupUIManager:
             total_participants = len(context_info["participants"])
             message_parts.extend(
                 [
-                    f"{self.EMOJIS['participant']} **Participants:** {total_participants}",
+                    f"{self.EMOJIS['participant']} Participants: {total_participants}",
                     "",
                 ]
-            )
-
-        # Timeline
+            )  # Timeline
         created_at = context_info.get("created_at", "")
         updated_at = context_info.get("updated_at", "")
 
@@ -328,7 +322,7 @@ class GroupUIManager:
             try:
                 created_date = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
                 message_parts.append(
-                    f"📅 **Context Since:** {created_date.strftime('%Y-%m-%d')}"
+                    f"📅 Context Since: {created_date.strftime('%Y-%m-%d')}"
                 )
             except:
                 pass
@@ -344,7 +338,7 @@ class GroupUIManager:
                 else:
                     last_update = f"{time_diff.seconds // 60} minutes ago"
 
-                message_parts.append(f"🕒 **Last Updated:** {last_update}")
+                message_parts.append(f"🕒 Last Updated: {last_update}")
             except:
                 pass
 
@@ -353,28 +347,28 @@ class GroupUIManager:
     async def create_settings_menu(self, group_id: int) -> str:
         """Create an interactive settings menu for the group."""
         message_parts = [
-            f"{self.EMOJIS['settings']} **Group Chat Settings**",
-            f"Group ID: `{group_id}`",
+            f"{self.EMOJIS['settings']} Group Chat Settings",
+            f"Group ID: {group_id}",
             "",
-            "**Available Settings:**",
+            "Available Settings:",
             "",
-            f"{self.EMOJIS['memory']} **Shared Memory**",
+            f"{self.EMOJIS['memory']} Shared Memory",
             "  • Enable/disable group conversation memory",
             "  • Set context retention period",
             "",
-            f"{self.EMOJIS['thread']} **Thread Management**",
+            f"{self.EMOJIS['thread']} Thread Management",
             "  • Enable/disable conversation threading",
             "  • Set thread timeout duration",
             "",
-            f"{self.EMOJIS['participant']} **Participation Settings**",
+            f"{self.EMOJIS['participant']} Participation Settings",
             "  • Set AI participation level",
             "  • Configure response triggers",
             "",
-            "**Quick Commands:**",
-            "  • `/groupstats` - View group analytics",
-            "  • `/groupcontext` - Show conversation context",
-            "  • `/groupthreads` - List active threads",
-            "  • `/cleanthreads` - Clean inactive threads",
+            "Quick Commands:",
+            "  • /groupstats - View group analytics",
+            "  • /groupcontext - Show conversation context",
+            "  • /groupthreads - List active threads",
+            "  • /cleanthreads - Clean inactive threads",
             "",
             f"{self.EMOJIS['info']} Use the buttons below to modify settings.",
         ]
@@ -385,9 +379,8 @@ class GroupUIManager:
         """Create a summary of group participants."""
         if not participants:
             return f"{self.EMOJIS['info']} No participant information available."
-
         message_parts = [
-            f"{self.EMOJIS['participant']} **Group Participants**",
+            f"{self.EMOJIS['participant']} Group Participants",
             f"Total: {len(participants)}",
             "",
         ]
@@ -420,7 +413,7 @@ class GroupUIManager:
                     pass
 
             # Format participant info
-            participant_info = f"{activity_indicator} **{name}**"
+            participant_info = f"{activity_indicator} {name}"
             if username:
                 participant_info += f" (@{username})"
 
@@ -455,10 +448,10 @@ class GroupUIManager:
         self, error: str, context: Optional[str] = None
     ) -> str:
         """Format an error message for display."""
-        message_parts = [f"{self.EMOJIS['error']} **Error**", f"```{error}```"]
+        message_parts = [f"{self.EMOJIS['error']} Error", f"```{error}```"]
 
         if context:
-            message_parts.extend(["", f"**Context:** {context}"])
+            message_parts.extend(["", f"Context: {context}"])
 
         return "\n".join(message_parts)
 

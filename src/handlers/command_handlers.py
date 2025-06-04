@@ -277,15 +277,30 @@ class CommandHandlers:
                 )
                 return
 
-            # Get analytics
-            analytics = await group_integration.group_manager.get_group_analytics(
-                chat.id
-            )
-            formatted_stats = await group_integration.ui_manager.format_group_analytics(
-                analytics
-            )
+            try:
+                # Get analytics
+                analytics = await group_integration.group_manager.get_group_analytics(
+                    chat.id
+                )
+                if not analytics:
+                    await update.message.reply_text(
+                        "No analytics available for this group yet. Try interacting more!"
+                    )
+                    return
 
-            await update.message.reply_text(formatted_stats, parse_mode="MarkdownV2")
+                # Format stats without markdown to avoid escaping issues
+                formatted_stats = (
+                    await group_integration.ui_manager.format_group_analytics(analytics)
+                )
+
+                # Send without Markdown formatting to avoid escaping issues
+                await update.message.reply_text(formatted_stats)
+
+            except AttributeError as e:
+                self.logger.error(f"Missing attribute in group_stats_command: {e}")
+                await update.message.reply_text(
+                    "❌ Group statistics feature is unavailable. Please contact the bot administrator."
+                )
 
         except Exception as e:
             self.logger.error(f"Error in group_stats_command: {e}")
@@ -313,12 +328,20 @@ class CommandHandlers:
                 )
                 return
 
-            # Get settings menu
-            settings_menu = await group_integration.ui_manager.create_settings_menu(
-                chat.id
-            )
+            try:
+                # Get settings menu
+                settings_menu = await group_integration.ui_manager.create_settings_menu(
+                    chat.id
+                )
 
-            await update.message.reply_text(settings_menu, parse_mode="MarkdownV2")
+                # Send without Markdown formatting to avoid escaping issues
+                await update.message.reply_text(settings_menu)
+
+            except AttributeError as e:
+                self.logger.error(f"Missing attribute in group_settings_command: {e}")
+                await update.message.reply_text(
+                    "❌ Settings feature is unavailable. Please contact the bot administrator."
+                )
 
         except Exception as e:
             self.logger.error(f"Error in group_settings_command: {e}")
@@ -346,22 +369,30 @@ class CommandHandlers:
                 )
                 return
 
-            # Get group context
-            group_context = (
-                await group_integration.group_manager._get_or_create_group_context(
-                    chat, update.effective_user
+            try:
+                # Get group context
+                group_context = (
+                    await group_integration.group_manager._get_or_create_group_context(
+                        chat, update.effective_user
+                    )
                 )
-            )
 
-            # Format shared memory
-            if group_context.shared_memory:
-                context_text = "🧠 **Group Shared Memory:**\n\n"
-                for key, value in group_context.shared_memory.items():
-                    context_text += f"• **{key}**: {value}\n"
-            else:
-                context_text = "🧠 **Group Shared Memory is empty**\n\nAs the conversation continues, important information will be automatically stored here for future reference."
+                # Format shared memory
+                if group_context.shared_memory:
+                    context_text = "🧠 Group Shared Memory:\n\n"
+                    for key, value in group_context.shared_memory.items():
+                        context_text += f"• {key}: {value}\n"
+                else:
+                    context_text = "🧠 Group Shared Memory is empty\n\nAs the conversation continues, important information will be automatically stored here for future reference."
 
-            await update.message.reply_text(context_text, parse_mode="MarkdownV2")
+                # Send without Markdown formatting to avoid escaping issues
+                await update.message.reply_text(context_text)
+
+            except AttributeError as e:
+                self.logger.error(f"Missing attribute in group_context_command: {e}")
+                await update.message.reply_text(
+                    "❌ Memory feature is unavailable. Please contact the bot administrator."
+                )
 
         except Exception as e:
             self.logger.error(f"Error in group_context_command: {e}")
@@ -389,24 +420,32 @@ class CommandHandlers:
                 )
                 return
 
-            # Get group context
-            group_context = (
-                await group_integration.group_manager._get_or_create_group_context(
-                    chat, update.effective_user
-                )
-            )
-
-            # Format threads
-            if group_context.threads:
-                formatted_threads = (
-                    await group_integration.ui_manager.format_thread_list(
-                        group_context.threads
+            try:
+                # Get group context
+                group_context = (
+                    await group_integration.group_manager._get_or_create_group_context(
+                        chat, update.effective_user
                     )
                 )
-            else:
-                formatted_threads = "🧵 **No active conversation threads**\n\nThreads are created automatically when users reply to messages. Start a discussion by replying to a message!"
 
-            await update.message.reply_text(formatted_threads, parse_mode="MarkdownV2")
+                # Format threads
+                if group_context.threads:
+                    formatted_threads = (
+                        await group_integration.ui_manager.format_thread_list(
+                            group_context.threads
+                        )
+                    )
+                else:
+                    formatted_threads = "🧵 No active conversation threads\n\nThreads are created automatically when users reply to messages. Start a discussion by replying to a message!"
+
+                # Send without Markdown formatting to avoid escaping issues
+                await update.message.reply_text(formatted_threads)
+
+            except AttributeError as e:
+                self.logger.error(f"Missing attribute in group_threads_command: {e}")
+                await update.message.reply_text(
+                    "❌ Thread feature is unavailable. Please contact the bot administrator."
+                )
 
         except Exception as e:
             self.logger.error(f"Error in group_threads_command: {e}")
@@ -444,15 +483,24 @@ class CommandHandlers:
                 )
                 return
 
-            # Clean threads
-            cleaned_count = (
-                await group_integration.group_manager.cleanup_inactive_threads(chat.id)
-            )
+            try:
+                # Clean threads
+                cleaned_count = (
+                    await group_integration.group_manager.cleanup_inactive_threads(
+                        chat.id
+                    )
+                )
 
-            await update.message.reply_text(
-                f"🧹 **Thread Cleanup Complete**\n\nRemoved {cleaned_count} inactive conversation threads.",
-                parse_mode="MarkdownV2",
-            )
+                # Send without Markdown formatting to avoid escaping issues
+                await update.message.reply_text(
+                    f"🧹 Thread Cleanup Complete\n\nRemoved {cleaned_count} inactive conversation threads."
+                )
+
+            except AttributeError as e:
+                self.logger.error(f"Missing attribute in clean_threads_command: {e}")
+                await update.message.reply_text(
+                    "❌ Thread cleanup feature is unavailable. Please contact the bot administrator."
+                )
 
         except Exception as e:
             self.logger.error(f"Error in clean_threads_command: {e}")
@@ -612,15 +660,30 @@ class CommandHandlers:
                 )
                 return
 
-            # Get analytics
-            analytics = await group_integration.group_manager.get_group_analytics(
-                chat.id
-            )
-            formatted_stats = await group_integration.ui_manager.format_group_analytics(
-                analytics
-            )
+            try:
+                # Get analytics
+                analytics = await group_integration.group_manager.get_group_analytics(
+                    chat.id
+                )
+                if not analytics:
+                    await update.message.reply_text(
+                        "No analytics available for this group yet. Try interacting more!"
+                    )
+                    return
 
-            await update.message.reply_text(formatted_stats, parse_mode="MarkdownV2")
+                # Format stats without markdown to avoid escaping issues
+                formatted_stats = (
+                    await group_integration.ui_manager.format_group_analytics(analytics)
+                )
+
+                # Send without Markdown formatting to avoid escaping issues
+                await update.message.reply_text(formatted_stats)
+
+            except AttributeError as e:
+                self.logger.error(f"Missing attribute in group_stats_command: {e}")
+                await update.message.reply_text(
+                    "❌ Group statistics feature is unavailable. Please contact the bot administrator."
+                )
 
         except Exception as e:
             self.logger.error(f"Error in group_stats_command: {e}")
@@ -648,12 +711,20 @@ class CommandHandlers:
                 )
                 return
 
-            # Get settings menu
-            settings_menu = await group_integration.ui_manager.create_settings_menu(
-                chat.id
-            )
+            try:
+                # Get settings menu
+                settings_menu = await group_integration.ui_manager.create_settings_menu(
+                    chat.id
+                )
 
-            await update.message.reply_text(settings_menu, parse_mode="MarkdownV2")
+                # Send without Markdown formatting to avoid escaping issues
+                await update.message.reply_text(settings_menu)
+
+            except AttributeError as e:
+                self.logger.error(f"Missing attribute in group_settings_command: {e}")
+                await update.message.reply_text(
+                    "❌ Settings feature is unavailable. Please contact the bot administrator."
+                )
 
         except Exception as e:
             self.logger.error(f"Error in group_settings_command: {e}")
@@ -681,22 +752,30 @@ class CommandHandlers:
                 )
                 return
 
-            # Get group context
-            group_context = (
-                await group_integration.group_manager._get_or_create_group_context(
-                    chat, update.effective_user
+            try:
+                # Get group context
+                group_context = (
+                    await group_integration.group_manager._get_or_create_group_context(
+                        chat, update.effective_user
+                    )
                 )
-            )
 
-            # Format shared memory
-            if group_context.shared_memory:
-                context_text = "🧠 **Group Shared Memory:**\n\n"
-                for key, value in group_context.shared_memory.items():
-                    context_text += f"• **{key}**: {value}\n"
-            else:
-                context_text = "🧠 **Group Shared Memory is empty**\n\nAs the conversation continues, important information will be automatically stored here for future reference."
+                # Format shared memory
+                if group_context.shared_memory:
+                    context_text = "🧠 Group Shared Memory:\n\n"
+                    for key, value in group_context.shared_memory.items():
+                        context_text += f"• {key}: {value}\n"
+                else:
+                    context_text = "🧠 Group Shared Memory is empty\n\nAs the conversation continues, important information will be automatically stored here for future reference."
 
-            await update.message.reply_text(context_text, parse_mode="MarkdownV2")
+                # Send without Markdown formatting to avoid escaping issues
+                await update.message.reply_text(context_text)
+
+            except AttributeError as e:
+                self.logger.error(f"Missing attribute in group_context_command: {e}")
+                await update.message.reply_text(
+                    "❌ Memory feature is unavailable. Please contact the bot administrator."
+                )
 
         except Exception as e:
             self.logger.error(f"Error in group_context_command: {e}")
@@ -724,24 +803,32 @@ class CommandHandlers:
                 )
                 return
 
-            # Get group context
-            group_context = (
-                await group_integration.group_manager._get_or_create_group_context(
-                    chat, update.effective_user
-                )
-            )
-
-            # Format threads
-            if group_context.threads:
-                formatted_threads = (
-                    await group_integration.ui_manager.format_thread_list(
-                        group_context.threads
+            try:
+                # Get group context
+                group_context = (
+                    await group_integration.group_manager._get_or_create_group_context(
+                        chat, update.effective_user
                     )
                 )
-            else:
-                formatted_threads = "🧵 **No active conversation threads**\n\nThreads are created automatically when users reply to messages. Start a discussion by replying to a message!"
 
-            await update.message.reply_text(formatted_threads, parse_mode="MarkdownV2")
+                # Format threads
+                if group_context.threads:
+                    formatted_threads = (
+                        await group_integration.ui_manager.format_thread_list(
+                            group_context.threads
+                        )
+                    )
+                else:
+                    formatted_threads = "🧵 No active conversation threads\n\nThreads are created automatically when users reply to messages. Start a discussion by replying to a message!"
+
+                # Send without Markdown formatting to avoid escaping issues
+                await update.message.reply_text(formatted_threads)
+
+            except AttributeError as e:
+                self.logger.error(f"Missing attribute in group_threads_command: {e}")
+                await update.message.reply_text(
+                    "❌ Thread feature is unavailable. Please contact the bot administrator."
+                )
 
         except Exception as e:
             self.logger.error(f"Error in group_threads_command: {e}")
@@ -779,15 +866,24 @@ class CommandHandlers:
                 )
                 return
 
-            # Clean threads
-            cleaned_count = (
-                await group_integration.group_manager.cleanup_inactive_threads(chat.id)
-            )
+            try:
+                # Clean threads
+                cleaned_count = (
+                    await group_integration.group_manager.cleanup_inactive_threads(
+                        chat.id
+                    )
+                )
 
-            await update.message.reply_text(
-                f"🧹 **Thread Cleanup Complete**\n\nRemoved {cleaned_count} inactive conversation threads.",
-                parse_mode="MarkdownV2",
-            )
+                # Send without Markdown formatting to avoid escaping issues
+                await update.message.reply_text(
+                    f"🧹 Thread Cleanup Complete\n\nRemoved {cleaned_count} inactive conversation threads."
+                )
+
+            except AttributeError as e:
+                self.logger.error(f"Missing attribute in clean_threads_command: {e}")
+                await update.message.reply_text(
+                    "❌ Thread cleanup feature is unavailable. Please contact the bot administrator."
+                )
 
         except Exception as e:
             self.logger.error(f"Error in clean_threads_command: {e}")
