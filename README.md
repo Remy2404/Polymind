@@ -1,6 +1,6 @@
 # Telegram Gemini Bot
 
-A powerful Telegram bot leveraging Google's Gemini and DeepSeek AI for conversational assistance, media processing, and document management.
+A powerful Telegram bot leveraging Google's Gemini and DeepSeek AI & OpenRouter for conversational assistance, media processing, and document management.
 
 <div align="center">
   <img src="assets/templates/Project_report_group5.png" alt="Telegram Gemini Bot" width="200" />

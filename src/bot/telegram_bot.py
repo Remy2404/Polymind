@@ -235,6 +235,7 @@ class TelegramBot:
             self.text_handler,
             deepseek_api=self.deepseek_api,
             openrouter_api=self.openrouter_api,
+            command_handlers=self.command_handler,
         )
 
         # Share utility classes with message_handlers

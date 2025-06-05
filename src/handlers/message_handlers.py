@@ -30,11 +30,13 @@ from telegram.constants import ChatAction
 from telegram.ext import MessageHandler, filters, ContextTypes, CallbackContext
 
 # Local imports
+# Local imports
 from src.services.gemini_api import GeminiAPI
 from src.services.user_data_manager import UserDataManager
 from src.utils.log.telegramlog import TelegramLogger
 from src.services.document_processing import DocumentProcessor
 from src.handlers.text_handlers import TextHandler
+from src.services.ai_command_router import AICommandRouter
 
 # Import utility classes
 from src.handlers.message_context_handler import MessageContextHandler
@@ -60,6 +62,7 @@ class MessageHandlers:
         text_handler,
         deepseek_api=None,
         openrouter_api=None,
+        command_handlers=None,
     ):
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
@@ -78,6 +81,11 @@ class MessageHandlers:
         self.voice_processor = VoiceProcessor()
         self.prompt_formatter = PromptFormatter()
         self.preferences_manager = UserPreferencesManager(user_data_manager)
+
+        # Initialize AI command router
+        self.ai_command_router = None
+        if command_handlers:
+            self.ai_command_router = AICommandRouter(command_handlers, gemini_api)
 
         # Initialize conversation manager (will be lazy-loaded with proper dependencies)
         self._conversation_manager = None
@@ -169,6 +177,32 @@ class MessageHandlers:
                 self.logger.info(f"Bot mentioned by user {user_id}")
                 # Remove the automatic greeting that was causing duplicate responses
                 # We'll let the text handler process the full message instead
+
+            # Try AI command routing first (if available)
+            if self.ai_command_router:
+                try:
+                    should_route = await self.ai_command_router.should_route_message(enhanced_message_text)
+                    if should_route:
+                        intent, confidence = await self.ai_command_router.detect_intent(enhanced_message_text)
+                        self.logger.info(f"Routing message to command: {intent.value} (confidence: {confidence:.2f})")
+                        
+                        # Attempt to route the command
+                        command_executed = await self.ai_command_router.route_command(
+                            update, context, intent, enhanced_message_text
+                        )
+                        
+                        if command_executed:
+                            # Command was successfully executed, update stats and return
+                            await self.user_data_manager.update_stats(
+                                user_id, {"text_messages": 1, "total_messages": 1, "ai_commands": 1}
+                            )
+                            return
+                        else:
+                            # Command routing failed, fall back to normal text processing
+                            self.logger.info("Command routing failed, falling back to normal text processing")
+                except Exception as e:
+                    self.logger.error(f"Error in AI command routing: {str(e)}")
+                    # Fall back to normal text processing on any error
 
             # Create text handler instance with all required API instances
             text_handler = TextHandler(
@@ -1036,86 +1070,3 @@ class MessageHandlers:
                     ),
                 ]
             ]
-
-    async def handle_document_processing(self, update, context):
-        try:
-            # Extract document and user information
-            document = update.message.document
-            user_id = update.message.from_user.id
-
-            # Log the start of document processing
-            logger.info(f"Processing document for user {user_id}")
-
-            # Call the document processing service
-            result = await self.document_processor.process_document_enhanced(
-                file=document.file_id,
-                file_extension=document.file_name.split(".")[-1],
-                prompt="Analyze this document",
-                user_id=user_id,
-            )
-
-            # Check if the result contains an error
-            if "error" in result:
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=f"Error processing document: {result['error']}",
-                )
-                return
-
-            # Format the response for the user
-            response_text = result.get("result", "Document processed successfully.")
-            document_id = result.get("document_id", "Unknown")
-
-            formatted_response = (
-                f"**Document Analysis Completed**\n\n"
-                f"{response_text}\n\n"
-                f"**Document ID:** {document_id}"
-            )
-
-            # Send the formatted response to the user
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=formatted_response,
-                parse_mode="Markdown",
-            )
-
-            # Log the successful completion
-            logger.info(f"Document analysis completed successfully for user {user_id}")
-
-        except Exception as e:
-            # Log the error
-            logger.error(f"Error in document processing: {str(e)}")
-
-            # Notify the user of the error
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="An error occurred while processing your document. Please try again later.",
-            )
-
-    def _get_conversation_manager(self):
-        """Lazy-load conversation manager with proper dependencies."""
-        if self._conversation_manager is None:
-            # Get memory manager and model history manager from text_handler
-            if hasattr(self.text_handler, "memory_manager") and hasattr(
-                self.text_handler, "model_history_manager"
-            ):
-                self._conversation_manager = ConversationManager(
-                    self.text_handler.memory_manager,
-                    self.text_handler.model_history_manager,
-                )
-            else:
-                # Fallback - create basic conversation manager
-                from src.services.memory_context.memory_manager import MemoryManager
-                from src.services.memory_context.model_history_manager import (
-                    ModelHistoryManager,
-                )
-
-                memory_manager = MemoryManager()
-                model_history_manager = ModelHistoryManager(
-                    memory_manager, self.user_data_manager
-                )
-                self._conversation_manager = ConversationManager(
-                    memory_manager, model_history_manager
-                )
-
-        return self._conversation_manager
