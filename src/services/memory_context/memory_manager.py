@@ -16,6 +16,16 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
+# MongoDB imports
+import sys
+
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
+from database.connection import get_database
+from pymongo.database import Database
+from pymongo.collection import Collection
+
 logger = logging.getLogger(__name__)
 
 
@@ -83,11 +93,59 @@ class Conversation:
 class MemoryManager:
     """Enhanced memory manager with semantic search, summarization, and group support"""
 
-    def __init__(self, db=None, storage_path="./data/memory"):
-        self.db = db
-        self.storage_path = storage_path
+    def __init__(self, db=None, storage_path=None):
+        # Always use MongoDB for storage; do not use file-based storage
+        if db is None:
+            try:
+                self.db, self.client = get_database()
+                if self.db is not None:
+                    logger.info("Connected to MongoDB for memory management")
+                    # Initialize collections
+                    self.conversations_collection = self.db.conversations
+                    self.group_conversations_collection = self.db.group_conversations
+                    self.user_profiles_collection = self.db.user_profiles
+                    self.conversation_summaries_collection = (
+                        self.db.conversation_summaries
+                    )
+
+                    # Ensure indexes for better performance
+                    self._ensure_indexes()
+                else:
+                    logger.warning(
+                        "MongoDB connection failed, memory manager will not persist data"
+                    )
+                    self.client = None
+                    self.conversations_collection = None
+                    self.group_conversations_collection = None
+                    self.user_profiles_collection = None
+                    self.conversation_summaries_collection = None
+            except Exception as e:
+                logger.error(f"Error connecting to MongoDB: {e}")
+                self.db = None
+                self.client = None
+                self.conversations_collection = None
+                self.group_conversations_collection = None
+                self.user_profiles_collection = None
+                self.conversation_summaries_collection = None
+        else:
+            self.db = db
+            self.client = None  # Will be managed externally
+            if db is not None:
+                self.conversations_collection = db.conversations
+                self.group_conversations_collection = db.group_conversations
+                self.user_profiles_collection = db.user_profiles
+                self.conversation_summaries_collection = db.conversation_summaries
+                self._ensure_indexes()
+            else:
+                self.conversations_collection = None
+                self.group_conversations_collection = None
+                self.user_profiles_collection = None
+                self.conversation_summaries_collection = None
+
+        # No file-based storage path
+        self.storage_path = None
         self.memory_cache = {}
-        self.group_memory_cache = {}  # Separate cache for group memories
+        self.group_memory_cache = {}
         self.lock = asyncio.Lock()
         self.logger = logging.getLogger(__name__)
 
@@ -110,12 +168,7 @@ class MemoryManager:
         self.group_contexts = {}  # Active group conversation contexts
         self.shared_knowledge = {}  # Shared knowledge between group members
 
-        # Create storage directory
-        os.makedirs(storage_path, exist_ok=True)
-
-        logger.info(
-            "Enhanced MemoryManager initialized with semantic search and group support"
-        )
+        logger.info("Enhanced MemoryManager initialized with MongoDB storage only")
 
     async def add_user_message(
         self,
@@ -357,11 +410,12 @@ class MemoryManager:
                 self.conversation_summaries.pop(conversation_id, None)
 
             # Remove from persistent storage
-            file_path = os.path.join(
-                self.storage_path, f"{'group_' if is_group else ''}{cache_key}.json"
-            )
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            if self.storage_path is not None:
+                file_path = os.path.join(
+                    self.storage_path, f"{'group_' if is_group else ''}{cache_key}.json"
+                )
+                if os.path.exists(file_path):
+                    os.remove(file_path)
 
     # Enhanced group-specific methods
 
@@ -736,6 +790,11 @@ class MemoryManager:
     async def _persist_memory_file(self, cache_key: str, is_group: bool = False):
         """Fallback file-based persistence"""
         try:
+            # Only attempt file persistence if storage_path is configured
+            if self.storage_path is None:
+                logger.debug(f"No storage path configured, skipping file persistence for {cache_key}")
+                return
+                
             os.makedirs(self.storage_path, exist_ok=True)
             file_path = os.path.join(
                 self.storage_path, f"{'group_' if is_group else ''}{cache_key}.json"
@@ -809,6 +868,11 @@ class MemoryManager:
     async def _load_memory_file(self, cache_key: str, is_group: bool = False):
         """Fallback file-based loading"""
         try:
+            # Only attempt file loading if storage_path is configured
+            if self.storage_path is None:
+                logger.debug(f"No storage path configured, skipping file loading for {cache_key}")
+                return
+                
             file_path = os.path.join(
                 self.storage_path, f"{'group_' if is_group else ''}{cache_key}.json"
             )
@@ -926,3 +990,103 @@ class MemoryManager:
 
         except Exception as e:
             logger.error(f"Error extracting user info from message: {e}")
+
+    def _ensure_indexes(self):
+        """Ensure database indexes are created for better performance"""
+        try:
+            if self.conversations_collection is not None:
+                # Index for conversation_id lookups
+                self.conversations_collection.create_index("cache_key")
+                self.conversations_collection.create_index("conversation_id")
+                self.conversations_collection.create_index(
+                    [("cache_key", 1), ("timestamp", -1)]
+                )
+
+            if self.group_conversations_collection is not None:
+                # Indexes for group conversations
+                self.group_conversations_collection.create_index("cache_key")
+                self.group_conversations_collection.create_index("group_id")
+                self.group_conversations_collection.create_index(
+                    [("group_id", 1), ("timestamp", -1)]
+                )
+
+            if self.user_profiles_collection is not None:
+                # Index for user profile lookups
+                self.user_profiles_collection.create_index("user_id", unique=True)
+
+            if self.conversation_summaries_collection is not None:
+                # Index for summary lookups
+                self.conversation_summaries_collection.create_index("cache_key")
+                self.conversation_summaries_collection.create_index("conversation_id")
+
+            logger.info("Memory management database indexes ensured")
+
+        except Exception as e:
+            logger.error(f"Error creating memory management indexes: {e}")
+
+    async def get_all_conversation_history(
+        self,
+        conversation_id: str,
+        is_group: bool = False,
+        group_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get all conversation history for a user/group"""
+        try:
+            # Load memory if not already in cache
+            cache_key = group_id if is_group else conversation_id
+            await self.load_memory(cache_key, is_group)
+
+            # Get all messages from cache
+            messages = (
+                self.group_memory_cache.get(cache_key, [])
+                if is_group
+                else self.memory_cache.get(cache_key, [])
+            )
+
+            return messages
+
+        except Exception as e:
+            logger.error(f"Error retrieving conversation history: {e}")
+            return []
+
+    async def export_conversation_data(
+        self,
+        conversation_id: str,
+        is_group: bool = False,
+        group_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Export complete conversation data including summary"""
+        try:
+            cache_key = group_id if is_group else conversation_id
+            await self.load_memory(cache_key, is_group)
+
+            # Get messages
+            messages = await self.get_all_conversation_history(
+                conversation_id, is_group, group_id
+            )
+
+            # Get summary
+            summary = (
+                self.group_summaries.get(cache_key)
+                if is_group
+                else self.conversation_summaries.get(cache_key)
+            )
+
+            export_data = {
+                "conversation_id": conversation_id,
+                "is_group": is_group,
+                "group_id": group_id,
+                "messages": messages,
+                "summary": summary,
+                "total_messages": len(messages),
+                "exported_at": time.time(),
+            }
+
+            if is_group and cache_key in self.shared_knowledge:
+                export_data["shared_knowledge"] = self.shared_knowledge[cache_key]
+
+            return export_data
+
+        except Exception as e:
+            logger.error(f"Error exporting conversation data: {e}")
+            return {}

@@ -9,9 +9,10 @@ from src.services.memory_context.model_history_manager import ModelHistoryManage
 
 async def test_memory():
     """Test the memory management system."""
-    # Create memory manager
-    os.makedirs("./data/memory", exist_ok=True)
-    memory_manager = MemoryManager(storage_path="./data/memory")
+    # Create memory manager with a test-specific storage path
+    test_storage_path = "./test_data/memory"
+    os.makedirs(test_storage_path, exist_ok=True)
+    memory_manager = MemoryManager(storage_path=test_storage_path)
 
     # Create model history manager
     model_history_manager = ModelHistoryManager(memory_manager)

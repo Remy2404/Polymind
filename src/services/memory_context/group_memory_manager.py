@@ -13,6 +13,13 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 import pickle
 import hashlib
+import sys
+import os
+
+# MongoDB imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from database.connection import get_database
+from pymongo.database import Database
 
 from ..user_data_manager import UserDataManager
 from ..utils import Utils
@@ -56,12 +63,47 @@ class GroupMemoryManager:
     - Conversation thread management
     - Participant expertise tracking
     - Smart notification system
-    - Decision tracking and action items
-    """
+    - Decision tracking and action items    """
     
-    def __init__(self):
-        self.data_dir = Path("data/group_memory")
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, db=None):
+        # MongoDB initialization
+        if db is None:
+            try:
+                self.db, self.client = get_database()
+                if self.db is not None:
+                    logger.info("Connected to MongoDB for group memory management")
+                    # Initialize collections
+                    self.group_contexts_collection = self.db.group_contexts
+                    self.conversation_threads_collection = self.db.conversation_threads
+                    self.group_analytics_collection = self.db.group_analytics
+                    
+                    # Ensure indexes for better performance
+                    self._ensure_indexes()
+                else:
+                    logger.warning("MongoDB connection failed, group memory manager will not persist data")
+                    self.client = None
+                    self.group_contexts_collection = None
+                    self.conversation_threads_collection = None
+                    self.group_analytics_collection = None
+            except Exception as e:
+                logger.error(f"Error connecting to MongoDB: {e}")
+                self.db = None
+                self.client = None
+                self.group_contexts_collection = None
+                self.conversation_threads_collection = None
+                self.group_analytics_collection = None
+        else:
+            self.db = db
+            self.client = None  # Will be managed externally
+            if db is not None:
+                self.group_contexts_collection = db.group_contexts
+                self.conversation_threads_collection = db.conversation_threads
+                self.group_analytics_collection = db.group_analytics
+                self._ensure_indexes()
+            else:
+                self.group_contexts_collection = None
+                self.conversation_threads_collection = None
+                self.group_analytics_collection = None
         
         # Group conversation contexts
         self.group_contexts: Dict[int, GroupConversationContext] = {}
@@ -577,45 +619,128 @@ class GroupMemoryManager:
         self.notification_queue.append(notification)
 
     def _load_group_data(self):
-        """Load group data from disk"""
+        """Load group data from MongoDB"""
         try:
-            contexts_file = self.data_dir / "group_contexts.pickle"
-            if contexts_file.exists():
-                with open(contexts_file, 'rb') as f:
-                    data = pickle.load(f)
-                    self.group_contexts = data.get('contexts', {})
-                    self.conversation_threads = data.get('threads', {})
-                    self.group_analytics = data.get('analytics', defaultdict(dict))
+            if self.group_contexts_collection is None:
+                logger.warning("No MongoDB collection available for loading group data")
+                return
+                
+            # Load group contexts
+            contexts = self.group_contexts_collection.find()
+            for context_doc in contexts:
+                group_id = context_doc['group_id']
+                # Convert document back to GroupConversationContext
+                context_data = context_doc.copy()
+                context_data.pop('_id', None)
+                # Convert datetime strings back to datetime objects
+                if 'last_activity' in context_data and isinstance(context_data['last_activity'], str):
+                    context_data['last_activity'] = datetime.fromisoformat(context_data['last_activity'])
+                
+                self.group_contexts[group_id] = GroupConversationContext(**context_data)
+              # Load conversation threads
+            if self.conversation_threads_collection is not None:
+                threads = self.conversation_threads_collection.find()
+                for thread_doc in threads:
+                    thread_id = thread_doc['thread_id']
+                    # Convert document back to ConversationThread
+                    thread_data = thread_doc.copy()
+                    thread_data.pop('_id', None)
+                    # Convert datetime strings and sets
+                    if 'created_at' in thread_data and isinstance(thread_data['created_at'], str):
+                        thread_data['created_at'] = datetime.fromisoformat(thread_data['created_at'])
+                    if 'last_active' in thread_data and isinstance(thread_data['last_active'], str):
+                        thread_data['last_active'] = datetime.fromisoformat(thread_data['last_active'])
+                    if 'participants' in thread_data and isinstance(thread_data['participants'], list):
+                        thread_data['participants'] = set(thread_data['participants'])
+                    if 'messages' in thread_data and isinstance(thread_data['messages'], list):
+                        thread_data['messages'] = deque(thread_data['messages'])
                     
-            logger.info("📁 Loaded group data from disk")
+                    self.conversation_threads[thread_id] = ConversationThread(**thread_data)
+              # Load analytics
+            if self.group_analytics_collection is not None:
+                analytics = self.group_analytics_collection.find()
+                for analytics_doc in analytics:
+                    group_id = analytics_doc['group_id']
+                    analytics_data = analytics_doc.copy()
+                    analytics_data.pop('_id', None)
+                    analytics_data.pop('group_id', None)
+                    self.group_analytics[group_id] = analytics_data
+            
+            logger.info("📁 Loaded group data from MongoDB")
             
         except Exception as e:
             logger.error(f"❌ Error loading group data: {e}")
 
     async def _save_group_data(self):
-        """Save group data to disk"""
+        """Save group data to MongoDB"""
         try:
-            contexts_file = self.data_dir / "group_contexts.pickle"
-            data = {
-                'contexts': self.group_contexts,
-                'threads': self.conversation_threads,
-                'analytics': dict(self.group_analytics)
-            }
-            
-            with open(contexts_file, 'wb') as f:
-                pickle.dump(data, f)
+            if self.group_contexts_collection is None:
+                logger.warning("No MongoDB collection available for saving group data")
+                return
                 
-            logger.debug("💾 Saved group data to disk")
+            # Save group contexts
+            for group_id, context in self.group_contexts.items():
+                context_data = asdict(context)
+                # Convert datetime objects to strings for MongoDB storage
+                if 'last_activity' in context_data and isinstance(context_data['last_activity'], datetime):
+                    context_data['last_activity'] = context_data['last_activity'].isoformat()
+                
+                self.group_contexts_collection.update_one(
+                    {"group_id": group_id},
+                    {"$set": context_data},
+                    upsert=True
+                )
+              # Save conversation threads
+            if self.conversation_threads_collection is not None:
+                for thread_id, thread in self.conversation_threads.items():
+                    thread_data = asdict(thread)
+                    # Convert datetime objects and collections for MongoDB storage
+                    if 'created_at' in thread_data and isinstance(thread_data['created_at'], datetime):
+                        thread_data['created_at'] = thread_data['created_at'].isoformat()
+                    if 'last_active' in thread_data and isinstance(thread_data['last_active'], datetime):
+                        thread_data['last_active'] = thread_data['last_active'].isoformat()
+                    if 'participants' in thread_data and isinstance(thread_data['participants'], set):
+                        thread_data['participants'] = list(thread_data['participants'])
+                    if 'messages' in thread_data and isinstance(thread_data['messages'], deque):
+                        thread_data['messages'] = list(thread_data['messages'])
+                    
+                    self.conversation_threads_collection.update_one(
+                        {"thread_id": thread_id},
+                        {"$set": thread_data},
+                        upsert=True
+                    )
+              # Save analytics
+            if self.group_analytics_collection is not None:
+                for group_id, analytics_data in self.group_analytics.items():
+                    # Convert sets to lists for MongoDB storage
+                    analytics_data_copy = analytics_data.copy()
+                    if 'active_hours' in analytics_data_copy and isinstance(analytics_data_copy['active_hours'], set):
+                        analytics_data_copy['active_hours'] = list(analytics_data_copy['active_hours'])
+                    
+                    self.group_analytics_collection.update_one(
+                        {"group_id": group_id},
+                        {"$set": {"group_id": group_id, **analytics_data_copy}},
+                        upsert=True
+                    )
+                
+            logger.debug("💾 Saved group data to MongoDB")
             
         except Exception as e:
             logger.error(f"❌ Error saving group data: {e}")
 
     async def cleanup_old_data(self, days_old: int = 30):
-        """Clean up old conversation data"""
+        """Clean up old conversation data from MongoDB"""
         try:
             cutoff_date = datetime.now() - timedelta(days=days_old)
+            cutoff_iso = cutoff_date.isoformat()
+              # Clean old threads from MongoDB
+            if self.conversation_threads_collection is not None:
+                result = self.conversation_threads_collection.delete_many({
+                    "last_active": {"$lt": cutoff_iso}
+                })
+                logger.info(f"🧹 Removed {result.deleted_count} old conversation threads from MongoDB")
             
-            # Clean old threads
+            # Clean old threads from memory
             threads_to_remove = []
             for thread_id, thread in self.conversation_threads.items():
                 if thread.last_active < cutoff_date:
@@ -630,10 +755,38 @@ class GroupMemoryManager:
                 self.notification_queue.popleft()
             
             await self._save_group_data()
-            logger.info(f"🧹 Cleaned up {len(threads_to_remove)} old conversation threads")
+            logger.info(f"🧹 Cleaned up {len(threads_to_remove)} old conversation threads from memory")
             
         except Exception as e:
             logger.error(f"❌ Error during cleanup: {e}")
+    def _ensure_indexes(self):
+        """Ensure database indexes are created for better performance"""
+        try:
+            if self.group_contexts_collection is not None:
+                # Index for group_id lookups
+                self.group_contexts_collection.create_index("group_id", unique=True)
+                self.group_contexts_collection.create_index([("group_id", 1), ("last_activity", -1)])
+                
+            if self.conversation_threads_collection is not None:
+                # Indexes for conversation threads
+                self.conversation_threads_collection.create_index("thread_id", unique=True)
+                self.conversation_threads_collection.create_index("group_id")
+                self.conversation_threads_collection.create_index([("group_id", 1), ("last_active", -1)])
+                
+            if self.group_analytics_collection is not None:
+                # Index for analytics lookups
+                self.group_analytics_collection.create_index("group_id", unique=True)
+                
+            logger.info("Group memory management database indexes ensured")
+            
+        except Exception as e:
+            logger.error(f"Error creating group memory management indexes: {e}")
 
-# Global instance
-group_memory_manager = GroupMemoryManager()
+
+# Global instance with MongoDB connection
+try:
+    db, client = get_database()
+    group_memory_manager = GroupMemoryManager(db=db)
+except Exception as e:
+    logger.warning(f"Failed to initialize group memory manager with MongoDB: {e}")
+    group_memory_manager = GroupMemoryManager()
