@@ -288,12 +288,13 @@ class MessageHandlers:
 
                 # Send the analysis response
                 if response:
-                    # Split long messages
-                    response_chunks = await self.response_formatter.split_long_message(response)
+                    # Format text for Telegram and prefix with an image analysis indicator
+                    formatted_text = await self.response_formatter.format_telegram_markdown(response)
+                    formatted_text = f"🖼️ *Image Analysis*:\n\n{formatted_text}"
+                    # Split into manageable chunks
+                    response_chunks = await self.response_formatter.split_long_message(formatted_text)
                     for chunk in response_chunks:
-                        await self._safe_reply(
-                            update.message, chunk, parse_mode="Markdown"
-                        )
+                        await self._safe_reply(update.message, chunk, parse_mode="Markdown")
 
                     # Save the image interaction to memory for future reference with enhanced metadata
                     try:
@@ -876,7 +877,10 @@ class MessageHandlers:
                 )
 
             # Delete status message
-            await status_message.delete()
+            try:
+                await status_message.delete()
+            except Exception as delete_error:
+                self.logger.warning(f"Failed to delete document status message: {str(delete_error)}")
 
             if response:
                 # Format the response
