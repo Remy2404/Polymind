@@ -288,9 +288,12 @@ class MessageHandlers:
 
                 # Send the analysis response
                 if response:
-                    await self._safe_reply(
-                        update.message, response, parse_mode="Markdown"
-                    )
+                    # Split long messages
+                    response_chunks = await self.response_formatter.split_long_message(response)
+                    for chunk in response_chunks:
+                        await self._safe_reply(
+                            update.message, chunk, parse_mode="Markdown"
+                        )
 
                     # Save the image interaction to memory for future reference with enhanced metadata
                     try:
