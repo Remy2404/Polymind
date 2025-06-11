@@ -181,25 +181,29 @@ class MessageHandlers:
             # Try AI command routing first (if available)
             if self.ai_command_router:
                 try:
-                    should_route = await self.ai_command_router.should_route_message(enhanced_message_text)
-                    if should_route:
-                        intent, confidence = await self.ai_command_router.detect_intent(enhanced_message_text)
-                        self.logger.info(f"Routing message to command: {intent.value} (confidence: {confidence:.2f})")
-                        
-                        # Attempt to route the command
-                        command_executed = await self.ai_command_router.route_command(
-                            update, context, intent, enhanced_message_text
-                        )
-                        
-                        if command_executed:
-                            # Command was successfully executed, update stats and return
-                            await self.user_data_manager.update_stats(
-                                user_id, {"text_messages": 1, "total_messages": 1, "ai_commands": 1}
+                    # Only route commands if private chat or bot is mentioned in group chat
+                    is_group_chat = chat and chat.type in ["group", "supergroup"]
+                    is_mentioned = "@Gemini_AIAssistBot" in enhanced_message_text
+                    if not is_group_chat or is_mentioned:
+                        should_route = await self.ai_command_router.should_route_message(enhanced_message_text)
+                        if should_route:
+                            intent, confidence = await self.ai_command_router.detect_intent(enhanced_message_text)
+                            self.logger.info(f"Routing message to command: {intent.value} (confidence: {confidence:.2f})")
+                            
+                            # Attempt to route the command
+                            command_executed = await self.ai_command_router.route_command(
+                                update, context, intent, enhanced_message_text
                             )
-                            return
-                        else:
-                            # Command routing failed, fall back to normal text processing
-                            self.logger.info("Command routing failed, falling back to normal text processing")
+                            
+                            if command_executed:
+                                # Command was successfully executed, update stats and return
+                                await self.user_data_manager.update_stats(
+                                    user_id, {"text_messages": 1, "total_messages": 1, "ai_commands": 1}
+                                )
+                                return
+                            else:
+                                # Command routing failed, fall back to normal text processing
+                                self.logger.info("Command routing failed, falling back to normal text processing")
                 except Exception as e:
                     self.logger.error(f"Error in AI command routing: {str(e)}")
                     # Fall back to normal text processing on any error
