@@ -85,8 +85,8 @@ class Conversation:
 
 class MemoryManager:
     """Enhanced memory manager with modular components for better maintainability"""
-    
-    def __init__(self, db=None, client=None, storage_path=None):
+
+    def __init__(self, db=None, storage_path=None):
         # Initialize database connection
         if db is None:
             try:
@@ -102,7 +102,7 @@ class MemoryManager:
                 self.client = None
         else:
             self.db = db
-            self.client = client  # Use provided client
+            self.client = None  # Will be managed externally
 
         # Initialize modular components
         self.user_profile_manager = UserProfileManager(self.db)

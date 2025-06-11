@@ -185,14 +185,16 @@ class MessageHandlers:
                     is_group_chat = chat and chat.type in ["group", "supergroup"]
                     is_mentioned = "@Gemini_AIAssistBot" in enhanced_message_text
                     if not is_group_chat or is_mentioned:
-                        should_route = await self.ai_command_router.should_route_message(enhanced_message_text)
+                        # IMPORTANT: Use original message_text for intent detection, not enhanced_message_text
+                        # This prevents group context from interfering with command detection
+                        should_route = await self.ai_command_router.should_route_message(message_text)
                         if should_route:
-                            intent, confidence = await self.ai_command_router.detect_intent(enhanced_message_text)
+                            intent, confidence = await self.ai_command_router.detect_intent(message_text)
                             self.logger.info(f"Routing message to command: {intent.value} (confidence: {confidence:.2f})")
                             
-                            # Attempt to route the command
+                            # Attempt to route the command using original message
                             command_executed = await self.ai_command_router.route_command(
-                                update, context, intent, enhanced_message_text
+                                update, context, intent, message_text
                             )
                             
                             if command_executed:

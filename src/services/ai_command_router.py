@@ -67,13 +67,16 @@ class AICommandRouter:
                 r"(?i).*(?:create|generate)\s+(?:a\s+)?(?:summary|transcript)\s+(?:of\s+)?(?:this\s+)?(?:chat|conversation)",
                 r"(?i).*(?:save|backup)\s+(?:our\s+)?(?:conversation|messages)",
                 r"(?i).*(?:export|convert).*(?:to\s+)?(?:pdf|docx|document)"
-            ],
-            CommandIntent.SWITCH_MODEL: [
+            ],            CommandIntent.SWITCH_MODEL: [
                 r"(?i).*(?:switch|change|use)\s+(?:to\s+)?(?:a\s+)?(?:different\s+)?(?:model|ai|assistant)",
                 r"(?i).*(?:change|switch)\s+(?:the\s+)?(?:ai\s+)?model",
-                r"(?i).*(?:use\s+)?(?:gemini|deepseek|claude|gpt|llama)",
+                r"(?i).*(?:use\s+)?(?:gemini|deepseek|claude|gpt|llama)(?:\s+model|\s+ai|\s+assistant|$)",
                 r"(?i).*(?:what\s+)?(?:models?\s+)?(?:are\s+)?available",
-                r"(?i).*(?:list|show)\s+(?:available\s+)?models?"
+                r"(?i).*(?:list|show)\s+(?:me\s+)?(?:available\s+)?models?",
+                r"(?i).*switch\s+to\s+(?:gemini|deepseek|claude|gpt|llama)",
+                r"(?i).*change\s+(?:ai\s+)?model",
+                r"(?i).*use\s+(?:the\s+)?(?:gemini|deepseek|claude|gpt|llama)\s+(?:model|ai)?",
+                r"(?i).*models?\s+(?:available|list)"
             ],
             CommandIntent.GET_STATS: [
                 r"(?i).*(?:show|display|get)\s+(?:my\s+)?(?:stats|statistics|usage)",
@@ -146,10 +149,8 @@ class AICommandRouter:
                 
                 if total_score > best_score:
                     best_score = total_score
-                    best_intent = intent
-        
-        # Minimum confidence threshold
-        if best_score < 0.3:
+                    best_intent = intent        # Minimum confidence threshold - balanced to avoid false positives while catching real commands
+        if best_score < 0.4:
             best_intent = CommandIntent.UNKNOWN
             
         self.logger.info(f"Intent detection: '{message}' -> {best_intent.value} (confidence: {best_score:.2f})")
@@ -346,8 +347,7 @@ class AICommandRouter:
         cleaned_message = message
         for phrase in remove_phrases:
             cleaned_message = re.sub(phrase, "", cleaned_message).strip()
-        
-        # If nothing meaningful left, return None to ask for clarification
+          # If nothing meaningful left, return None to ask for clarification
         if not cleaned_message or len(cleaned_message) < 3:
             return None
             
@@ -357,6 +357,9 @@ class AICommandRouter:
         """
         Determine if a message should be routed through the command system
         Returns True if the message looks like a command request
-        """
+        """        # Add minimum length check to avoid routing very short messages
+        if len(message.strip()) < 5:
+            return False
+            
         intent, confidence = await self.detect_intent(message)
-        return intent != CommandIntent.UNKNOWN and confidence > 0.3
+        return intent != CommandIntent.UNKNOWN and confidence > 0.4
