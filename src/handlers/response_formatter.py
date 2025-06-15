@@ -63,10 +63,14 @@ class ResponseFormatter:
             # Convert markdown-style formatting to HTML
             import re
             
-            # Convert bullet points to HTML lists
-            text = re.sub(r'\n• \*\*(.*?)\*\*:', r'\n• <b>\1</b>:', text)
+            # Convert double asterisks (AI-generated) to HTML bold
             text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
-            text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
+            
+            # Convert single asterisks (our custom formatting) to HTML bold
+            text = re.sub(r'(?<!\*)\*(?!\*)([^*]+?)(?<!\*)\*(?!\*)', r'<b>\1</b>', text)
+            
+            # Convert bullet points to HTML
+            text = re.sub(r'\n• <b>(.*?)</b>:', r'\n• <b>\1</b>:', text)
             
             # Escape HTML special characters (but preserve our formatting)
             text = text.replace('&', '&amp;')
@@ -313,7 +317,7 @@ class ResponseFormatter:
                         # This is a number
                         if current_item.strip():
                             formatted_parts.append(current_item.strip())
-                        current_item = f"**{part}**"
+                        current_item = f"{part}"
                     else:
                         current_item += part
                 
@@ -323,15 +327,23 @@ class ResponseFormatter:
                 # Format each numbered item nicely
                 formatted_items = []
                 for item in formatted_parts:
-                    if item.startswith('**') and '**' in item[2:]:
-                        # This is a numbered item - fix the formatting
-                        item = item.replace('**', '', 1).replace(':**', ':', 1)
-                        # Split number and content
+                    if re.match(r'^\d+\.', item):
+                        # This is a numbered item - format it properly
                         if ':' in item:
-                            number_part, content_part = item.split(':', 1)
-                            formatted_items.append(f"\n• **{number_part.strip()}:** {content_part.strip()}")
+                            parts = item.split(':', 1)
+                            number_part = parts[0].strip()
+                            content_part = parts[1].strip()
+                            # Only add emphasis if not already formatted
+                            if not ('**' in number_part or '*' in number_part):
+                                formatted_items.append(f"\n• *{number_part}*: {content_part}")
+                            else:
+                                formatted_items.append(f"\n• {number_part}: {content_part}")
                         else:
-                            formatted_items.append(f"\n• **{item}**")
+                            # Only add emphasis if not already formatted
+                            if not ('**' in item or '*' in item):
+                                formatted_items.append(f"\n• *{item}*")
+                            else:
+                                formatted_items.append(f"\n• {item}")
                     elif item.strip():
                         formatted_items.append(item)
                 
@@ -342,14 +354,19 @@ class ResponseFormatter:
                 'criteria for detection', 'existing approaches', 'detection methods',
                 'early detection', 'datasets used', 'considerations'
             ]):
-                # This is a section header - make it stand out
-                paragraph = f"**{paragraph.strip()}**"
+                # This is a section header - make it stand out only if not already formatted
+                if not ('**' in paragraph or '*' in paragraph):
+                    paragraph = f"*{paragraph.strip()}*"
             
             # Handle sentences that contain colons (definitions/explanations)
             elif ':' in paragraph and len(paragraph.split(':')) == 2:
                 parts = paragraph.split(':', 1)
-                if len(parts[0]) < 100:  # Likely a key-value pair
-                    paragraph = f"**{parts[0].strip()}:** {parts[1].strip()}"
+                # Only add emphasis if not already formatted with markdown
+                first_part = parts[0].strip()
+                if not ('**' in first_part or '*' in first_part):
+                    paragraph = f"*{first_part}*: {parts[1].strip()}"
+                else:
+                    paragraph = f"{first_part}: {parts[1].strip()}"
             
             # Add better spacing for long paragraphs
             elif len(paragraph) > 400:
