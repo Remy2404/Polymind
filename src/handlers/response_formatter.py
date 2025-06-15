@@ -3,8 +3,8 @@ import html
 from typing import List
 from telegramify_markdown import convert, escape_markdown, markdownify, customize
 
+
 class ResponseFormatter:
-    """Formats response text for sending via Telegram."""
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
@@ -44,60 +44,48 @@ class ResponseFormatter:
             return text
 
     async def escape_markdown_text(self, text: str) -> str:
-        """
-        Escape special Telegram MarkdownV2 characters in text.
-        
-        This method ensures that special characters in text don't interfere with 
-        Telegram MarkdownV2 formatting by escaping them properly.
-        
-        Args:
-            text: The text to escape
-            
-        Returns:
-            Properly escaped text for Telegram MarkdownV2
-        """
         try:
             if not isinstance(text, str):
                 text = str(text)
-                
+
             escaped_text = escape_markdown(text)
             return escaped_text
         except Exception as e:
             self.logger.error(f"Error escaping markdown: {str(e)}")
             # Fallback to manual escaping
             for ch in [
-                "_", "*", "[", "]", "(", ")", "~", "`", ">", 
-                "#", "+", "-", "=", "|", "{", "}", ".", "!"
+                "_",
+                "*",
+                "[",
+                "]",
+                "(",
+                ")",
+                "~",
+                "`",
+                ">",
+                "#",
+                "+",
+                "-",
+                "=",
+                "|",
+                "{",
+                "}",
+                ".",
+                "!",
             ]:
                 text = text.replace(ch, f"\\{ch}")
             return text
 
-    async def markdownify_text(self, markdown_text: str, normalize_whitespace: bool = False) -> str:
-        """
-        Convert standard markdown to Telegram MarkdownV2 format.
-        
-        This provides a more comprehensive conversion of markdown content,
-        handling complex formatting including headings, lists, code blocks, etc.
-        
-        Args:
-            markdown_text: Raw markdown text to convert
-            normalize_whitespace: Whether to normalize whitespace in the output
-            
-        Returns:
-            Text formatted for Telegram's MarkdownV2 parse mode
-        """
+    async def markdownify_text(
+        self, markdown_text: str, normalize_whitespace: bool = False
+    ) -> str:
         try:
             if not isinstance(markdown_text, str):
                 markdown_text = str(markdown_text)
-                
-            # Use more customization options if needed
-            # customize.markdown_symbol.head_level_1 = "📌"  # Customize heading symbols
-            # customize.strict_markdown = False  # For handling __underline__ properly
-                
             converted_text = markdownify(
                 markdown_text,
                 normalize_whitespace=normalize_whitespace,
-                latex_escape=True  # Set to False if LaTeX processing is not needed
+                latex_escape=True,  # Set to False if LaTeX processing is not needed
             )
             return converted_text
         except Exception as e:
@@ -115,6 +103,32 @@ class ResponseFormatter:
             self.logger.error(f"Error escaping HTML: {e}")
             # Fallback: escape text again
             return html.escape(text)
+
+    def set_markdown_options(self, **options):
+        if "strict_markdown" in options:
+            customize.strict_markdown = options["strict_markdown"]
+
+        if "cite_expandable" in options:
+            customize.cite_expandable = options["cite_expandable"]
+
+        # Handle symbol customizations
+        if "markdown_symbols" in options and isinstance(
+            options["markdown_symbols"], dict
+        ):
+            symbols = options["markdown_symbols"]
+
+            # Apply heading level customizations
+            for i in range(1, 7):
+                key = f"head_level_{i}"
+                if key in symbols:
+                    setattr(customize.markdown_symbol, key, symbols[key])
+
+            # Apply other symbol customizations
+            for key in ["link", "image", "item", "task_list"]:
+                if key in symbols:
+                    setattr(customize.markdown_symbol, key, symbols[key])
+
+        return self
 
     async def split_long_message(self, text: str, max_length: int = 4096) -> List[str]:
         # Validate inputs
