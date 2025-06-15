@@ -1,7 +1,7 @@
 import io
 import os
 import logging
-from telegram import Update
+from telegram import Update, Message
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 from src.utils.log.telegramlog import telegram_logger
@@ -15,12 +15,11 @@ from .media_context_extractor import MediaContextExtractor
 from src.services.memory_context.memory_manager import MemoryManager
 from src.services.memory_context.model_history_manager import ModelHistoryManager
 from services.model_handlers.factory import ModelHandlerFactory
-from services.media.image_processor import ImageProcessor
 from services.model_handlers.prompt_formatter import PromptFormatter
 from src.services.memory_context.conversation_manager import ConversationManager
 from .text_processing.intent_detector import IntentDetector
 from .text_processing.media_analyzer import MediaAnalyzer
-from .text_processing.utilities import MediaUtilities, MessagePreprocessor
+from .text_processing.utilities import MediaUtilities
 
 
 class TextHandler:
@@ -46,38 +45,25 @@ class TextHandler:
         self.memory_manager.token_limit = 8192
         self.model_history_manager = ModelHistoryManager(self.memory_manager)
 
-        # Initialize utility classes
-        self.model_registry = None
-        self.user_model_manager = None
-        self.model_registry_initialized = False
-
-        # Initialize context and formatting utilities
+        # Initialize utility classes (removed unused ones)
         self.context_handler = MessageContextHandler()
         self.response_formatter = ResponseFormatter()
-        self.media_context_extractor = MediaContextExtractor()
         self.prompt_formatter = PromptFormatter()
-
-        # Initialize our image processing capability
-        self.image_processor = ImageProcessor(gemini_api)
+        self.media_context_extractor = MediaContextExtractor()
 
         # Initialize conversation manager
         self.conversation_manager = ConversationManager(
             self.memory_manager, self.model_history_manager
         )
 
-        # Initialize our new modular components
+        # Initialize core components only
         self.intent_detector = IntentDetector()
         self.media_analyzer = MediaAnalyzer(gemini_api)
-        self.media_utilities = MediaUtilities()
-        self.message_preprocessor = MessagePreprocessor()
+        
+        # Optional components (will be set externally if needed)
+        self.user_model_manager = None
 
-    async def format_telegram_markdown(self, text: str) -> str:
-        # Delegate to ResponseFormatter
-        return await self.response_formatter.format_telegram_markdown(text)
-
-    async def split_long_message(self, text: str, max_length: int = 4096) -> List[str]:
-        # Delegate to ResponseFormatter
-        return await self.response_formatter.split_long_message(text, max_length)
+# Removed delegation methods - use response_formatter directly
 
     async def handle_text_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -163,8 +149,8 @@ class TextHandler:
             # Get user's preferred model
             preferred_model = await self._get_user_preferred_model(user_id)
 
-            # Extract user information from message and save for future context
-            await self._extract_and_save_user_info(user_id, message_text)
+            # Extract user information using memory manager directly
+            await self.memory_manager.extract_and_save_user_info(user_id, message_text)
 
             # Get conversation history for context
             history_context = await self.conversation_manager.get_conversation_history(
@@ -182,18 +168,6 @@ class TextHandler:
                     "content": f"User information: {user_context}",
                 }
                 history_context.insert(0, user_context_message)
-
-            # Handle the request based on detected intent
-            if user_intent == "generate_image":
-                await self._handle_image_generation(
-                    update,
-                    context,
-                    thinking_message,
-                    message_text,
-                    user_id,
-                    preferred_model,
-                )
-                return
 
             elif has_attached_media and user_intent == "analyze":
                 await self._handle_media_analysis(
@@ -702,92 +676,6 @@ class TextHandler:
         self.logger.info(f"Preferred model for user {user_id}: {preferred_model}")
         return preferred_model
 
-    async def _handle_image_generation(
-        self, update, context, thinking_message, message_text, user_id, preferred_model
-    ):
-        """Handle image generation requests"""
-        # Use our enhanced prompt extraction instead of keyword replacement
-        image_prompt = self.intent_detector.extract_image_prompt(message_text)
-
-        if not image_prompt:
-            # Fallback to simpler extraction if needed
-            image_prompt = (
-                message_text.replace("generate image", "")
-                .replace("create image", "")
-                .strip()
-            )
-
-        # Try to delete the thinking message
-        if thinking_message is not None:
-            try:
-                await thinking_message.delete()
-                thinking_message = None
-            except Exception:
-                pass
-
-        # Inform the user that image generation is starting
-        status_message = await update.message.reply_text(
-            "Generating image based on your description... This may take a moment. 🎨"
-        )
-
-        try:
-            # Generate the image
-            image_bytes = await self.gemini_api.generate_image(image_prompt)
-
-            if image_bytes and len(image_bytes) > 0:
-                # Try to delete the status message
-                if status_message is not None:
-                    try:
-                        await status_message.delete()
-                        status_message = None
-                    except Exception:
-                        try:
-                            await status_message.edit_text(
-                                "✅ Image generated successfully!"
-                            )
-                            status_message = None
-                        except Exception:
-                            pass
-
-                # Send the generated image
-                caption = f"Generated image of: {image_prompt}"
-                await update.message.reply_photo(
-                    photo=io.BytesIO(image_bytes), caption=caption
-                )
-
-                # Update user stats
-                if self.user_data_manager:
-                    await self.user_data_manager.update_stats(
-                        user_id, image_generation=True
-                    )
-
-                # Save to conversation history
-                await self.conversation_manager.save_media_interaction(
-                    user_id,
-                    "generated_image",
-                    f"Generate an image of: {image_prompt}",
-                    f"Here's the image I generated of {image_prompt}.",
-                    preferred_model,
-                )
-            else:
-                # Image generation failed
-                if status_message is not None:
-                    try:
-                        await status_message.edit_text(
-                            "Sorry, I couldn't generate that image. Please try with a different description."
-                        )
-                    except Exception:
-                        pass
-        except Exception as e:
-            self.logger.error(f"Error generating image: {e}")
-            if status_message is not None:
-                try:
-                    await status_message.edit_text(
-                        "Sorry, there was an error generating your image. Please try again later."
-                    )
-                except Exception:
-                    pass
-
     async def _handle_text_conversation(
         self,
         update,
@@ -1053,27 +941,16 @@ class TextHandler:
                 )
 
                 try:
-                    # Try with simpler formatting - strip all markdown formatting characters
+                    # Try with simpler formatting - strip problematic characters
                     simplified_text = text_to_send
-                    for char in [
-                        "*",
-                        "_",
-                        "`",
-                        "[",
-                        "]",
-                        "(",
-                        ")",
-                        "~",
-                        ">",
-                        "#",
-                        "+",
-                        "=",
-                        "|",
-                        "{",
-                        "}",
-                        "!",
-                    ]:
+                    
+                    # Remove problematic characters more selectively
+                    problematic_chars = ["*", "_", "`", "[", "]", "~", ">"]
+                    for char in problematic_chars:
                         simplified_text = simplified_text.replace(char, "")
+                    
+                    # Clean up extra spaces
+                    simplified_text = " ".join(simplified_text.split())
 
                     if i == 0 and is_reply:
                         last_message = await message.reply_text(
@@ -1181,47 +1058,3 @@ class TextHandler:
         except Exception as e:
             self.logger.error(f"Error loading user context: {e}")
             return ""
-
-    async def _save_user_information(self, user_id: int, update: Update):
-        """Save user information for future context."""
-        try:
-            user = update.effective_user
-            if user:
-                user_info = {}
-                if user.first_name:
-                    user_info["first_name"] = user.first_name
-                if user.last_name:
-                    user_info["last_name"] = user.last_name
-                if user.username:
-                    user_info["username"] = user.username
-
-                # Save to user data manager
-                existing_data = (
-                    await self.user_data_manager.get_user_data(user_id) or {}
-                )
-                if "profile" not in existing_data:
-                    existing_data["profile"] = {}
-                existing_data["profile"].update(user_info)
-
-                # Increment conversation count
-                existing_data["conversation_count"] = (
-                    existing_data.get("conversation_count", 0) + 1
-                )
-
-                await self.user_data_manager.save_user_data(user_id, existing_data)
-
-            # Also extract user information from message text using memory manager
-            message_text = update.message.text if update.message else ""
-            if message_text:
-                await self.memory_manager.extract_and_save_user_info(user_id, message_text)
-
-        except Exception as e:
-            self.logger.debug(f"Could not save user information: {e}")
-
-    async def _extract_and_save_user_info(self, user_id: int, message_text: str):
-        """Extract and save user information from their message."""
-        try:
-            # Extract user information using the memory manager
-            await self.memory_manager.extract_and_save_user_info(user_id, message_text)
-        except Exception as e:
-            self.logger.debug(f"Could not extract user info from message: {e}")

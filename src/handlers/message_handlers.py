@@ -41,10 +41,8 @@ from src.services.ai_command_router import AICommandRouter
 # Import utility classes
 from src.handlers.message_context_handler import MessageContextHandler
 from src.handlers.response_formatter import ResponseFormatter
-from src.handlers.media_context_extractor import MediaContextExtractor
 from src.services.media.image_processor import ImageProcessor
 from src.services.media.voice_processor import VoiceProcessor
-from src.services.model_handlers.prompt_formatter import PromptFormatter
 from src.services.user_preferences_manager import UserPreferencesManager
 from src.services.memory_context.conversation_manager import ConversationManager
 from src.services.group_chat.integration import GroupChatIntegration
@@ -73,14 +71,9 @@ class MessageHandlers:
         self.deepseek_api = deepseek_api
         self.openrouter_api = openrouter_api
 
-        # Initialize utility classes
+        # Initialize essential utility classes only
         self.context_handler = MessageContextHandler()
         self.response_formatter = ResponseFormatter()
-        self.media_context_extractor = MediaContextExtractor()
-        self.image_processor = ImageProcessor(gemini_api)
-        self.voice_processor = VoiceProcessor()
-        self.prompt_formatter = PromptFormatter()
-        self.preferences_manager = UserPreferencesManager(user_data_manager)
 
         # Initialize AI command router
         self.ai_command_router = None
@@ -803,7 +796,7 @@ class MessageHandlers:
                 prompt="Analyze this document.",
             )
 
-            formatted_response = await self.text_handler.format_telegram_markdown(
+            formatted_response = await self.response_formatter.format_telegram_markdown(
                 response
             )
             await update.message.reply_text(
@@ -969,26 +962,14 @@ class MessageHandlers:
 
     def _escape_markdown(self, text: str) -> str:
         """Escape special characters for Telegram Markdown."""
+        if not isinstance(text, str):
+            text = str(text)
+            
         escape_chars = [
-            "_",
-            "*",
-            "[",
-            "]",
-            "(",
-            ")",
-            "~",
-            "`",
-            ">",
-            "#",
-            "+",
-            "-",
-            "=",
-            "|",
-            "{",
-            "}",
-            ".",
-            "!",
+            "_", "*", "[", "]", "(", ")", "~", "`", ">", "#", 
+            "+", "-", "=", "|", "{", "}", ".", "!"
         ]
+        
         for char in escape_chars:
             text = text.replace(char, f"\\{char}")
         return text

@@ -30,7 +30,6 @@ from services.rate_limiter import RateLimiter, rate_limit
 from src.utils.log.telegramlog import telegram_logger
 from dotenv import load_dotenv
 from services.image_processing import ImageProcessor
-from database.connection import get_database, get_image_cache_collection
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -66,50 +65,15 @@ class GeminiAPI:
             "max_output_tokens": 65536,
         }
 
-        # Image generation configuration
-        self.image_generation_config = {
-            "temperature": 0.7,
-            "top_p": 0.95,
-            "top_k": 32,
-        }
-
         try:
             # Use the GenAI client for all model calls
             self.chat_model = self.genai_client
-
-            # Initialize MongoDB connection
-            self.db, self.mongo_client = get_database()
-            self.image_cache = get_image_cache_collection(self.db)
-            if self.image_cache is not None:
-                self.logger.info("Image cache collection is ready.")
-            else:
-                self.logger.error("Failed to access image cache collection.")
         except Exception as e:
             self.logger.error(f"Failed to initialize Gemini API: {str(e)}")
             raise
 
-        # Add these properties for circuit breaker tracking
-        self.api_failures = 0
-        self.api_last_failure = 0
-        self.image_generation_failures = 0
-        self.image_generation_last_failure = 0
-        self.image_analysis_failures = 0
-        self.image_analysis_last_failure = 0
-        self.circuit_breaker_threshold = 5  # Number of failures before opening circuit
-        self.circuit_breaker_timeout = 300  # Seconds to keep circuit open (5 minutes)
-
         self.session = None
         self._initialize_session_lock = asyncio.Lock()
-        self._connection_errors = 0
-        self._last_error_time = 0
-        self._consecutive_failures = 0
-        self._backoff_time = 1.0  # Initial backoff in seconds
-
-        # Add conversation history storage
-        self.conversation_history = {}
-
-        # Add user information cache to maintain persistent memory across interactions
-        self.user_info_cache = {}
 
     async def ensure_session(self):
         """Create or reuse aiohttp session"""
@@ -141,49 +105,9 @@ class GeminiAPI:
             self.logger.info("Closed Gemini API aiohttp session")
             self.session = None
 
-    async def call_with_circuit_breaker(self, api_name, api_function, *args, **kwargs):
-        """Call API with circuit breaker pattern to prevent cascading failures."""
-        # Get the current failure count and last failure timestamp
-        failures = getattr(self, f"{api_name}_failures", 0)
-        last_failure = getattr(self, f"{api_name}_last_failure", 0)
+        # Removed call_with_circuit_breaker method - not actively used
 
-        # Check if circuit is open (too many failures recently)
-        if (
-            failures >= self.circuit_breaker_threshold
-            and (time.time() - last_failure) < self.circuit_breaker_timeout
-        ):
-            self.logger.warning(
-                f"Circuit breaker open for {api_name} - too many recent failures"
-            )
-            return None
-
-        # Circuit is closed or half-open (allowing a test request)
-        try:
-            result = await api_function(*args, **kwargs)
-
-            # If successful and we had previous failures, reset the counter
-            if result and failures > 0:
-                setattr(self, f"{api_name}_failures", 0)
-
-            return result
-
-        except Exception as e:
-            # Track this failure
-            setattr(self, f"{api_name}_failures", failures + 1)
-            setattr(self, f"{api_name}_last_failure", time.time())
-            self.logger.error(f"API failure for {api_name}: {str(e)}")
-            raise
-
-    async def format_message(self, text: str) -> str:
-        """Format text for initial processing before Telegram Markdown formatting."""
-        try:
-            # Don't escape special characters here, just clean up the text
-            # Remove any null characters or other problematic characters
-            cleaned_text = text.replace("\x00", "").strip()
-            return cleaned_text
-        except Exception as e:
-            logging.error(f"Error formatting message: {str(e)}")
-            return text
+        # Removed format_message method - simple text formatting not needed
 
     async def analyze_image(self, image_data, prompt: str) -> str:
         """Analyze an image and generate a response based on the prompt."""
@@ -307,74 +231,6 @@ class GeminiAPI:
         except Exception as e:
             self.logger.error(f"Error in multimodal processing: {str(e)}")
             return f"I'm sorry, I had trouble processing your {media_type if 'media_type' in locals() else 'media'}. Please try again or describe what you're looking for."
-
-    async def generate_image(self, prompt: str) -> Optional[bytes]:
-        if self.image_cache is not None:
-            cached_image = await asyncio.to_thread(
-                self.image_cache.find_one, {"prompt": prompt}
-            )
-            if cached_image is not None:
-                self.logger.info(f"Cache hit for prompt: '{prompt}'")
-                return cached_image["image_data"]
-
-        await self.rate_limiter.acquire()
-
-        try:
-            # Enhance the prompt for better results
-            enhanced_prompt = f"Generate a detailed, high-quality image of: {prompt}. Make it visually appealing with good lighting and composition."
-
-            self.logger.info(
-                f"Generating image with Gemini 2.0 for prompt: '{enhanced_prompt}'"
-            )
-
-            # Call the Gemini 2.0 Flash for image generation
-            response = await asyncio.to_thread(
-                self.genai_client.models.generate_content,
-                model="gemini-2.0-flash-exp-image-generation",
-                contents=enhanced_prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.9,
-                    top_k=64,
-                    top_p=0.95,
-                    response_modalities=["TEXT", "IMAGE"],
-                ),
-            )
-
-            # Extract image data from response
-            if response and hasattr(response, "candidates"):
-                for candidate in response.candidates:
-                    if hasattr(candidate, "content") and candidate.content:
-                        for part in candidate.content.parts:
-                            if hasattr(part, "inline_data") and part.inline_data:
-                                # Extract the image data
-                                image_bytes = part.inline_data.data
-
-                                # Cache the result if we have image data
-                                if image_bytes and self.image_cache is not None:
-                                    cache_document = {
-                                        "prompt": prompt,
-                                        "image_data": image_bytes,
-                                        "model": "gemini-2.0-flash-exp-image-generation",
-                                        "timestamp": datetime.datetime.now(
-                                            datetime.timezone.utc
-                                        ),
-                                    }
-                                    await asyncio.to_thread(
-                                        self.image_cache.insert_one, cache_document
-                                    )
-                                    self.logger.info(
-                                        f"Cached image for prompt: '{prompt}'"
-                                    )
-
-                                return image_bytes
-
-            # If we reach here, no image data was found in the response
-            self.logger.warning(f"No image generated for prompt: '{prompt}'")
-            return None
-
-        except Exception as e:
-            self.logger.error(f"Image generation error: {str(e)}")
-            return None
 
     async def analyze_contents(
         self, file_data: io.BytesIO, file_type: str, prompt: str

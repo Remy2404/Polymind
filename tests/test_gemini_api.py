@@ -122,52 +122,6 @@ class TestGeminiAPI(unittest.TestCase):
         result = loop.run_until_complete(_test())
         print(f"\nImage Analysis: {result}")
 
-    @unittest.skip("Image generation test is resource-intensive and may have quota limitations")
-    def test_generate_image(self):
-        """Test the generate_image method."""
-        async def _test():
-            prompt = "A beautiful sunset over mountains."
-            image_bytes = await self.gemini_api.generate_image(prompt)
-            
-            # Verify we got an image
-            self.assertIsNotNone(image_bytes)
-            
-            # Save the image to a file for manual inspection
-            with open("test_generated_image.png", "wb") as f:
-                f.write(image_bytes)
-            
-            logger.info("Generated image saved to test_generated_image.png")
-            
-            return True
-            
-        # Run the async test
-        loop = asyncio.get_event_loop()
-        result = loop.run_until_complete(_test())
-        self.assertTrue(result)
-
-    @unittest.skip("Image generation test is resource-intensive and may have quota limitations")
-    def test_generate_image_with_imagen3(self):
-        """Test the generate_image_with_imagen3 method."""
-        async def _test():
-            prompt = "A futuristic cityscape at night."
-            image_bytes = await self.gemini_api.generate_image_with_imagen3(prompt)
-            
-            # Verify we got an image
-            self.assertIsNotNone(image_bytes)
-            
-            # Save the image to a file for manual inspection
-            with open("test_generated_imagen3.png", "wb") as f:
-                f.write(image_bytes)
-            
-            logger.info("Generated imagen3 image saved to test_generated_imagen3.png")
-            
-            return True
-            
-        # Run the async test
-        loop = asyncio.get_event_loop()
-        result = loop.run_until_complete(_test())
-        self.assertTrue(result)
-
     def test_call_with_circuit_breaker(self):
         """Test the circuit breaker functionality."""
         async def _test():
