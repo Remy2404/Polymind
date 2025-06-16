@@ -199,9 +199,11 @@ class TextHandler:
             self.logger.error(f"Error processing text message: {str(e)}")
             if "thinking_message" in locals() and thinking_message is not None:
                 await thinking_message.delete()
-            await update.message.reply_text(
-                "Sorry, I encountered an error\\. Please try again later\\.",
-                parse_mode="MarkdownV2",
+            
+            # Use safe message sending with automatic fallback
+            await self.response_formatter.safe_send_message(
+                update.message,
+                "Sorry, I encountered an error. Please try again later."
             )
 
     async def _handle_edited_message(self, update, context):
@@ -466,19 +468,24 @@ class TextHandler:
                                 + "\n\n".join(formatted_results)
                             )
 
-                            # Split and send
+                            # Send each chunk using safe method
                             chunks = await self.response_formatter.split_long_message(
                                 response
                             )
                             for chunk in chunks:
-                                formatted_chunk = await self.response_formatter.format_telegram_markdown(
-                                    chunk
-                                )
-                                await context.bot.send_message(
-                                    chat_id=chat_id,
-                                    text=formatted_chunk,
-                                    parse_mode="MarkdownV2",
-                                    disable_web_page_preview=True,
+                                # Create a mock message object to use with safe_send_message
+                                class MockMessage:
+                                    def __init__(self, bot, chat_id):
+                                        self.bot = bot
+                                        self.chat_id = chat_id
+                                    async def reply_text(self, text, **kwargs):
+                                        return await self.bot.send_message(
+                                            chat_id=self.chat_id, text=text, **kwargs
+                                        )
+                                
+                                mock_message = MockMessage(context.bot, chat_id)
+                                await self.response_formatter.safe_send_message(
+                                    mock_message, chunk
                                 )
                         else:
                             await context.bot.send_message(
@@ -560,18 +567,11 @@ class TextHandler:
                         formatted_results
                     )
 
-                    # Split and send
+                    # Split and send using safe_send_message
                     chunks = await self.response_formatter.split_long_message(response)
                     for chunk in chunks:
-                        formatted_chunk = (
-                            await self.response_formatter.format_telegram_markdown(
-                                chunk
-                            )
-                        )
-                        await update.message.reply_text(
-                            formatted_chunk,
-                            parse_mode="MarkdownV2",
-                            disable_web_page_preview=True,
+                        await self.response_formatter.safe_send_message(
+                            update.message, chunk
                         )
 
                     # Update user stats
@@ -628,11 +628,9 @@ class TextHandler:
                 text_to_send
             )
 
-            # Send the response
-            await update.message.reply_text(
-                formatted_response,
-                parse_mode="MarkdownV2",
-                disable_web_page_preview=True,
+            # Send the response using safe_send_message
+            await self.response_formatter.safe_send_message(
+                update.message, text_to_send
             )
 
             # Save to conversation history
@@ -645,7 +643,8 @@ class TextHandler:
             if self.user_data_manager:
                 await self.user_data_manager.update_stats(user_id, **{media_type: True})
         else:
-            await update.message.reply_text(
+            await self.response_formatter.safe_send_message(
+                update.message,
                 "Sorry, I couldn't analyze the content you provided. Please try again."
             )
 
@@ -773,11 +772,47 @@ class TextHandler:
         )
         max_tokens = 8000 if is_long_form_request else 4000
 
-        # Get model timeout
-        model_timeout = 60.0
+        # Get model timeout - increase for complex questions
+        base_timeout = 60.0
+        
+        # Detect if this is a complex question that needs more time
+        complex_indicators = [
+            "compare", "comparison", "vs", "versus", "difference", "differences",
+            "analyze", "analysis", "explain", "detailed", "comprehensive",
+            "performance", "benchmark", "pros and cons", "advantages", "disadvantages"
+        ]
+        
+        is_complex_question = any(
+            indicator in message_text.lower() for indicator in complex_indicators
+        )
+        
+        # Set timeout based on question complexity and model type
+        if is_complex_question:
+            # DeepSeek R1 needs more time for reasoning
+            if "deepseek" in preferred_model.lower():
+                model_timeout = 240.0  # 4 minutes for DeepSeek complex questions
+            else:
+                model_timeout = 120.0  # 2 minutes for other models
+        elif is_long_form_request:
+            if "deepseek" in preferred_model.lower():
+                model_timeout = 180.0  # 3 minutes for DeepSeek long-form
+            else:
+                model_timeout = 90.0   # 1.5 minutes for other models
+        else:
+            if "deepseek" in preferred_model.lower():
+                model_timeout = 120.0  # 2 minutes for DeepSeek regular questions
+            else:
+                model_timeout = base_timeout  # 60 seconds for other models
+            
         if self.user_model_manager:
             model_config = self.user_model_manager.get_user_model_config(user_id)
             model_timeout = model_config.timeout_seconds if model_config else 60.0
+
+        # Log timeout configuration for debugging
+        self.logger.info(
+            f"Using timeout {model_timeout}s for user {user_id} with model {preferred_model} "
+            f"(complex: {is_complex_question}, long_form: {is_long_form_request})"
+        )
 
         try:
             # Get the model handler
@@ -788,17 +823,38 @@ class TextHandler:
                 deepseek_api=self.deepseek_api,
             )
 
-            # Generate response
-            response = await asyncio.wait_for(
-                model_handler.generate_response(
-                    prompt=enhanced_prompt_with_guidelines,
-                    context=history_context,
-                    temperature=0.7,
-                    max_tokens=max_tokens,
-                    quoted_message=quoted_text,
-                ),
-                timeout=model_timeout,
-            )
+            # For complex questions with longer timeouts, use progress handling to prevent apparent timeouts
+            if is_complex_question and model_timeout > 120:
+                # Delete thinking message before starting progress updates
+                if thinking_message is not None:
+                    try:
+                        await thinking_message.delete()
+                        thinking_message = None
+                    except Exception:
+                        pass
+                
+                response = await self._handle_complex_question_with_progress(
+                    message,
+                    model_handler,
+                    enhanced_prompt_with_guidelines,
+                    history_context,
+                    max_tokens,
+                    quoted_text,
+                    model_timeout
+                )
+            else:
+                # Generate response normally
+                response = await asyncio.wait_for(
+                    model_handler.generate_response(
+                        prompt=enhanced_prompt_with_guidelines,
+                        context=history_context,
+                        temperature=0.7,
+                        max_tokens=max_tokens,
+                        quoted_message=quoted_text,
+                        timeout=model_timeout,
+                    ),
+                    timeout=model_timeout,
+                )
 
             # Log response length and first part for debugging
             if response:
@@ -822,9 +878,9 @@ class TextHandler:
                     pass
 
             if response is None:
-                await message.reply_text(
-                    "Sorry, I couldn't generate a response\\. Please try rephrasing your message\\.",
-                    parse_mode="MarkdownV2",
+                await self.response_formatter.safe_send_message(
+                    message,
+                    "Sorry, I couldn't generate a response. Please try rephrasing your message."
                 )
                 return
 
@@ -860,17 +916,42 @@ class TextHandler:
         except asyncio.TimeoutError:
             if thinking_message is not None:
                 await thinking_message.delete()
-            await message.reply_text(
-                "Sorry, the request took too long to process. Please try again later.",
-                parse_mode="MarkdownV2",
+            
+            # Provide more specific timeout messages based on model and question type
+            if "deepseek" in preferred_model.lower():
+                if is_complex_question:
+                    timeout_message = f"⏱️ DeepSeek R1 is thoroughly analyzing your complex question but needs more time. This usually means a very detailed response is being prepared. Please try again or break the question into smaller parts."
+                else:
+                    timeout_message = f"⏱️ DeepSeek R1 timed out. The model may be experiencing high load. Please try again in a moment."
+            else:
+                if is_complex_question:
+                    timeout_message = "⏱️ Your complex question required more processing time than available. For detailed comparisons and analyses, try breaking it into smaller parts or asking again."
+                elif is_long_form_request:
+                    timeout_message = "⏱️ Your long-form request timed out. Try asking for a shorter response or break it into multiple questions."
+                else:
+                    timeout_message = "⏱️ Sorry, the request took too long to process. Please try again or rephrase your question."
+            
+            await self.response_formatter.safe_send_message(
+                message,
+                timeout_message
             )
         except Exception as e:
             self.logger.error(f"Error generating response: {e}")
             if thinking_message is not None:
                 await thinking_message.delete()
-            await message.reply_text(
-                "Sorry, there was an error processing your request. Please try again later.",
-                parse_mode="MarkdownV2",
+            
+            # Provide context-aware error messages
+            if "timeout" in str(e).lower() or isinstance(e, asyncio.TimeoutError):
+                if is_complex_question:
+                    error_message = "⏱️ Your detailed question needed more time than available. Try:\n• Breaking it into simpler parts\n• Asking for a shorter comparison\n• Focusing on specific aspects"
+                else:
+                    error_message = "⏱️ Processing took too long. Please try rephrasing your question or try again in a moment."
+            else:
+                error_message = "❌ Sorry, there was an error processing your request. Please try again or rephrase your question."
+            
+            await self.response_formatter.safe_send_message(
+                message,
+                error_message
             )
 
     async def _send_formatted_response(
@@ -896,7 +977,7 @@ class TextHandler:
             quoted_text, quoted_message_id
         )
 
-        # Send each chunk
+        # Send each chunk using safe_send_message for better error handling
         for i, chunk in enumerate(message_chunks):
             try:
                 # Format first chunk with model indicator
@@ -907,84 +988,39 @@ class TextHandler:
                 else:
                     text_to_send = chunk
 
-                # Format with markdown
-                formatted_chunk = (
-                    await self.response_formatter.format_telegram_markdown(text_to_send)
-                )
-
-                # Send the message with appropriate reply if needed
+                # Use safe_send_message for automatic fallback handling
                 if i == 0 and is_reply:
-                    last_message = await message.reply_text(
-                        formatted_chunk,
-                        parse_mode="MarkdownV2",
-                        disable_web_page_preview=True,
-                        reply_to_message_id=quoted_message_id,
+                    last_message = await self.response_formatter.safe_send_message(
+                        message, text_to_send, reply_to_message_id=quoted_message_id
                     )
                 elif i == 0:
-                    last_message = await message.reply_text(
-                        formatted_chunk,
-                        parse_mode="MarkdownV2",
-                        disable_web_page_preview=True,
+                    last_message = await self.response_formatter.safe_send_message(
+                        message, text_to_send
                     )
                 else:
-                    last_message = await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text=formatted_chunk,
-                        parse_mode="MarkdownV2",
-                        disable_web_page_preview=True,
+                    # For subsequent messages, create a mock message object
+                    class MockMessage:
+                        def __init__(self, bot, chat_id):
+                            self.bot = bot
+                            self.chat_id = chat_id
+                        
+                        async def reply_text(self, text, **kwargs):
+                            return await self.bot.send_message(
+                                chat_id=self.chat_id, text=text, **kwargs
+                            )
+                    
+                    mock_message = MockMessage(context.bot, update.effective_chat.id)
+                    last_message = await self.response_formatter.safe_send_message(
+                        mock_message, text_to_send
                     )
-                sent_messages.append(last_message)
-            except Exception as formatting_error:
-                # Log the error with the problematic text
-                self.logger.error(
-                    f"Formatting error: {str(formatting_error)}\nProblematic text: {text_to_send[:100]}..."
-                )
-
-                try:
-                    # Try with simpler formatting - strip problematic characters
-                    simplified_text = text_to_send
-                    
-                    # Remove problematic characters more selectively
-                    problematic_chars = ["*", "_", "`", "[", "]", "~", ">"]
-                    for char in problematic_chars:
-                        simplified_text = simplified_text.replace(char, "")
-                    
-                    # Clean up extra spaces
-                    simplified_text = " ".join(simplified_text.split())
-
-                    if i == 0 and is_reply:
-                        last_message = await message.reply_text(
-                            simplified_text,
-                            parse_mode=None,
-                            disable_web_page_preview=True,
-                            reply_to_message_id=quoted_message_id,
-                        )
-                    elif i == 0:
-                        last_message = await message.reply_text(
-                            simplified_text,
-                            parse_mode=None,
-                            disable_web_page_preview=True,
-                        )
-                    else:
-                        last_message = await context.bot.send_message(
-                            chat_id=update.effective_chat.id,
-                            text=simplified_text,
-                            parse_mode=None,
-                            disable_web_page_preview=True,
-                        )
+                
+                if last_message:
                     sent_messages.append(last_message)
-                except Exception as final_error:
-                    # Last resort fallback - send a generic message
-                    self.logger.error(f"Final fallback failed: {str(final_error)}")
-                    fallback_text = "Sorry, I had trouble formatting the response. Please try again."
-
-                    if i == 0:
-                        last_message = await message.reply_text(fallback_text)
-                    else:
-                        last_message = await context.bot.send_message(
-                            chat_id=update.effective_chat.id, text=fallback_text
-                        )
-                    sent_messages.append(last_message)
+                    
+            except Exception as final_error:
+                self.logger.error(f"Failed to send message chunk {i}: {str(final_error)}")
+                # Continue with next chunk instead of failing completely
+                continue
 
         # Store message IDs for future editing
         if sent_messages:
@@ -1058,3 +1094,94 @@ class TextHandler:
         except Exception as e:
             self.logger.error(f"Error loading user context: {e}")
             return ""
+
+    async def _handle_complex_question_with_progress(
+        self, 
+        message, 
+        model_handler, 
+        enhanced_prompt_with_guidelines, 
+        history_context, 
+        max_tokens, 
+        quoted_text, 
+        timeout_seconds
+    ):
+        """Handle complex questions with progress updates to prevent timeout appearance"""
+        progress_messages = [
+            "🔍 Analyzing your complex question...",
+            "🧠 Processing detailed comparison...", 
+            "📊 Gathering comprehensive information...",
+            "✍️ Formulating detailed response..."
+        ]
+        
+        progress_msg = None
+        progress_task = None
+        
+        async def update_progress():
+            """Update progress messages periodically"""
+            nonlocal progress_msg
+            try:
+                progress_msg = await message.reply_text(progress_messages[0])
+                
+                # Update progress every 45 seconds
+                for i, msg in enumerate(progress_messages[1:], 1):
+                    await asyncio.sleep(45)
+                    try:
+                        await progress_msg.edit_text(msg)
+                    except:
+                        pass
+                        
+            except asyncio.CancelledError:
+                # Progress task was cancelled, clean up
+                if progress_msg:
+                    try:
+                        await progress_msg.delete()
+                    except:
+                        pass
+                raise
+        
+        try:
+            # Start progress updates
+            progress_task = asyncio.create_task(update_progress())
+            
+            # Start the actual API request
+            response = await model_handler.generate_response(
+                prompt=enhanced_prompt_with_guidelines,
+                context=history_context,
+                temperature=0.7,
+                max_tokens=max_tokens,
+                quoted_message=quoted_text,
+                timeout=timeout_seconds,
+            )
+            
+            # Cancel progress updates and clean up
+            if progress_task:
+                progress_task.cancel()
+                try:
+                    await progress_task
+                except asyncio.CancelledError:
+                    pass
+            
+            if progress_msg:
+                try:
+                    await progress_msg.delete()
+                except:
+                    pass
+            
+            return response
+            
+        except Exception as e:
+            # Cancel progress updates
+            if progress_task:
+                progress_task.cancel()
+                try:
+                    await progress_task
+                except asyncio.CancelledError:
+                    pass
+            
+            if progress_msg:
+                try:
+                    await progress_msg.delete()
+                except:
+                    pass
+            
+            raise e

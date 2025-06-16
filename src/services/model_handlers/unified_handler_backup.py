@@ -104,7 +104,7 @@ class UnifiedModelHandler(ModelHandler):
         temperature: float = 0.7,
         max_tokens: int = 4000,
         quoted_message: Optional[str] = None,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ) -> str:
         """Generate a response using the appropriate API."""
         try:
@@ -119,7 +119,7 @@ class UnifiedModelHandler(ModelHandler):
                 )
             elif self.provider == "openrouter":
                 return await self._handle_openrouter_request(
-                    prompt, context, temperature, max_tokens, timeout
+                    prompt, context, temperature, max_tokens
                 )
             elif self.provider == "deepseek":
                 return await self._handle_deepseek_request(
@@ -155,7 +155,6 @@ class UnifiedModelHandler(ModelHandler):
         context: Optional[List[Dict[str, Any]]],
         temperature: float,
         max_tokens: int,
-        timeout: float = 60.0,
     ) -> str:
         """Handle OpenRouter API request."""
         model_key = self.openrouter_model_key or self.model_id
@@ -165,7 +164,6 @@ class UnifiedModelHandler(ModelHandler):
             context=context,
             temperature=temperature,
             max_tokens=max_tokens,
-            timeout=timeout,
         )
 
     async def _handle_deepseek_request(
@@ -186,9 +184,7 @@ class UnifiedModelHandler(ModelHandler):
         # Add context if available
         if context:
             for msg in context:
-                messages.append(msg)
-        
-        # Add current prompt
+                messages.append(msg)  # Add current prompt
         messages.append({"role": "user", "content": prompt})
 
         return await self.api_instance.generate_text(

@@ -26,15 +26,18 @@ class OpenRouterAPI:
 
         if not OPENROUTER_API_KEY:
             raise ValueError("OPENROUTER_API_KEY not found or empty")
-
+            
         self.api_url = "https://openrouter.ai/api/v1/chat/completions"
         self.headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
-        }  # Available models - Free models from OpenRouter
+        }
+        
+        # Available models - Free models from OpenRouter
         self.available_models = {
             # DeepSeek Models (Free)
             "deepseek-r1-0528-qwen3-8b": "deepseek/deepseek-r1-0528-qwen3-8b:free",
+            "deepseek-r1-0528": "deepseek/deepseek-r1-0528:free",
             "deepseek-r1-zero": "deepseek/deepseek-r1-zero:free",
             "deepseek-prover-v2": "deepseek/deepseek-prover-v2:free",
             "deepseek-v3-base": "deepseek/deepseek-v3-base:free",
@@ -130,6 +133,7 @@ class OpenRouterAPI:
         model: str = "llama4_maverick",
         temperature: float = 0.7,
         max_tokens: int = 263840,
+        timeout: float = 300.0,
     ) -> Optional[str]:
         """Generate a text response using the OpenRouter API."""
         await self.rate_limiter.acquire()
@@ -209,11 +213,9 @@ class OpenRouterAPI:
 
             self.logger.info(
                 f"Sending request to OpenRouter API with model {model} (mapped to {openrouter_model})"
-            )
-
-            # Send the request
+            )            # Send the request
             async with session.post(
-                self.api_url, headers=self.headers, json=payload, timeout=60.0
+                self.api_url, headers=self.headers, json=payload, timeout=timeout
             ) as response:
                 response.raise_for_status()
                 data = await response.json()

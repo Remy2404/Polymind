@@ -288,12 +288,11 @@ class MessageHandlers:
                 # Send the analysis response
                 if response:
                     # Format text for Telegram and prefix with an image analysis indicator
-                    formatted_text = await self.response_formatter.format_telegram_markdown(response)
-                    formatted_text = f"🖼️ *Image Analysis*:\n\n{formatted_text}"
-                    # Split into manageable chunks
+                    formatted_text = f"🖼️ *Image Analysis*:\n\n{response}"
+                    # Split into manageable chunks and use safe_send_message
                     response_chunks = await self.response_formatter.split_long_message(formatted_text)
                     for chunk in response_chunks:
-                        await self._safe_reply(update.message, chunk, parse_mode="Markdown")
+                        await self.response_formatter.safe_send_message(update.message, chunk)
 
                     # Save the image interaction to memory for future reference with enhanced metadata
                     try:
@@ -498,16 +497,16 @@ class MessageHandlers:
                 else f"🎤 *Transcription*: \n{text}"
             )
 
-            # Use safe_reply to handle the flood control issue
+            # Use safe_send_message for better error handling
             try:
-                transcript_message = await self._safe_reply(
-                    update.message, transcript_text, parse_mode="Markdown"
+                transcript_message = await self.response_formatter.safe_send_message(
+                    update.message, transcript_text
                 )
             except Exception as reply_error:
                 self.logger.error(
                     f"Error sending transcript message: {str(reply_error)}"
                 )
-                # Try without markdown
+                # Continue with processing since this isn't critical
                 transcript_message = await update.message.reply_text(
                     f"🎤 Transcription: \n{text}"
                 )
@@ -730,54 +729,6 @@ class MessageHandlers:
             except Exception as reply_error:
                 self.logger.error(f"Failed to send error message: {str(reply_error)}")
 
-    async def _safe_reply(
-        self, message, text, parse_mode=None, retry_delay=5, max_retries=3
-    ) -> None:
-        """Safely reply to a message with built-in flood control handling"""
-        for attempt in range(max_retries):
-            try:
-                return await message.reply_text(text, parse_mode=parse_mode)
-            except Exception as e:
-                error_str = str(e).lower()
-                if "flood" in error_str and "retry" in error_str:
-                    # Parse retry time from error message like "Flood control exceeded. Retry in 134 seconds"
-                    retry_seconds = 5  # Default retry time
-                    try:
-                        retry_match = re.search(r"retry in (\d+)", error_str)
-                        if retry_match:
-                            retry_seconds = int(retry_match.group(1))
-                            # Cap the retry time to avoid excessive waits
-                            retry_seconds = min(retry_seconds, 10)
-                    except:
-                        pass
-
-                    self.logger.warning(
-                        f"Hit flood control, waiting {retry_seconds} seconds"
-                    )
-                    # Wait the required time plus a small buffer
-                    await asyncio.sleep(retry_seconds + 1)
-                    continue
-                elif attempt < max_retries - 1:
-                    # For other errors, retry with a fixed delay
-                    await asyncio.sleep(retry_delay)
-                    continue
-                else:
-                    # For the last attempt, try without parse_mode
-                    if parse_mode and attempt == max_retries - 1:
-                        return await message.reply_text(text, parse_mode=None)
-                    raise
-
-        # Fallback - if all retries failed, try one last time without any formatting
-        try:
-            return await message.reply_text(
-                text.replace("*", "").replace("_", "").replace("`", "")
-            )
-        except Exception as last_error:
-            self.logger.error(
-                f"Failed to send message after all retries: {str(last_error)}"
-            )
-            return None
-
     async def _handle_document_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
@@ -796,13 +747,9 @@ class MessageHandlers:
                 prompt="Analyze this document.",
             )
 
-            formatted_response = await self.response_formatter.format_telegram_markdown(
-                response
-            )
-            await update.message.reply_text(
-                formatted_response,
-                parse_mode="MarkdownV2",
-                disable_web_page_preview=True,
+            # Send response using safe_send_message
+            await self.response_formatter.safe_send_message(
+                update.message, response
             )
 
             self.user_data_manager.update_stats(user_id, document=True)
@@ -888,10 +835,6 @@ class MessageHandlers:
                 )
                 document_id = response.get("document_id", "Unknown")
 
-                # Escape Markdown special characters
-                response_text = self._escape_markdown(response_text)
-                document_id = self._escape_markdown(document_id)
-
                 # Ensure the response is user-friendly
                 formatted_response = (
                     f"**Document Analysis Completed**\n\n"
@@ -899,11 +842,10 @@ class MessageHandlers:
                     f"**Document ID:** {document_id}"
                 )
 
-                # Send the formatted response to the user
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=formatted_response,
-                    parse_mode="Markdown",
+                # Send the formatted response to the user using safe_send_message
+                await self.response_formatter.safe_send_message(
+                    update.message,
+                    formatted_response,
                     disable_web_page_preview=True,
                 )
 
@@ -959,20 +901,6 @@ class MessageHandlers:
             await update.message.reply_text(
                 "Sorry, I couldn't process your document. Please ensure it's in a supported format."
             )
-
-    def _escape_markdown(self, text: str) -> str:
-        """Escape special characters for Telegram Markdown."""
-        if not isinstance(text, str):
-            text = str(text)
-            
-        escape_chars = [
-            "_", "*", "[", "]", "(", ")", "~", "`", ">", "#", 
-            "+", "-", "=", "|", "{", "}", ".", "!"
-        ]
-        
-        for char in escape_chars:
-            text = text.replace(char, f"\\{char}")
-        return text
 
     async def _error_handler(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
