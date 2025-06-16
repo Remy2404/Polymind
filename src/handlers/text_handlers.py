@@ -20,6 +20,7 @@ from src.services.memory_context.conversation_manager import ConversationManager
 from .text_processing.intent_detector import IntentDetector
 from .text_processing.media_analyzer import MediaAnalyzer
 from .text_processing.utilities import MediaUtilities
+from .model_fallback_handler import ModelFallbackHandler
 
 
 class TextHandler:
@@ -59,6 +60,9 @@ class TextHandler:
         # Initialize core components only
         self.intent_detector = IntentDetector()
         self.media_analyzer = MediaAnalyzer(gemini_api)
+        
+        # Initialize model fallback handler
+        self.model_fallback_handler = ModelFallbackHandler(self.response_formatter)
         
         # Optional components (will be set externally if needed)
         self.user_model_manager = None
@@ -790,17 +794,17 @@ class TextHandler:
         if is_complex_question:
             # DeepSeek R1 needs more time for reasoning
             if "deepseek" in preferred_model.lower():
-                model_timeout = 240.0  # 4 minutes for DeepSeek complex questions
+                model_timeout = 300.0  # 5 minutes for DeepSeek complex questions
             else:
                 model_timeout = 120.0  # 2 minutes for other models
         elif is_long_form_request:
             if "deepseek" in preferred_model.lower():
-                model_timeout = 180.0  # 3 minutes for DeepSeek long-form
+                model_timeout = 240.0  # 4 minutes for DeepSeek long-form
             else:
                 model_timeout = 90.0   # 1.5 minutes for other models
         else:
             if "deepseek" in preferred_model.lower():
-                model_timeout = 120.0  # 2 minutes for DeepSeek regular questions
+                model_timeout = 180.0  # 3 minutes for DeepSeek regular questions
             else:
                 model_timeout = base_timeout  # 60 seconds for other models
             
@@ -815,46 +819,21 @@ class TextHandler:
         )
 
         try:
-            # Get the model handler
-            model_handler = ModelHandlerFactory.get_model_handler(
-                preferred_model,
+            # Use automatic fallback system to generate response
+            response, actual_model_used = await self.model_fallback_handler.attempt_with_fallback(
+                primary_model=preferred_model,
+                model_handler_factory=ModelHandlerFactory,
+                enhanced_prompt=enhanced_prompt_with_guidelines,
+                history_context=history_context,
+                max_tokens=max_tokens,
+                model_timeout=model_timeout,
+                message=message,
+                is_complex_question=is_complex_question,
+                quoted_text=quoted_text,
                 gemini_api=self.gemini_api,
                 openrouter_api=self.openrouter_api,
-                deepseek_api=self.deepseek_api,
+                deepseek_api=self.deepseek_api
             )
-
-            # For complex questions with longer timeouts, use progress handling to prevent apparent timeouts
-            if is_complex_question and model_timeout > 120:
-                # Delete thinking message before starting progress updates
-                if thinking_message is not None:
-                    try:
-                        await thinking_message.delete()
-                        thinking_message = None
-                    except Exception:
-                        pass
-                
-                response = await self._handle_complex_question_with_progress(
-                    message,
-                    model_handler,
-                    enhanced_prompt_with_guidelines,
-                    history_context,
-                    max_tokens,
-                    quoted_text,
-                    model_timeout
-                )
-            else:
-                # Generate response normally
-                response = await asyncio.wait_for(
-                    model_handler.generate_response(
-                        prompt=enhanced_prompt_with_guidelines,
-                        context=history_context,
-                        temperature=0.7,
-                        max_tokens=max_tokens,
-                        quoted_message=quoted_text,
-                        timeout=model_timeout,
-                    ),
-                    timeout=model_timeout,
-                )
 
             # Log response length and first part for debugging
             if response:
@@ -863,11 +842,11 @@ class TextHandler:
                     response[:200] + "..." if len(response) > 200 else response
                 )
                 self.logger.info(
-                    f"Generated response length: {response_length} characters"
+                    f"Generated response length: {response_length} characters using model: {actual_model_used}"
                 )
                 self.logger.debug(f"Response preview: {response_preview}")
             else:
-                self.logger.warning("No response generated from model")
+                self.logger.warning("No response generated from fallback system")
 
             # Delete thinking message
             if thinking_message is not None:
@@ -884,13 +863,21 @@ class TextHandler:
                 )
                 return
 
+            # Get model handler for the actual model used (for model indicator)
+            actual_model_handler = ModelHandlerFactory.get_model_handler(
+                actual_model_used,
+                gemini_api=self.gemini_api,
+                openrouter_api=self.openrouter_api,
+                deepseek_api=self.deepseek_api,
+            )
+
             # Send the response
             await self._send_formatted_response(
                 update,
                 context,
                 message,
                 response,
-                model_handler.get_model_indicator(),
+                actual_model_handler.get_model_indicator(),
                 quoted_text,
                 quoted_message_id,
             )
@@ -904,11 +891,11 @@ class TextHandler:
 
                 if quoted_text:
                     await self.conversation_manager.add_quoted_message_context(
-                        user_id, quoted_text, message_text, response, preferred_model
+                        user_id, quoted_text, message_text, response, actual_model_used
                     )
                 else:
                     await self.conversation_manager.save_message_pair(
-                        user_id, message_text, response, preferred_model
+                        user_id, message_text, response, actual_model_used
                     )
 
             telegram_logger.log_message("Text response sent successfully", user_id)
@@ -1095,93 +1082,3 @@ class TextHandler:
             self.logger.error(f"Error loading user context: {e}")
             return ""
 
-    async def _handle_complex_question_with_progress(
-        self, 
-        message, 
-        model_handler, 
-        enhanced_prompt_with_guidelines, 
-        history_context, 
-        max_tokens, 
-        quoted_text, 
-        timeout_seconds
-    ):
-        """Handle complex questions with progress updates to prevent timeout appearance"""
-        progress_messages = [
-            "🔍 Analyzing your complex question...",
-            "🧠 Processing detailed comparison...", 
-            "📊 Gathering comprehensive information...",
-            "✍️ Formulating detailed response..."
-        ]
-        
-        progress_msg = None
-        progress_task = None
-        
-        async def update_progress():
-            """Update progress messages periodically"""
-            nonlocal progress_msg
-            try:
-                progress_msg = await message.reply_text(progress_messages[0])
-                
-                # Update progress every 45 seconds
-                for i, msg in enumerate(progress_messages[1:], 1):
-                    await asyncio.sleep(45)
-                    try:
-                        await progress_msg.edit_text(msg)
-                    except:
-                        pass
-                        
-            except asyncio.CancelledError:
-                # Progress task was cancelled, clean up
-                if progress_msg:
-                    try:
-                        await progress_msg.delete()
-                    except:
-                        pass
-                raise
-        
-        try:
-            # Start progress updates
-            progress_task = asyncio.create_task(update_progress())
-            
-            # Start the actual API request
-            response = await model_handler.generate_response(
-                prompt=enhanced_prompt_with_guidelines,
-                context=history_context,
-                temperature=0.7,
-                max_tokens=max_tokens,
-                quoted_message=quoted_text,
-                timeout=timeout_seconds,
-            )
-            
-            # Cancel progress updates and clean up
-            if progress_task:
-                progress_task.cancel()
-                try:
-                    await progress_task
-                except asyncio.CancelledError:
-                    pass
-            
-            if progress_msg:
-                try:
-                    await progress_msg.delete()
-                except:
-                    pass
-            
-            return response
-            
-        except Exception as e:
-            # Cancel progress updates
-            if progress_task:
-                progress_task.cancel()
-                try:
-                    await progress_task
-                except asyncio.CancelledError:
-                    pass
-            
-            if progress_msg:
-                try:
-                    await progress_msg.delete()
-                except:
-                    pass
-            
-            raise e
