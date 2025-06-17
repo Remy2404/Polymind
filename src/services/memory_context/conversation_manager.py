@@ -359,6 +359,75 @@ class ConversationManager:
 
         return context
 
+    async def add_quoted_message_context(
+        self,
+        user_id: int,
+        quoted_text: str,
+        user_message: str,
+        assistant_message: str,
+        model_id: Optional[str] = None,
+        group_id: Optional[str] = None,
+        message_context: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Save a message pair with quoted context for reply functionality."""
+
+        # Create enhanced context that includes the quoted message
+        enhanced_context = message_context or {}
+        enhanced_context.update(
+            {
+                "quoted_text": quoted_text,
+                "message_type": "reply",
+                "has_context": True,
+            }
+        )
+
+        # Build enhanced user message that includes quote context
+        enhanced_user_message = (
+            f'[Replying to: "{quoted_text[:100]}{"..." if len(quoted_text) > 100 else ""}"]\n\n'
+            f"{user_message}"
+        )
+
+        # Calculate importance (quoted messages are often more important)
+        importance = await self._calculate_message_importance(
+            enhanced_user_message, assistant_message
+        )
+        # Boost importance for quoted messages as they show context awareness
+        importance = min(1.0, importance + 0.1)
+
+        # Save to individual model history with enhanced context
+        await self.model_history_manager.save_message_pair(
+            user_id, enhanced_user_message, assistant_message, model_id
+        )
+
+        # Enhanced group memory handling
+        if group_id:
+            await self._save_group_message_pair(
+                group_id,
+                user_id,
+                enhanced_user_message,
+                assistant_message,
+                importance,
+                enhanced_context,
+            )
+        else:
+            # Save to individual conversation memory with enhanced metadata
+            conversation_id = f"user_{user_id}"
+
+            await self.memory_manager.add_user_message(
+                conversation_id,
+                enhanced_user_message,
+                str(user_id),
+                importance=importance,
+                message_context=enhanced_context,
+            )
+
+            await self.memory_manager.add_assistant_message(
+                conversation_id,
+                assistant_message,
+                importance=importance,
+                related_user_message=enhanced_user_message,
+            )
+
     # Private helper methods for enhanced functionality
 
     async def _get_group_conversation_history(

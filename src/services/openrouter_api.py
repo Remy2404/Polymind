@@ -1,9 +1,10 @@
 import os
 import json
 import aiohttp
+import asyncio
 import logging
 import traceback
-from typing import Dict, Any, List, Optional
+from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from services.rate_limiter import RateLimiter, rate_limit
 from src.utils.log.telegramlog import telegram_logger
@@ -123,14 +124,12 @@ class OpenRouterAPI:
         if self.session and not self.session.closed:
             await self.session.close()
             self.logger.info("Closed OpenRouter API aiohttp session")
-            self.session = None
-
-    @rate_limit
+            self.session = None    @rate_limit
     async def generate_response(
         self,
         prompt: str,
         context: List[Dict] = None,
-        model: str = "llama4_maverick",
+        model: str = "deepseek-r1-zero",
         temperature: float = 0.7,
         max_tokens: int = 263840,
         timeout: float = 300.0,
@@ -257,19 +256,28 @@ class OpenRouterAPI:
                 )
             return f"OpenRouter API error: {error_message}"
 
+        except asyncio.TimeoutError as e:
+            self.api_failures += 1
+            self.logger.error(f"OpenRouter API timeout for model {model}: {str(e)}")
+            # For DeepSeek models, provide a specific timeout message that triggers fallback
+            if "deepseek" in model.lower():
+                raise Exception(f"DeepSeek R1 timed out. The model may be experiencing high load.")
+            else:
+                raise Exception(f"Model {model} timed out. Please try again later.")
+
         except aiohttp.ClientError as e:
             self.api_failures += 1
             self.logger.error(f"OpenRouter API connection error: {str(e)}")
             self.logger.error(traceback.format_exc())
-            return "OpenRouter API connection error. Please try again later."
+            raise Exception(f"OpenRouter API connection error: {str(e)}")
 
         except json.JSONDecodeError as e:
             self.api_failures += 1
             self.logger.error(f"OpenRouter API JSON decode error: {str(e)}")
-            return "Could not parse OpenRouter API response."
+            raise Exception(f"Could not parse OpenRouter API response: {str(e)}")
 
         except Exception as e:
             self.api_failures += 1
             self.logger.error(f"OpenRouter API error: {str(e)}")
             self.logger.error(traceback.format_exc())
-            return f"Unexpected error when calling OpenRouter API: {str(e)}"
+            raise Exception(f"Unexpected error when calling OpenRouter API: {str(e)}")

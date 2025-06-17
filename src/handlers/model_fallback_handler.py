@@ -29,10 +29,9 @@ class ModelFallbackHandler:
         
         # Fallback model mapping - defines which models to try when primary fails
         self.fallback_map = {
-            # DeepSeek R1 variants fallback chain
+            # DeepSeek R1 variants fallback chain - prioritize more stable models
             "deepseek-r1-0528": [
                 "deepseek-r1-zero", 
-                "deepseek-r1", 
                 "deepseek-r1-distill-llama-70b", 
                 "deepseek-chat-v3-0324",
                 "llama4_maverick",
@@ -43,14 +42,15 @@ class ModelFallbackHandler:
                 "deepseek-r1-zero", 
                 "deepseek-r1-distill-llama-70b", 
                 "deepseek-chat-v3-0324",
-                "llama4_maverick"
+                "qwen3-32b-a3b",
+                "mistral-small-3-1"
             ],
             "deepseek-r1-zero": [
-                "deepseek-r1-0528", 
-                "deepseek-r1", 
                 "deepseek-r1-distill-llama-70b", 
                 "deepseek-chat-v3-0324",
-                "llama4_maverick"
+                "qwen3-32b-a3b",
+                "mistral-small-3-1", 
+                "llama-3.1-8b"
             ],
             "deepseek-r1-distill-llama-70b": [
                 "deepseek-r1-0528", 
@@ -97,7 +97,7 @@ class ModelFallbackHandler:
         """
         return self.fallback_map.get(
             primary_model, 
-            ["deepseek-r1-0528", "llama4_maverick", "gemini"]
+            ["deepseek-r1-zero", "qwen3-32b-a3b", "mistral-small-3-1", "llama-3.1-8b", "gemini"]
         )
     
     async def attempt_with_fallback(
