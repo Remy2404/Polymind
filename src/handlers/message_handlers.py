@@ -1,40 +1,16 @@
 # Standard library imports
 import os
 import io
-import re
-import tempfile
 import logging
-import uuid
-import asyncio
-import datetime
 import traceback
-import gc
-import time
-import weakref
-from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Any, Optional, List, Union
-from functools import partial
-
-# Third-party imports
-import speech_recognition as sr
-import aiohttp
-from pydub import AudioSegment
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Update,
-    Message,
-    Document,
 )
 from telegram.constants import ChatAction
-from telegram.ext import MessageHandler, filters, ContextTypes, CallbackContext
-
-# Local imports
-# Local imports
-from src.services.gemini_api import GeminiAPI
+from telegram.ext import MessageHandler, filters, ContextTypes
 from services.multimodal_processor import TelegramMultimodalProcessor
-from src.services.user_data_manager import UserDataManager
-from src.utils.log.telegramlog import TelegramLogger
 from src.handlers.text_handlers import TextHandler
 from src.services.ai_command_router import AICommandRouter
 from src.utils.docgen.document_processor import DocumentProcessor
@@ -42,11 +18,14 @@ from src.utils.docgen.document_processor import DocumentProcessor
 # Import utility classes
 from src.handlers.message_context_handler import MessageContextHandler
 from src.handlers.response_formatter import ResponseFormatter
-from src.services.media.image_processor import ImageProcessor
-from src.services.media.voice_processor import VoiceProcessor
-from src.services.user_preferences_manager import UserPreferencesManager
+from src.services.media.voice_processor import (
+    VoiceProcessor,
+    SpeechEngine,
+    create_voice_processor,
+)
 from src.services.memory_context.conversation_manager import ConversationManager
 from src.services.group_chat.integration import GroupChatIntegration
+from src.services.model_handlers.model_configs import ModelConfigurations, Provider
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +46,7 @@ class MessageHandlers:
         self.telegram_logger = telegram_logger
         self.text_handler = text_handler
         self.logger = logging.getLogger(__name__)
-        
+
         # Initialize multimodal processor
         self.multimodal_processor = TelegramMultimodalProcessor(gemini_api)
         self.deepseek_api = deepseek_api
@@ -76,7 +55,7 @@ class MessageHandlers:
         # Initialize essential utility classes only
         self.context_handler = MessageContextHandler()
         self.response_formatter = ResponseFormatter()
-        
+
         # Initialize document processor
         self.document_processor = DocumentProcessor(gemini_api)
 
@@ -185,25 +164,42 @@ class MessageHandlers:
                     if not is_group_chat or is_mentioned:
                         # IMPORTANT: Use original message_text for intent detection, not enhanced_message_text
                         # This prevents group context from interfering with command detection
-                        should_route = await self.ai_command_router.should_route_message(message_text)
-                        if should_route:
-                            intent, confidence = await self.ai_command_router.detect_intent(message_text)
-                            self.logger.info(f"Routing message to command: {intent.value} (confidence: {confidence:.2f})")
-                            
-                            # Attempt to route the command using original message
-                            command_executed = await self.ai_command_router.route_command(
-                                update, context, intent, message_text
+                        should_route = (
+                            await self.ai_command_router.should_route_message(
+                                message_text
                             )
-                            
+                        )
+                        if should_route:
+                            intent, confidence = (
+                                await self.ai_command_router.detect_intent(message_text)
+                            )
+                            self.logger.info(
+                                f"Routing message to command: {intent.value} (confidence: {confidence:.2f})"
+                            )
+
+                            # Attempt to route the command using original message
+                            command_executed = (
+                                await self.ai_command_router.route_command(
+                                    update, context, intent, message_text
+                                )
+                            )
+
                             if command_executed:
                                 # Command was successfully executed, update stats and return
                                 await self.user_data_manager.update_stats(
-                                    user_id, {"text_messages": 1, "total_messages": 1, "ai_commands": 1}
+                                    user_id,
+                                    {
+                                        "text_messages": 1,
+                                        "total_messages": 1,
+                                        "ai_commands": 1,
+                                    },
                                 )
                                 return
                             else:
                                 # Command routing failed, fall back to normal text processing
-                                self.logger.info("Command routing failed, falling back to normal text processing")
+                                self.logger.info(
+                                    "Command routing failed, falling back to normal text processing"
+                                )
                 except Exception as e:
                     self.logger.error(f"Error in AI command routing: {str(e)}")
                     # Fall back to normal text processing on any error
@@ -266,45 +262,50 @@ class MessageHandlers:
             )
 
             try:
-                # Get conversation context for the user  
+                # Get conversation context for the user
                 context_messages = []
                 try:
                     # Get recent conversation history if available
-                    if hasattr(self, 'conversation_manager'):
-                        context_messages = await self.conversation_manager.get_context(user_id)
+                    if hasattr(self, "conversation_manager"):
+                        context_messages = await self.conversation_manager.get_context(
+                            user_id
+                        )
                 except Exception:
                     pass  # Continue without context if unavailable
 
                 # Process the message with multimodal processor
                 result = await self.multimodal_processor.process_telegram_message(
-                    message=update.message,
-                    context=context_messages
+                    message=update.message, context=context_messages
                 )
 
                 if result.success and result.content:
                     # Format the response
                     formatted_response = await self.response_formatter.format_response(
-                        result.content,
-                        user_id,
-                        model_name="gemini-2.0-flash"
+                        result.content, user_id, model_name="gemini-2.0-flash"
                     )
-                    
+
                     # Delete processing message and send response
                     await processing_message.delete()
                     await update.message.reply_text(
                         formatted_response,
-                        parse_mode="Markdown" if "```" in formatted_response or "*" in formatted_response else None
+                        parse_mode=(
+                            "Markdown"
+                            if "```" in formatted_response or "*" in formatted_response
+                            else None
+                        ),
                     )
-                    
+
                     # Log successful processing
-                    self.telegram_logger.log_message(f"Image processed successfully", user_id)
-                    
+                    self.telegram_logger.log_message(
+                        f"Image processed successfully", user_id
+                    )
+
                 else:
                     # Handle error
                     await processing_message.edit_text(
                         f"❌ Sorry, I couldn't process your image: {result.error or 'Unknown error'}"
                     )
-                    
+
             except Exception as e:
                 self.logger.error(f"Image processing error: {str(e)}")
                 await processing_message.edit_text(
@@ -318,7 +319,7 @@ class MessageHandlers:
     async def _handle_voice_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Handle incoming voice messages, enhanced for Khmer and multilingual support."""
+        """Handle incoming voice messages with enhanced multi-engine support."""
         if not update.message or not update.message.voice:
             self.logger.error("Received update with no voice message")
             return
@@ -333,6 +334,42 @@ class MessageHandlers:
         )
 
         try:
+            # Initialize enhanced voice processor if not already done
+            if not hasattr(self, "voice_processor") or self.voice_processor is None:
+                try:
+                    self.voice_processor = await create_voice_processor(
+                        engine=SpeechEngine.AUTO  # Auto-select best engine
+                    )
+
+                    # Log available engines
+                    info = self.voice_processor.get_engine_info()
+                    available = [
+                        name
+                        for name, avail in info["available_engines"].items()
+                        if avail
+                    ]
+                    self.logger.info(
+                        f"Enhanced voice processor initialized with engines: {available}"
+                    )
+
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to initialize enhanced voice processor: {e}"
+                    )
+                    # Fallback to basic voice processor
+                    self.voice_processor = VoiceProcessor()
+
+            # Initialize preferences manager if not available
+            if (
+                not hasattr(self, "preferences_manager")
+                or self.preferences_manager is None
+            ):
+                from src.services.user_preferences_manager import UserPreferencesManager
+
+                self.preferences_manager = UserPreferencesManager(
+                    self.user_data_manager
+                )
+
             # Get user's language preference using UserPreferencesManager
             user_lang = (
                 await self.preferences_manager.get_user_language_preference(user_id)
@@ -374,12 +411,12 @@ class MessageHandlers:
             processing_text = (
                 "កំពុងដំណើរការសារសំឡេងរបស់អ្នក... សូមរង់ចាំ...\n(Processing your voice message. Please wait...)"
                 if is_khmer
-                else "Processing your voice message. Please wait..."
+                else "🎤 Processing your voice message with enhanced AI recognition..."
             )
 
             status_message = await update.message.reply_text(processing_text)
 
-            # Use VoiceProcessor for downloading and converting voice file
+            # Use enhanced VoiceProcessor for downloading and converting voice file
             voice_file = await context.bot.get_file(update.message.voice.file_id)
             ogg_file_path, wav_file_path = (
                 await self.voice_processor.download_and_convert(
@@ -387,29 +424,56 @@ class MessageHandlers:
                 )
             )
 
-            # Use VoiceProcessor for transcribing the voice file
-            text, recognition_language = await self.voice_processor.transcribe(
-                wav_file_path, lang, is_khmer
-            )
+            # Use enhanced VoiceProcessor for transcribing the voice file with best engine
+            if hasattr(self.voice_processor, "get_best_transcription"):
+                # Use enhanced transcription with multiple engines
+                text, recognition_language, metadata = (
+                    await self.voice_processor.get_best_transcription(
+                        wav_file_path, language=lang, confidence_threshold=0.6
+                    )
+                )
+
+                # Get engine and confidence info
+                engine_used = metadata.get("engine", "unknown")
+                confidence = metadata.get("confidence", 0.0)
+
+                self.logger.info(
+                    f"Enhanced transcription: engine={engine_used}, confidence={confidence:.2f}"
+                )
+
+            else:
+                # Fallback to basic transcription
+                text, recognition_language = await self.voice_processor.transcribe(
+                    wav_file_path, lang, is_khmer
+                )
+                metadata = {"engine": "basic", "confidence": 0.7}
+                engine_used = "basic"
+                confidence = 0.7
 
             if not text:
-                # Language-specific error message
+                # Language-specific error message with helpful tips
                 error_text = (
                     "សូមអភ័យទោស មិនអាចយល់សំឡេងបានទេ។ សូមសាកល្បងម្តងទៀតជាមួយសំឡេងច្បាស់ជាងនេះ។\n\n"
                     "Sorry, I couldn't understand the audio. Please try again with clearer audio."
                     if is_khmer
-                    else "Sorry, I couldn't understand the audio. Please try again with clearer audio."
+                    else "❌ Sorry, I couldn't understand the audio.\n\n💡 **Tips:**\n"
+                    "• Speak clearly and avoid background noise\n"
+                    "• Try speaking in English for better accuracy\n"
+                    "• Send shorter voice messages (under 30 seconds)\n"
+                    "• Make sure you're in a quiet environment"
                 )
 
                 # Update status message instead of deleting
                 try:
-                    await status_message.edit_text(error_text)
+                    await status_message.edit_text(error_text, parse_mode="Markdown")
                 except Exception as edit_error:
                     self.logger.warning(
                         f"Could not edit status message: {str(edit_error)}"
                     )
                     try:
-                        await update.message.reply_text(error_text)
+                        await update.message.reply_text(
+                            error_text, parse_mode="Markdown"
+                        )
                     except:
                         pass
                 return
@@ -426,12 +490,25 @@ class MessageHandlers:
                 except:
                     pass
 
-            # Show the transcribed text to the user using ResponseFormatter
+            # Show the transcribed text to the user using ResponseFormatter with engine info
+            if confidence > 0.8:
+                confidence_emoji = "🟢"  # High confidence
+            elif confidence > 0.6:
+                confidence_emoji = "🟡"  # Medium confidence
+            else:
+                confidence_emoji = "🔴"  # Low confidence
+
             transcript_text = (
                 f"🎤 *បំលែងសំឡេងទៅជាអក្សរ (Transcription)*: \n{text}"
                 if is_khmer
-                else f"🎤 *Transcription*: \n{text}"
+                else f"🎤 **Voice Message Transcribed** {confidence_emoji}\n\n{text}"
             )
+
+            # Add engine info for debugging (optional, can be disabled in production)
+            if confidence > 0 and not is_khmer:
+                transcript_text += (
+                    f"\n\n_Engine: {engine_used.title()}, Confidence: {confidence:.1%}_"
+                )
 
             # Use safe_send_message for better error handling
             try:
@@ -447,7 +524,7 @@ class MessageHandlers:
                     f"🎤 Transcription: \n{text}"
                 )
 
-            # Log the transcribed text
+            # Log the transcribed text with engine info
             self.telegram_logger.log_message(
                 f"Transcribed {recognition_language} text: {text}", user_id
             )
@@ -550,6 +627,12 @@ class MessageHandlers:
                 model_indicator = "💻 DeepCoder"
             elif active_model == "llama4_maverick":
                 model_indicator = "🦙 Llama-4"
+            elif active_model == "llama-3.3-8b":
+                model_indicator = "🦙 Llama-3.3"
+            elif "llama" in active_model.lower():
+                model_indicator = "🦙 Llama"
+            elif "deepseek" in active_model.lower():
+                model_indicator = "🧠 DeepSeek"
 
             # Log the model indicator for debugging
             self.logger.info(
@@ -587,6 +670,17 @@ class MessageHandlers:
                         prompt, active_model
                     )
                     self.logger.info("Used OpenRouter API with deepcoder model")
+
+                elif active_model == "llama-3.3-8b" and hasattr(self, "openrouter_api"):
+                    self.logger.info(
+                        "Attempting to use OpenRouter API with llama-3.3-8b model"
+                    )
+                    ai_response = await self.openrouter_api.generate_response(
+                        prompt, active_model
+                    )
+                    self.logger.info(
+                        "Successfully used OpenRouter API with llama-3.3-8b"
+                    )
 
                 elif hasattr(self, "openrouter_api"):
                     self.logger.info(
@@ -676,11 +770,13 @@ class MessageHandlers:
         try:
             # Check if we have a valid document
             if not update.message or not update.message.document:
-                await update.message.reply_text("Sorry, I couldn't process this document.")
+                await update.message.reply_text(
+                    "Sorry, I couldn't process this document."
+                )
                 return
 
             document = update.message.document
-            
+
             # Check file size (50MB limit)
             if document.file_size and document.file_size > 50 * 1024 * 1024:
                 await update.message.reply_text(
@@ -699,54 +795,64 @@ class MessageHandlers:
             )
 
             try:
-                # Get conversation context for the user  
+                # Get conversation context for the user
                 context_messages = []
                 try:
-                    if hasattr(self, 'conversation_manager'):
-                        context_messages = await self.conversation_manager.get_context(user_id)
+                    if hasattr(self, "conversation_manager"):
+                        context_messages = await self.conversation_manager.get_context(
+                            user_id
+                        )
                 except Exception:
                     pass  # Continue without context if unavailable
 
                 # Process the message with multimodal processor
                 result = await self.multimodal_processor.process_telegram_message(
-                    message=update.message,
-                    context=context_messages
+                    message=update.message, context=context_messages
                 )
 
                 if result.success and result.content:
                     # Format the response
                     formatted_response = await self.response_formatter.format_response(
-                        result.content,
-                        user_id,
-                        model_name="gemini-2.0-flash"
+                        result.content, user_id, model_name="gemini-2.0-flash"
                     )
-                    
+
                     # Delete processing message and send response
                     await processing_message.delete()
-                    
+
                     # Split long responses into chunks
-                    response_chunks = await self.response_formatter.split_long_message(formatted_response)
+                    response_chunks = await self.response_formatter.split_long_message(
+                        formatted_response
+                    )
                     for chunk in response_chunks:
                         await update.message.reply_text(
                             chunk,
-                            parse_mode="Markdown" if "```" in chunk or "*" in chunk else None
+                            parse_mode=(
+                                "Markdown" if "```" in chunk or "*" in chunk else None
+                            ),
                         )
-                    
+
                     # Log successful processing
-                    self.telegram_logger.log_message(f"Document processed successfully: {document.file_name}", user_id)
-                    
+                    self.telegram_logger.log_message(
+                        f"Document processed successfully: {document.file_name}",
+                        user_id,
+                    )
+
                     # Update user statistics
                     try:
-                        await self.user_data_manager.update_stats(user_id, document=True)
+                        await self.user_data_manager.update_stats(
+                            user_id, document=True
+                        )
                     except Exception as stats_error:
-                        self.logger.warning(f"Failed to update stats: {str(stats_error)}")
-                    
+                        self.logger.warning(
+                            f"Failed to update stats: {str(stats_error)}"
+                        )
+
                 else:
                     # Handle error
                     await processing_message.edit_text(
                         f"❌ Sorry, I couldn't process your document: {result.error or 'Unknown error'}"
                     )
-                    
+
             except Exception as e:
                 self.logger.error(f"Document processing error: {str(e)}")
                 await processing_message.edit_text(
@@ -801,8 +907,10 @@ class MessageHandlers:
             document_file = await context.bot.get_file(file_id)
             file_content = await document_file.download_as_bytearray()
             document_file_obj = io.BytesIO(file_content)
-            
-            self.logger.info(f"Downloaded document: {file_name}, size: {len(file_content)} bytes, extension: {file_extension}")
+
+            self.logger.info(
+                f"Downloaded document: {file_name}, size: {len(file_content)} bytes, extension: {file_extension}"
+            )
 
             # Default prompt if caption is empty
             prompt = (
@@ -820,14 +928,18 @@ class MessageHandlers:
                 response = await self.document_processor.process_document_from_file(
                     file=document_file_obj, file_extension=file_extension, prompt=prompt
                 )
-            
-            self.logger.info(f"Document processing completed. Response success: {response.get('success', False) if response else False}")
+
+            self.logger.info(
+                f"Document processing completed. Response success: {response.get('success', False) if response else False}"
+            )
 
             # Delete status message
             try:
                 await status_message.delete()
             except Exception as delete_error:
-                self.logger.warning(f"Failed to delete document status message: {str(delete_error)}")
+                self.logger.warning(
+                    f"Failed to delete document status message: {str(delete_error)}"
+                )
 
             if response:
                 # Format the response
@@ -900,7 +1012,9 @@ class MessageHandlers:
             await update.message.reply_text(f"Document processing error: {str(ve)}")
         except Exception as e:
             self.logger.error(f"Error processing document: {str(e)}")
-            self.logger.error(f"Document processing traceback: {traceback.format_exc()}")
+            self.logger.error(
+                f"Document processing traceback: {traceback.format_exc()}"
+            )
             await update.message.reply_text(
                 f"Sorry, I couldn't process your document. Error: {str(e)[:100]}..."
             )

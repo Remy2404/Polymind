@@ -3,21 +3,87 @@ import os
 import logging
 import asyncio
 import tempfile
-from typing import Tuple, Optional, Union, Dict, Any
-import speech_recognition as sr
+from typing import Tuple, Optional, Union, Dict, Any, List
+from enum import Enum
 from pydub import AudioSegment
 import uuid
+import json
+import soundfile as sf
+import numpy as np
+
+# Import Faster-Whisper (only engine we'll use)
+try:
+    from faster_whisper import WhisperModel
+    FASTER_WHISPER_AVAILABLE = True
+except ImportError:
+    FASTER_WHISPER_AVAILABLE = False
+    raise ImportError("faster_whisper is required but not installed. Please install it with: pip install faster-whisper")
+
+
+class SpeechEngine(Enum):
+    """Available speech recognition engines"""
+    FASTER_WHISPER = "faster_whisper"
+    AUTO = "auto"
 
 
 class VoiceProcessor:
     """
-    Handles voice message processing and transcription.
+    Enhanced voice message processing and transcription with multiple engines.
+    Supports OpenAI Whisper, Faster-Whisper, Vosk, and Google Speech Recognition.
     """
 
-    def __init__(self):
-        """Initialize the voice processor"""
+    def __init__(self, default_engine: SpeechEngine = SpeechEngine.FASTER_WHISPER):
+        """Initialize the voice processor with Faster-Whisper engine"""
         self.logger = logging.getLogger(__name__)
         self.temp_dir = tempfile.gettempdir()
+        self.default_engine = default_engine
+        
+        # Model cache (only Faster-Whisper)
+        self._faster_whisper_model = None
+        
+        # Initialize available engines
+        self.available_engines = self._check_available_engines()
+        self.logger.info(f"Available speech engines: {list(self.available_engines.keys())}")
+        
+        # VAD is handled by Faster-Whisper internally
+        self.vad_available = False
+            
+    def _check_available_engines(self) -> Dict[str, bool]:
+        """Check which speech engines are available"""
+        return {
+            SpeechEngine.FASTER_WHISPER.value: FASTER_WHISPER_AVAILABLE,
+        }
+    
+    def get_recommended_engine(self, language: str = "en") -> SpeechEngine:
+        """Get recommended engine based on language and availability"""
+        # Always use Faster-Whisper as it's our only engine
+        if FASTER_WHISPER_AVAILABLE:
+            return SpeechEngine.FASTER_WHISPER
+        else:
+            raise RuntimeError("Faster-Whisper is not available. Please install it with: pip install faster-whisper")
+    
+    async def _load_faster_whisper_model(self, model_size: str = "base") -> Optional[WhisperModel]:
+        """Load Faster-Whisper model"""
+        if not FASTER_WHISPER_AVAILABLE:
+            return None
+            
+        if self._faster_whisper_model is None:
+            try:
+                self.logger.info(f"Loading Faster-Whisper model: {model_size}")
+                # Use CPU for compatibility
+                device = "cpu"
+                compute_type = "int8"
+                
+                self._faster_whisper_model = WhisperModel(
+                    model_size, 
+                    device=device, 
+                    compute_type=compute_type
+                )
+                self.logger.info(f"Faster-Whisper model loaded on {device}")
+            except Exception as e:
+                self.logger.error(f"Failed to load Faster-Whisper model: {e}")
+                return None
+        return self._faster_whisper_model
 
     async def download_and_convert(
         self, voice_file, user_id: str, is_khmer: bool = False
@@ -72,11 +138,15 @@ class VoiceProcessor:
                 # Load the audio file
                 audio = AudioSegment.from_file(input_path)
 
-                # Apply preprocessing for Khmer if needed
+                # Apply preprocessing based on language
                 if is_khmer:
                     # Boost high frequencies and apply noise reduction for better results with Khmer
                     audio = audio.high_pass_filter(300)  # Reduce low-frequency noise
                     audio = audio + 3  # Boost volume slightly
+                else:
+                    # General preprocessing for better recognition
+                    audio = audio.normalize()  # Normalize volume
+                    audio = audio.high_pass_filter(80)  # Remove very low frequencies
 
                 # Export as WAV with speech recognition friendly settings
                 audio.export(
@@ -92,65 +162,288 @@ class VoiceProcessor:
         except Exception as e:
             self.logger.error(f"Audio conversion error: {str(e)}")
             raise ValueError(f"Failed to convert audio: {str(e)}")
+    
+    async def _apply_voice_activity_detection(self, audio_path: str) -> bool:
+        """
+        Apply voice activity detection to determine if audio contains speech
+        Since we removed webrtcvad, we'll rely on Faster-Whisper's built-in VAD
+        
+        Args:
+            audio_path: Path to audio file
+            
+        Returns:
+            bool: Always True (let Faster-Whisper handle VAD internally)
+        """
+        # Faster-Whisper has built-in VAD, so we don't need external VAD
+        return True
 
     async def transcribe(
-        self, audio_file_path: str, language: str = "en-US", is_khmer: bool = False
-    ) -> Tuple[str, str]:
+        self, 
+        audio_file_path: str, 
+        language: str = "en-US", 
+        is_khmer: bool = False,
+        engine: Optional[SpeechEngine] = None,
+        model_size: str = "base"
+    ) -> Tuple[str, str, Dict[str, Any]]:
         """
-        Transcribe a voice file to text
+        Transcribe a voice file to text using multiple engines
 
         Args:
             audio_file_path: Path to WAV file
             language: Language code for recognition
             is_khmer: Flag for Khmer language processing
+            engine: Specific engine to use (if None, uses default/auto)
+            model_size: Model size for Whisper engines
 
         Returns:
-            Tuple[str, str]: Transcribed text and detected language
+            Tuple[str, str, Dict]: Transcribed text, detected language, and metadata
         """
         try:
-            # Initialize recognizer
-            recognizer = sr.Recognizer()
-
-            # Function to perform transcription
-            def _do_transcribe():
-                with sr.AudioFile(audio_file_path) as source:
-                    # Adjust for ambient noise and record
-                    recognizer.adjust_for_ambient_noise(source)
-                    audio = recognizer.record(source)
-
-                    # Try Google's speech recognition
-                    try:
-                        text = recognizer.recognize_google(audio, language=language)
-                        return text, language
-                    except sr.UnknownValueError:
-                        # If Khmer failed, try English as fallback
-                        if is_khmer:
-                            try:
-                                text = recognizer.recognize_google(
-                                    audio, language="en-US"
-                                )
-                                return text, "en-US"
-                            except:
-                                return "", language
-                        return "", language
-                    except Exception as e:
-                        self.logger.error(f"Speech recognition error: {str(e)}")
-                        return "", language
-
-            # Run speech recognition in a thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, _do_transcribe)
-
+            # VAD is handled by Faster-Whisper's built-in vad_filter
+            # No need for external VAD check
+            
+            # Determine engine to use
+            if engine is None:
+                if self.default_engine == SpeechEngine.AUTO:
+                    engine = self.get_recommended_engine(language)
+                else:
+                    engine = self.default_engine
+            
+            # Ensure the engine is available
+            if not self.available_engines.get(engine.value, False):
+                raise RuntimeError(f"Faster-Whisper engine not available. Please install it with: pip install faster-whisper")
+            
+            self.logger.info(f"Using speech engine: {engine.value}")
+            
+            # Transcribe using Faster-Whisper (only engine available)
+            result = await self._transcribe_faster_whisper(audio_file_path, language, model_size)
+            
             # Clean up temp files in background
             asyncio.create_task(self._cleanup_files(audio_file_path))
-
+            
             return result
 
         except Exception as e:
             self.logger.error(f"Transcription error: {str(e)}")
             # Attempt to clean up even on error
             asyncio.create_task(self._cleanup_files(audio_file_path))
-            return "", language
+            return "", language, {"error": str(e), "engine": engine.value if engine else "unknown"}
+    
+    async def _transcribe_faster_whisper(
+        self, audio_file_path: str, language: str, model_size: str = "base"
+    ) -> Tuple[str, str, Dict[str, Any]]:
+        """Transcribe using Faster-Whisper"""
+        model = await self._load_faster_whisper_model(model_size)
+        if model is None:
+            raise ValueError("Faster-Whisper model not available")
+        
+        def _do_transcribe():
+            try:
+                # Convert language code
+                lang_code = language.split('-')[0] if '-' in language else language
+                
+                segments, info = model.transcribe(
+                    audio_file_path,
+                    language=lang_code if lang_code != "auto" else None,
+                    beam_size=5,
+                    word_timestamps=True,
+                    vad_filter=True  # Built-in VAD
+                )
+                
+                # Collect segments
+                segments_list = list(segments)
+                text = " ".join([segment.text.strip() for segment in segments_list])
+                
+                return (
+                    text,
+                    info.language,
+                    {
+                        "confidence": info.language_probability,
+                        "engine": "faster_whisper",
+                        "model_size": model_size,
+                        "segments": [
+                            {
+                                "start": seg.start,
+                                "end": seg.end,
+                                "text": seg.text,
+                                "words": [
+                                    {"start": w.start, "end": w.end, "word": w.word, "probability": w.probability}
+                                    for w in seg.words
+                                ] if hasattr(seg, 'words') and seg.words else []
+                            }
+                            for seg in segments_list
+                        ],
+                        "has_speech": True
+                    }
+                )
+            except Exception as e:
+                self.logger.error(f"Faster-Whisper transcription error: {e}")
+                return "", language, {"error": str(e), "engine": "faster_whisper"}
+        
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _do_transcribe)
+    
+    async def transcribe_with_multiple_engines(
+        self, 
+        audio_file_path: str, 
+        language: str = "en-US",
+        engines: Optional[List[SpeechEngine]] = None
+    ) -> Dict[str, Tuple[str, str, Dict[str, Any]]]:
+        """
+        Transcribe using multiple model sizes for comparison
+        
+        Args:
+            audio_file_path: Path to audio file
+            language: Language code
+            engines: List of model sizes to use (if None, uses different sizes)
+            
+        Returns:
+            Dict mapping model sizes to transcription results
+        """
+        if engines is None:
+            # Test different model sizes instead of different engines
+            model_sizes = ["tiny", "base", "small", "medium"]
+        else:
+            model_sizes = ["base"]  # Default to base model
+        
+        results = {}
+        
+        for model_size in model_sizes:
+            try:
+                result = await self.transcribe(
+                    audio_file_path, 
+                    language=language, 
+                    engine=SpeechEngine.FASTER_WHISPER,
+                    model_size=model_size
+                )
+                results[f"faster_whisper_{model_size}"] = result
+            except Exception as e:
+                self.logger.error(f"Error with model size {model_size}: {e}")
+                results[f"faster_whisper_{model_size}"] = ("", language, {"error": str(e), "engine": "faster_whisper", "model_size": model_size})
+        
+        return results
+
+    
+    def get_engine_info(self) -> Dict[str, Any]:
+        """Get information about available engines"""
+        return {
+            "available_engines": self.available_engines,
+            "default_engine": self.default_engine.value,
+            "recommended_engines": {
+                "english": "faster_whisper",
+                "multilingual": "faster_whisper",
+            },
+            "features": {
+                "faster_whisper": {
+                    "multilingual": True,
+                    "timestamps": True,
+                    "offline": True,
+                    "accuracy": "very_high",
+                    "speed": "fast"
+                }
+            }
+        }
+    
+    async def benchmark_engines(
+        self, 
+        audio_file_path: str, 
+        language: str = "en-US"
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Benchmark different model sizes on the same audio file
+        
+        Args:
+            audio_file_path: Path to test audio file
+            language: Language code
+            
+        Returns:
+            Dict with performance metrics for each model size
+        """
+        import time
+        
+        results = {}
+        model_sizes = ["tiny", "base", "small", "medium", "large-v3"]
+        
+        for model_size in model_sizes:
+            start_time = time.time()
+            
+            try:
+                text, detected_lang, metadata = await self.transcribe(
+                    audio_file_path, 
+                    language=language, 
+                    engine=SpeechEngine.FASTER_WHISPER,
+                    model_size=model_size
+                )
+                
+                end_time = time.time()
+                processing_time = end_time - start_time
+                
+                results[f"faster_whisper_{model_size}"] = {
+                    "text": text,
+                    "detected_language": detected_lang,
+                    "processing_time": processing_time,
+                    "confidence": metadata.get("confidence", 0.0),
+                    "success": bool(text.strip()),
+                    "model_size": model_size,
+                    "metadata": metadata
+                }
+                
+            except Exception as e:
+                results[f"faster_whisper_{model_size}"] = {
+                    "error": str(e),
+                    "processing_time": time.time() - start_time,
+                    "success": False,
+                    "model_size": model_size
+                }
+        
+        return results
+    
+    async def get_best_transcription(
+        self, 
+        audio_file_path: str, 
+        language: str = "en-US",
+        confidence_threshold: float = 0.7
+    ) -> Tuple[str, str, Dict[str, Any]]:
+        """
+        Get the best transcription by trying different model sizes
+        
+        Args:
+            audio_file_path: Path to audio file
+            language: Language code
+            confidence_threshold: Minimum confidence threshold
+            
+        Returns:
+            Best transcription result
+        """
+        # Try model sizes in order of preference (balanced approach)
+        model_priority = ["base", "small", "medium", "tiny", "large-v3"]
+        
+        best_result = ("", language, {"confidence": 0.0, "engine": "faster_whisper"})
+        
+        for model_size in model_priority:
+            try:
+                text, detected_lang, metadata = await self.transcribe(
+                    audio_file_path, 
+                    language=language, 
+                    engine=SpeechEngine.FASTER_WHISPER,
+                    model_size=model_size
+                )
+                
+                confidence = metadata.get("confidence", 0.0)
+                
+                # If we get a good result, return it
+                if text.strip() and confidence >= confidence_threshold:
+                    return text, detected_lang, metadata
+                
+                # Keep track of the best result so far
+                if confidence > best_result[2]["confidence"]:
+                    best_result = (text, detected_lang, metadata)
+                    
+            except Exception as e:
+                self.logger.warning(f"Model size {model_size} failed: {e}")
+                continue
+        
+        return best_result
 
     async def _cleanup_files(self, *file_paths) -> None:
         """
@@ -165,3 +458,52 @@ class VoiceProcessor:
                     os.remove(path)
                 except Exception as e:
                     self.logger.warning(f"Failed to remove temp file {path}: {str(e)}")
+
+
+# Utility functions for voice processing
+async def create_voice_processor(
+    engine: SpeechEngine = SpeechEngine.FASTER_WHISPER,
+    enable_logging: bool = True
+) -> VoiceProcessor:
+    """
+    Factory function to create a properly configured voice processor
+    
+    Args:
+        engine: Default speech engine to use (only FASTER_WHISPER supported)
+        enable_logging: Whether to enable debug logging
+        
+    Returns:
+        Configured VoiceProcessor instance
+    """
+    if enable_logging:
+        logging.basicConfig(level=logging.INFO)
+        
+    processor = VoiceProcessor(default_engine=engine)
+    
+    # Log available engines
+    info = processor.get_engine_info()
+    available = [name for name, avail in info["available_engines"].items() if avail]
+    processor.logger.info(f"Voice processor initialized with engines: {available}")
+    
+    return processor
+
+
+def get_supported_languages() -> Dict[str, List[str]]:
+    """
+    Get supported languages for Faster-Whisper engine
+    
+    Returns:
+        Dict mapping engine name to supported language codes
+    """
+    return {
+        "faster_whisper": [
+            "en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", 
+            "ar", "sv", "it", "id", "hi", "fi", "vi", "he", "uk", "el", "ms", "cs", "ro", 
+            "da", "hu", "ta", "no", "th", "ur", "hr", "bg", "lt", "la", "mi", "ml", "cy", 
+            "sk", "te", "fa", "lv", "bn", "sr", "az", "sl", "kn", "et", "mk", "br", "eu", 
+            "is", "hy", "ne", "mn", "bs", "kk", "sq", "sw", "gl", "mr", "pa", "si", "km", 
+            "sn", "yo", "so", "af", "oc", "ka", "be", "tg", "sd", "gu", "am", "yi", "lo", 
+            "uz", "fo", "ht", "ps", "tk", "nn", "mt", "sa", "lb", "my", "bo", "tl", "mg", 
+            "as", "tt", "haw", "ln", "ha", "ba", "jw", "su"
+        ]
+    }

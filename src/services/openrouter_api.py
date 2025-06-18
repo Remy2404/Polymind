@@ -39,14 +39,14 @@ class OpenRouterAPI:
             # DeepSeek Models (Free)
             "deepseek-r1-0528-qwen3-8b": "deepseek/deepseek-r1-0528-qwen3-8b:free",
             "deepseek-r1-0528": "deepseek/deepseek-r1-0528:free",
-            "deepseek-r1-zero": "deepseek/deepseek-r1-zero:free",
+            "deepseek-r1-zero": "deepseek/deepseek-r1-distill-llama-70b:free",
             "deepseek-prover-v2": "deepseek/deepseek-prover-v2:free",
             "deepseek-v3-base": "deepseek/deepseek-v3-base:free",
             "deepseek-chat-v3-0324": "deepseek/deepseek-chat-v3-0324:free",
             "deepseek-r1-distill-llama-70b": "deepseek/deepseek-r1-distill-llama-70b:free",
-            "deepseek-r1": "deepseek/deepseek-r1:free",
-            # Meta LLaMA Models (Free)
+            "deepseek-r1": "deepseek/deepseek-r1:free",            # Meta LLaMA Models (Free)
             "llama4_maverick": "meta-llama/llama-4-maverick:free",
+            "llama-3.3-8b": "meta-llama/llama-3.1-8b-instruct:free",  # Map 3.3 to 3.1 as fallback
             "llama-3.2-11b-vision": "meta-llama/llama-3.2-11b-vision-instruct:free",
             "llama-3.2-3b": "meta-llama/llama-3.2-3b-instruct:free",
             "llama-3.2-1b": "meta-llama/llama-3.2-1b-instruct:free",

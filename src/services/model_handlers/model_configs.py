@@ -80,14 +80,13 @@ class ModelConfigurations:
                 indicator_emoji="🧠",
                 system_message="You are DeepSeek R1, an advanced reasoning AI model.",
                 description="DeepSeek R1 May 2024 version - Free",
-            ),
-            "deepseek-r1-zero": ModelConfig(
+            ),            "deepseek-r1-zero": ModelConfig(
                 model_id="deepseek-r1-zero",
                 display_name="DeepSeek R1 Zero",
                 provider=Provider.OPENROUTER,
-                openrouter_model_key="deepseek/deepseek-r1-zero:free",
+                openrouter_model_key="deepseek/deepseek-r1-distill-llama-70b:free",
                 indicator_emoji="🔬",
-                system_message="You are DeepSeek R1 Zero, a model trained via large-scale reinforcement learning.",
+                system_message="You are DeepSeek R1, a model trained via large-scale reinforcement learning.",
                 description="RL-trained reasoning model - Free",
             ),
             "deepseek-prover-v2": ModelConfig(
