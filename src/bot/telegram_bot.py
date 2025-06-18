@@ -24,7 +24,7 @@ from src.services.reminder_manager import ReminderManager
 from src.utils.lang.language_manager import LanguageManager
 from src.services.rate_limiter import RateLimiter
 from src.services.flux_lora_img import flux_lora_image_generator
-from src.services.document_processing import DocumentProcessor
+from src.utils.docgen.document_processor import DocumentProcessor
 from src.utils.ignore_message import message_filter
 import google.generativeai as genai
 from src.services.group_chat.integration import GroupChatIntegration

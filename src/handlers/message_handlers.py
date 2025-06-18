@@ -32,9 +32,9 @@ from telegram.ext import MessageHandler, filters, ContextTypes, CallbackContext
 # Local imports
 # Local imports
 from src.services.gemini_api import GeminiAPI
+from services.multimodal_processor import TelegramMultimodalProcessor
 from src.services.user_data_manager import UserDataManager
 from src.utils.log.telegramlog import TelegramLogger
-from src.services.document_processing import DocumentProcessor
 from src.handlers.text_handlers import TextHandler
 from src.services.ai_command_router import AICommandRouter
 
@@ -56,7 +56,6 @@ class MessageHandlers:
         gemini_api,
         user_data_manager,
         telegram_logger,
-        document_processor,
         text_handler,
         deepseek_api=None,
         openrouter_api=None,
@@ -65,9 +64,11 @@ class MessageHandlers:
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
-        self.document_processor = document_processor
         self.text_handler = text_handler
         self.logger = logging.getLogger(__name__)
+        
+        # Initialize multimodal processor
+        self.multimodal_processor = TelegramMultimodalProcessor(gemini_api)
         self.deepseek_api = deepseek_api
         self.openrouter_api = openrouter_api
 
@@ -235,7 +236,7 @@ class MessageHandlers:
     async def _handle_image_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Handle incoming image messages."""
+        """Handle incoming image messages using the new multimodal system."""
         try:
             user_id = update.effective_user.id
             self.logger.info(f"Processing image from user {user_id}")
@@ -250,15 +251,9 @@ class MessageHandlers:
                 await update.message.reply_text("Sorry, I couldn't process this image.")
                 return
 
-            # Get the highest resolution photo
-            photo = update.message.photo[-1]
-
-            # Get caption as prompt or use a default prompt
-            caption = update.message.caption or "Describe this image in detail."
-
             # Show processing message
             processing_message = await update.message.reply_text(
-                "Processing your image. Please wait..."
+                "🖼️ Processing your image. Please wait..."
             )
 
             # Send typing indicator
@@ -267,117 +262,54 @@ class MessageHandlers:
             )
 
             try:
-                # Download the image file
-                photo_file = await context.bot.get_file(photo.file_id)
-                image_bytes = await photo_file.download_as_bytearray()
-
-                # Convert to BytesIO to make it easier to process
-                image_data = io.BytesIO(image_bytes)
-
-                # Use our ImageProcessor to analyze the image
-                response = await self.image_processor.analyze_image(image_data, caption)
-
-                # Delete the processing message
+                # Get conversation context for the user  
+                context_messages = []
                 try:
+                    # Get recent conversation history if available
+                    if hasattr(self, 'conversation_manager'):
+                        context_messages = await self.conversation_manager.get_context(user_id)
+                except Exception:
+                    pass  # Continue without context if unavailable
+
+                # Process the message with multimodal processor
+                result = await self.multimodal_processor.process_telegram_message(
+                    message=update.message,
+                    context=context_messages
+                )
+
+                if result.success and result.content:
+                    # Format the response
+                    formatted_response = await self.response_formatter.format_response(
+                        result.content,
+                        user_id,
+                        model_name="gemini-2.0-flash"
+                    )
+                    
+                    # Delete processing message and send response
                     await processing_message.delete()
-                except Exception as e:
-                    self.logger.warning(
-                        f"Failed to delete processing message: {str(e)}"
-                    )
-
-                # Send the analysis response
-                if response:
-                    # Format text for Telegram and prefix with an image analysis indicator
-                    formatted_text = f"🖼️ *Image Analysis*:\n\n{response}"
-                    # Split into manageable chunks and use safe_send_message
-                    response_chunks = await self.response_formatter.split_long_message(formatted_text)
-                    for chunk in response_chunks:
-                        await self.response_formatter.safe_send_message(update.message, chunk)
-
-                    # Save the image interaction to memory for future reference with enhanced metadata
-                    try:
-                        # Get conversation manager
-                        conversation_manager = self._get_conversation_manager()
-
-                        # Create timestamp for reference
-                        timestamp_str = datetime.datetime.now().strftime(
-                            "%Y-%m-%d %H:%M:%S"
-                        )
-
-                        # Prepare image metadata for better memory recall
-                        image_metadata = {
-                            "timestamp": timestamp_str,
-                            "file_id": photo.file_id,
-                            "width": photo.width,
-                            "height": photo.height,
-                            "file_size": photo.file_size,
-                        }
-
-                        # Extract key image content for user data storage
-                        image_data_entry = {
-                            "timestamp": timestamp_str,
-                            "caption": caption,
-                            "description": response,
-                            "file_id": photo.file_id,
-                        }
-
-                        # Initialize or update user's image history in user_data
-                        if "image_history" not in context.user_data:
-                            context.user_data["image_history"] = []
-
-                        # Add to image history with a reasonable limit
-                        context.user_data["image_history"].append(image_data_entry)
-                        if (
-                            len(context.user_data["image_history"]) > 10
-                        ):  # Keep last 10 images
-                            context.user_data["image_history"] = context.user_data[
-                                "image_history"
-                            ][-10:]
-
-                        # Save image interaction with both caption and response and enhanced metadata
-                        await conversation_manager.save_media_interaction(
-                            user_id, "image", caption, response, **image_metadata
-                        )
-
-                        # Also save to model-specific history if text_handler has model history manager
-                        if (
-                            hasattr(self.text_handler, "model_history_manager")
-                            and self.text_handler.model_history_manager
-                        ):
-                            await self.text_handler.model_history_manager.save_image_interaction(
-                                user_id, caption, response, metadata=image_metadata
-                            )
-
-                        self.logger.info(
-                            f"Enhanced image interaction saved to memory for user {user_id}"
-                        )
-
-                    except Exception as memory_error:
-                        self.logger.error(
-                            f"Error saving image interaction to memory: {str(memory_error)}"
-                        )
-                else:
                     await update.message.reply_text(
-                        "Sorry, I couldn't analyze this image. Please try again with a different image."
+                        formatted_response,
+                        parse_mode="Markdown" if "```" in formatted_response or "*" in formatted_response else None
                     )
-
-                # Update user statistics
-                try:
-                    await self.user_data_manager.update_stats(user_id, image=True)
-                except Exception as stats_error:
-                    self.logger.warning(f"Failed to update stats: {str(stats_error)}")
-
-            except Exception as inner_error:
-                self.logger.error(f"Error processing image content: {str(inner_error)}")
+                    
+                    # Log successful processing
+                    self.telegram_logger.log_message(f"Image processed successfully", user_id)
+                    
+                else:
+                    # Handle error
+                    await processing_message.edit_text(
+                        f"❌ Sorry, I couldn't process your image: {result.error or 'Unknown error'}"
+                    )
+                    
+            except Exception as e:
+                self.logger.error(f"Image processing error: {str(e)}")
                 await processing_message.edit_text(
-                    "Sorry, I couldn't process this image. Please try another one."
+                    "❌ Sorry, there was an error processing your image. Please try again."
                 )
 
         except Exception as e:
-            self.logger.error(f"Error processing image message: {str(e)}")
+            self.logger.error(f"Error in image message handler: {str(e)}")
             await self._error_handler(update, context)
-
-        # Stats are already updated in the try block, no need to call it again here
 
     async def _handle_voice_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -732,33 +664,93 @@ class MessageHandlers:
     async def _handle_document_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        """Handle incoming document messages."""
+        """Handle incoming document messages using the new multimodal system."""
         user_id = update.effective_user.id
         self.logger.info(f"Processing document for user: {user_id}")
+        self.telegram_logger.log_message("Received document message", user_id)
 
         try:
+            # Check if we have a valid document
+            if not update.message or not update.message.document:
+                await update.message.reply_text("Sorry, I couldn't process this document.")
+                return
+
             document = update.message.document
-            file = await context.bot.get_file(document.file_id)
-            file_extension = document.file_name.split(".")[-1]
+            
+            # Check file size (50MB limit)
+            if document.file_size and document.file_size > 50 * 1024 * 1024:
+                await update.message.reply_text(
+                    "📄 Sorry, this document is too large (max 50MB). Please send a smaller file."
+                )
+                return
 
-            response = await self.document_processor.process_document_from_file(
-                file=await file.download_as_bytearray(),
-                file_extension=file_extension,
-                prompt="Analyze this document.",
+            # Show processing message
+            processing_message = await update.message.reply_text(
+                f"📄 Processing your document: {document.file_name}. Please wait..."
             )
 
-            # Send response using safe_send_message
-            await self.response_formatter.safe_send_message(
-                update.message, response
+            # Send typing indicator
+            await context.bot.send_chat_action(
+                chat_id=update.effective_chat.id, action=ChatAction.TYPING
             )
 
-            self.user_data_manager.update_stats(user_id, document=True)
-            self.telegram_logger.log_message(
-                "Document processed successfully.", user_id
-            )
+            try:
+                # Get conversation context for the user  
+                context_messages = []
+                try:
+                    if hasattr(self, 'conversation_manager'):
+                        context_messages = await self.conversation_manager.get_context(user_id)
+                except Exception:
+                    pass  # Continue without context if unavailable
+
+                # Process the message with multimodal processor
+                result = await self.multimodal_processor.process_telegram_message(
+                    message=update.message,
+                    context=context_messages
+                )
+
+                if result.success and result.content:
+                    # Format the response
+                    formatted_response = await self.response_formatter.format_response(
+                        result.content,
+                        user_id,
+                        model_name="gemini-2.0-flash"
+                    )
+                    
+                    # Delete processing message and send response
+                    await processing_message.delete()
+                    
+                    # Split long responses into chunks
+                    response_chunks = await self.response_formatter.split_long_message(formatted_response)
+                    for chunk in response_chunks:
+                        await update.message.reply_text(
+                            chunk,
+                            parse_mode="Markdown" if "```" in chunk or "*" in chunk else None
+                        )
+                    
+                    # Log successful processing
+                    self.telegram_logger.log_message(f"Document processed successfully: {document.file_name}", user_id)
+                    
+                    # Update user statistics
+                    try:
+                        await self.user_data_manager.update_stats(user_id, document=True)
+                    except Exception as stats_error:
+                        self.logger.warning(f"Failed to update stats: {str(stats_error)}")
+                    
+                else:
+                    # Handle error
+                    await processing_message.edit_text(
+                        f"❌ Sorry, I couldn't process your document: {result.error or 'Unknown error'}"
+                    )
+                    
+            except Exception as e:
+                self.logger.error(f"Document processing error: {str(e)}")
+                await processing_message.edit_text(
+                    "❌ Sorry, there was an error processing your document. Please try again."
+                )
 
         except Exception as e:
-            self.logger.error(f"Error processing document: {e}")
+            self.logger.error(f"Error in document message handler: {str(e)}")
             if "RATE_LIMIT_EXCEEDED" in str(e).upper():
                 await update.message.reply_text(
                     "The service is currently experiencing high demand. Please try again later."

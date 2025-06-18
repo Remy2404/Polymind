@@ -1,517 +1,619 @@
+"""
+Modern Gemini 2.0 Flash API Integration
+Handles combined multimodal inputs: text + images + documents + audio + video
+Clean, maintainable, and scalable implementation
+"""
+
 import logging
-from google import genai
-from google.genai import types
-import sys
+import asyncio
+import base64
+import io
 import os
 import time
-import asyncio
-import datetime
-import traceback
-from typing import Optional, List, Dict, Any
-from PIL import UnidentifiedImageError, Image
-import io
-import base64
-import json
-import httpx
-import aiohttp
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-)
-from google.auth.exceptions import TransportError
+from typing import Optional, List, Dict, Any, Union, BinaryIO
+from dataclasses import dataclass
+from enum import Enum
+
+import google.generativeai as genai
 from google.api_core.exceptions import (
     ResourceExhausted,
     ServiceUnavailable,
     GoogleAPIError,
 )
-from services.rate_limiter import RateLimiter, rate_limit
-from src.utils.log.telegramlog import telegram_logger
-from dotenv import load_dotenv
-from services.image_processing import ImageProcessor
+from PIL import Image, UnidentifiedImageError
 
+from services.rate_limiter import RateLimiter
+from dotenv import load_dotenv
+
+# Load environment variables
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
-    telegram_logger.log_error("GEMINI_API_KEY not found in environment variables.", 0)
-    sys.exit(1)
+    logging.error("GEMINI_API_KEY not found in environment variables.")
+    raise ValueError("GEMINI_API_KEY is required")
 
 
-def safe_get(d: Optional[Dict], key: str, default: Any = None) -> Any:
-    """Safely get a value from a dictionary."""
-    return d.get(key, default) if d else default
+class MediaType(Enum):
+    """Supported media types for multimodal processing"""
+
+    IMAGE = "image"
+    DOCUMENT = "document"
+    AUDIO = "audio"
+    VIDEO = "video"
+    TEXT = "text"
+
+
+@dataclass
+class MediaInput:
+    """Represents a media input for processing"""
+
+    type: MediaType
+    data: Union[bytes, str, io.BytesIO]
+    mime_type: str
+    filename: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class ProcessingResult:
+    """Result of multimodal processing"""
+
+    success: bool
+    content: Optional[str] = None
+    error: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class MediaProcessor:
+    """Handles processing of different media types for Gemini"""
+
+    # Image processing constants
+    MAX_IMAGE_SIZE = 4096
+    MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
+    SUPPORTED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP", "GIF"}
+    IMAGE_QUALITY = 85
+
+    # Document MIME type mapping
+    DOCUMENT_MIME_TYPES = {
+        # Documents
+        "pdf": "application/pdf",
+        "doc": "application/msword",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "ppt": "application/vnd.ms-powerpoint",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "xls": "application/vnd.ms-excel",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        # Text files
+        "txt": "text/plain",
+        "csv": "text/csv",
+        "md": "text/markdown",
+        "html": "text/html",
+        "json": "application/json",
+        "xml": "text/xml",
+        # Code files
+        "py": "text/plain",
+        "js": "text/plain",
+        "ts": "text/plain",
+        "java": "text/plain",
+        "cpp": "text/plain",
+        "c": "text/plain",
+        "cs": "text/plain",
+        "php": "text/plain",
+        "rb": "text/plain",
+        "go": "text/plain",
+        "rs": "text/plain",
+        "sql": "text/plain",
+        "sh": "text/plain",
+        "yaml": "text/plain",
+        "yml": "text/plain",
+    }
+
+    @staticmethod
+    def validate_image(image_data: Union[bytes, io.BytesIO]) -> bool:
+        """Validate image format and size"""
+        try:
+            if isinstance(image_data, io.BytesIO):
+                image_data.seek(0)
+                img_bytes = image_data.getvalue()
+            else:
+                img_bytes = image_data
+
+            if len(img_bytes) > MediaProcessor.MAX_FILE_SIZE:
+                return False
+
+            with Image.open(io.BytesIO(img_bytes)) as img:
+                if img.format not in MediaProcessor.SUPPORTED_IMAGE_FORMATS:
+                    return False
+                # Max 25MP
+                if img.size[0] * img.size[1] > 25000000:
+                    return False
+                return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def optimize_image(image_data: Union[bytes, io.BytesIO]) -> io.BytesIO:
+        """Optimize image for Gemini processing"""
+        try:
+            if isinstance(image_data, io.BytesIO):
+                image_data.seek(0)
+                img_bytes = image_data.getvalue()
+            else:
+                img_bytes = image_data
+
+            with Image.open(io.BytesIO(img_bytes)) as img:
+                # Convert to RGB if needed
+                if img.mode in ("RGBA", "LA", "P"):
+                    if img.mode == "P" and "transparency" in img.info:
+                        img = img.convert("RGBA")
+                    if img.mode in ("RGBA", "LA"):
+                        background = Image.new("RGB", img.size, (255, 255, 255))
+                        if img.mode == "RGBA":
+                            background.paste(img, mask=img.split()[-1])
+                        else:
+                            background.paste(img, mask=img.split()[1])
+                        img = background
+                    else:
+                        img = img.convert("RGB")
+
+                # Resize if too large
+                if max(img.size) > MediaProcessor.MAX_IMAGE_SIZE:
+                    ratio = MediaProcessor.MAX_IMAGE_SIZE / max(img.size)
+                    new_size = tuple(int(dim * ratio) for dim in img.size)
+                    img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+                # Save optimized image
+                output = io.BytesIO()
+                img.save(
+                    output,
+                    format="JPEG",
+                    quality=MediaProcessor.IMAGE_QUALITY,
+                    optimize=True,
+                )
+                output.seek(0)
+                return output
+
+        except Exception as e:
+            logging.error(f"Image optimization failed: {e}")
+            raise ValueError(f"Image processing failed: {e}")
+
+    @staticmethod
+    def get_image_mime_type(image_data: Union[bytes, io.BytesIO]) -> str:
+        """Get MIME type for image"""
+        try:
+            if isinstance(image_data, io.BytesIO):
+                image_data.seek(0)
+                img_bytes = image_data.getvalue()
+            else:
+                img_bytes = image_data
+
+            with Image.open(io.BytesIO(img_bytes)) as img:
+                format_map = {
+                    "JPEG": "image/jpeg",
+                    "PNG": "image/png",
+                    "WEBP": "image/webp",
+                    "GIF": "image/gif",
+                }
+                return format_map.get(img.format, "image/jpeg")
+        except Exception:
+            return "image/jpeg"
+
+    @staticmethod
+    def get_document_mime_type(filename: str) -> str:
+        """Get MIME type from filename extension"""
+        if not filename or "." not in filename:
+            return "application/octet-stream"
+
+        ext = filename.split(".")[-1].lower()
+        return MediaProcessor.DOCUMENT_MIME_TYPES.get(ext, "application/octet-stream")
+
+    @staticmethod
+    def validate_document(file_data: Union[bytes, io.BytesIO], filename: str) -> bool:
+        """Validate document for processing"""
+        try:
+            if isinstance(file_data, io.BytesIO):
+                size = len(file_data.getvalue())
+            else:
+                size = len(file_data)
+
+            # Check file size (50MB limit)
+            if size > 50 * 1024 * 1024:
+                return False
+
+            # Basic validation passed
+            return True
+        except Exception:
+            return False
 
 
 class GeminiAPI:
-    def __init__(self, vision_model, rate_limiter: RateLimiter):
-        self.vision_model = vision_model  # This will be used for text and vision tasks
-        self.rate_limiter = rate_limiter
+    """
+    Modern Gemini 2.0 Flash API client with multimodal support
+    Handles text, images, documents, audio, and video in combined requests
+    """
+
+    def __init__(self, rate_limiter: RateLimiter):
         self.logger = logging.getLogger(__name__)
-        telegram_logger.log_message("Initializing Gemini API", 0)
+        self.rate_limiter = rate_limiter
+        self.media_processor = MediaProcessor()
 
-        if not GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY not found or empty")
+        # Configure Gemini API
+        genai.configure(api_key=GEMINI_API_KEY)
 
-        # Initialize official GenAI client
-        self.genai_client = genai.Client(api_key=GEMINI_API_KEY)
-
-        # Generation configuration
+        # Generation configuration optimized for 2.0 Flash
         self.generation_config = {
             "temperature": 0.7,
             "top_p": 0.95,
-            "top_k": 64,
-            "max_output_tokens": 65536,
+            "top_k": 40,
+            "max_output_tokens": 8192,
         }
 
+        self.logger.info("Gemini 2.0 Flash API initialized successfully")
+
+    async def process_multimodal_input(
+        self,
+        text_prompt: str,
+        media_inputs: Optional[List[MediaInput]] = None,
+        context: Optional[List[Dict]] = None,
+        model_name: str = "gemini-2.0-flash-exp",
+    ) -> ProcessingResult:
+        """
+        Process combined multimodal input (text + images + documents + audio + video)
+
+        Args:
+            text_prompt: The main text prompt
+            media_inputs: List of media inputs (images, documents, etc.)
+            context: Conversation context
+            model_name: Gemini model to use
+
+        Returns:
+            ProcessingResult with the generated response
+        """
         try:
-            # Use the GenAI client for all model calls
-            self.chat_model = self.genai_client
-        except Exception as e:
-            self.logger.error(f"Failed to initialize Gemini API: {str(e)}")
-            raise
+            await self.rate_limiter.acquire()
 
-        self.session = None
-        self._initialize_session_lock = asyncio.Lock()
+            # Build content parts for Gemini
+            content_parts = []
 
-    async def ensure_session(self):
-        """Create or reuse aiohttp session"""
-        if self.session is None or self.session.closed:
-            async with self._initialize_session_lock:
-                if self.session is None or self.session.closed:
-                    # Use optimized connection pooling settings
-                    tcp_connector = aiohttp.TCPConnector(
-                        limit=100,  # Connection limit
-                        limit_per_host=20,  # Connections per host
-                        force_close=False,  # Keep connections alive
-                        enable_cleanup_closed=True,  # Clean up closed connections
-                        keepalive_timeout=60,  # Keepalive timeout in seconds
-                    )
+            # Add system context if available
+            system_context = self._build_system_context(context)
+            if system_context:
+                content_parts.append(system_context)
 
-                    # Create session with retry options
-                    self.session = aiohttp.ClientSession(
-                        connector=tcp_connector,
-                        timeout=aiohttp.ClientTimeout(total=60, connect=10),
-                    )
-                    self.logger.debug("Created new aiohttp session for Gemini API")
+            # Process media inputs
+            if media_inputs:
+                for media in media_inputs:
+                    processed_content = await self._process_media_input(media)
+                    if processed_content:
+                        content_parts.extend(processed_content)
 
-        return self.session
+            # Add the main text prompt
+            content_parts.append(text_prompt)
 
-    async def close(self):
-        """Close the aiohttp session"""
-        if self.session and not self.session.closed:
-            await self.session.close()
-            self.logger.info("Closed Gemini API aiohttp session")
-            self.session = None
+            # Generate response using Gemini
+            response = await self._generate_with_retry(content_parts, model_name)
 
-        # Removed call_with_circuit_breaker method - not actively used
-
-        # Removed format_message method - simple text formatting not needed
-
-    async def analyze_image(self, image_data, prompt: str) -> str:
-        """Analyze an image and generate a response based on the prompt."""
-        await self.rate_limiter.acquire()
-        try:
-            # Handle BytesIO objects directly
-            if isinstance(image_data, io.BytesIO):
-                # Make sure we're at the start of the stream
-                image_data.seek(0)
-                image_bytes = image_data.getvalue()
+            if response and hasattr(response, "text") and response.text:
+                return ProcessingResult(
+                    success=True,
+                    content=response.text.strip(),
+                    metadata={
+                        "model": model_name,
+                        "media_count": len(media_inputs) if media_inputs else 0,
+                        "token_count": (
+                            len(response.text.split()) if response.text else 0
+                        ),
+                    },
+                )
             else:
-                # If it's already bytes, use it directly
-                image_bytes = image_data
-
-            # Use the ImageProcessor class methods properly
-            from services.media.image_processor import ImageProcessor
-
-            img_processor = ImageProcessor(None)
-
-            # Validate image
-            if not img_processor.validate_image(image_bytes):
-                return "Sorry, the image format is not supported. Please send a JPEG or PNG image."
-
-            # Process the image and get the correct MIME type
-            # Check if prepare_image is a coroutine function or returns a coroutine
-            prepare_method = img_processor.prepare_image(image_bytes)
-            if asyncio.iscoroutine(prepare_method):
-                processed_image = await prepare_method
-            else:
-                processed_image = prepare_method
-
-            mime_type = img_processor.get_mime_type(processed_image)
-
-            # Get the bytes from the BytesIO object for the API
-            processed_image.seek(0)
-            processed_bytes = processed_image.getvalue()
-
-            # Generate response with proper error handling using updated API parameters
-            try:
-                model = "gemini-2.0-flash"
-                self.logger.info(f"Analyzing image with model: {model}")
-
-                # Create a properly formatted content part for the image
-                image_part = {
-                    "mime_type": mime_type,
-                    "data": base64.b64encode(processed_bytes).decode("utf-8"),
-                }
-
-                # Create content parts with proper formatting
-                content_parts = [{"text": prompt}, {"inline_data": image_part}]
-
-                # Call the model with the updated content format
-                response = await asyncio.to_thread(
-                    self.genai_client.models.generate_content,
-                    model=model,
-                    contents=content_parts,
-                    config=types.GenerateContentConfig(
-                        temperature=0.4,
-                        top_p=0.95,
-                        top_k=64,
-                        max_output_tokens=8192,
-                    ),
+                return ProcessingResult(
+                    success=False, error="Empty response from Gemini API"
                 )
 
-                if response and hasattr(response, "text"):
-                    formatted_response = await self.format_message(response.text)
-                    return formatted_response
-                else:
-                    raise ValueError("Empty response from vision model")
+        except Exception as e:
+            self.logger.error(f"Multimodal processing failed: {e}")
+            return ProcessingResult(success=False, error=f"Processing failed: {str(e)}")
+
+    async def _process_media_input(self, media: MediaInput) -> Optional[List[Any]]:
+        """Process individual media input based on its type"""
+        try:
+            if media.type == MediaType.IMAGE:
+                return await self._process_image_input(media)
+            elif media.type == MediaType.DOCUMENT:
+                return await self._process_document_input(media)
+            elif media.type == MediaType.AUDIO:
+                return [
+                    f"[Audio file: {media.filename or 'audio'} - audio processing not yet implemented]"
+                ]
+            elif media.type == MediaType.VIDEO:
+                return [
+                    f"[Video file: {media.filename or 'video'} - video processing not yet implemented]"
+                ]
+            else:
+                return [f"[Unknown media type: {media.type.value}]"]
+
+        except Exception as e:
+            self.logger.error(f"Failed to process {media.type.value}: {e}")
+            return [
+                f"[Error processing {media.type.value}: {media.filename or 'unknown'}]"
+            ]
+
+    async def _process_image_input(self, media: MediaInput) -> Optional[List[Dict]]:
+        """Process image input for Gemini"""
+        try:
+            # Validate image
+            if not self.media_processor.validate_image(media.data):
+                return [f"[Invalid image file: {media.filename or 'unknown'}]"]
+
+            # Optimize image
+            optimized_image = self.media_processor.optimize_image(media.data)
+            mime_type = self.media_processor.get_image_mime_type(optimized_image)
+
+            # Convert to base64 for Gemini
+            optimized_image.seek(0)
+            image_bytes = optimized_image.getvalue()
+            image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+            # Return Gemini-compatible image part
+            return [{"inline_data": {"mime_type": mime_type, "data": image_b64}}]
+
+        except Exception as e:
+            self.logger.error(f"Image processing failed: {e}")
+            return [f"[Image processing failed: {media.filename or 'unknown'}]"]
+
+    async def _process_document_input(self, media: MediaInput) -> Optional[List[Any]]:
+        """Process document input for Gemini"""
+        try:
+            if not media.filename:
+                return ["[Document file uploaded without filename]"]
+
+            # Validate document
+            if not self.media_processor.validate_document(media.data, media.filename):
+                return [f"[Document too large or invalid: {media.filename}]"]
+
+            # Get document data
+            if isinstance(media.data, io.BytesIO):
+                media.data.seek(0)
+                doc_bytes = media.data.getvalue()
+            else:
+                doc_bytes = media.data
+
+            mime_type = self.media_processor.get_document_mime_type(media.filename)
+
+            # For supported document formats, upload to Gemini File API
+            if mime_type in [
+                "application/pdf",
+                "text/plain",
+                "text/markdown",
+                "application/json",
+                "text/html",
+                "text/csv",
+            ]:
+                try:
+                    # Upload file to Gemini File API
+                    uploaded_file = await self._upload_file_to_gemini(
+                        doc_bytes, mime_type, media.filename
+                    )
+                    return [uploaded_file]
+                except Exception as upload_error:
+                    self.logger.error(f"File upload failed: {upload_error}")
+                    return [f"[Document: {media.filename} - upload failed]"]
+            else:
+                # For unsupported formats, provide description
+                return [
+                    f"[Document: {media.filename} ({mime_type}) - content preview not available]"
+                ]
+
+        except Exception as e:
+            self.logger.error(f"Document processing failed: {e}")
+            return [f"[Document processing failed: {media.filename or 'unknown'}]"]
+
+    async def _upload_file_to_gemini(
+        self, file_bytes: bytes, mime_type: str, filename: str
+    ) -> Dict:
+        """Upload file to Gemini File API"""
+        try:
+            # Use Gemini's file upload API
+            file_data = io.BytesIO(file_bytes)
+
+            # Upload using genai.upload_file
+            uploaded_file = await asyncio.to_thread(
+                genai.upload_file, file_data, mime_type=mime_type, display_name=filename
+            )
+
+            return uploaded_file
+
+        except Exception as e:
+            self.logger.error(f"Gemini file upload failed: {e}")
+            raise
+
+    def _build_system_context(self, context: Optional[List[Dict]]) -> Optional[str]:
+        """Build system context from conversation history"""
+        if not context:
+            return None
+
+        system_msg = (
+            "You are Gemini, Google's advanced multimodal AI assistant. You can analyze "
+            "text, images, documents, and other media types. Provide helpful, accurate, "
+            "and detailed responses based on all provided content."
+        )
+
+        # Add recent conversation context (last 10 messages to avoid token limits)
+        if context:
+            conversation_text = "\n\nRecent conversation context:\n"
+            recent_context = context[-10:] if len(context) > 10 else context
+
+            for msg in recent_context:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if content:
+                    conversation_text += (
+                        f"{role}: {content[:200]}...\n"
+                        if len(content) > 200
+                        else f"{role}: {content}\n"
+                    )
+
+            system_msg += conversation_text
+
+        return system_msg
+
+    async def _generate_with_retry(
+        self, content_parts: List[Any], model_name: str, max_retries: int = 3
+    ) -> Any:
+        """Generate content with retry logic"""
+        model = genai.GenerativeModel(model_name)
+
+        for attempt in range(max_retries):
+            try:
+                response = await asyncio.to_thread(
+                    model.generate_content,
+                    content_parts,
+                    generation_config=self.generation_config,
+                )
+                return response
+
+            except ResourceExhausted as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt  # Exponential backoff
+                    self.logger.warning(f"Rate limited, waiting {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise e
+
+            except ServiceUnavailable as e:
+                if attempt < max_retries - 1:
+                    wait_time = 1 + attempt
+                    self.logger.warning(
+                        f"Service unavailable, retrying in {wait_time}s..."
+                    )
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise e
 
             except Exception as e:
-                logging.error(f"Vision model error: {str(e)}")
-                return f"I'm sorry, there was an error processing your image: {str(e)}"
+                self.logger.error(f"Generation attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                    continue
+                raise e
 
-        except UnidentifiedImageError:
-            logging.error("The provided image could not be identified.")
-            return (
-                "Sorry, the image format is not supported. Please send a valid image."
-            )
-        except Exception as e:
-            telegram_logger.log_error(f"Image analysis error: {str(e)}", 0)
-            return f"I'm sorry, I encountered an error processing your image: {str(e)}"
+        raise Exception("All retry attempts failed")
 
-    async def handle_multimodal_input(
-        self, prompt: str, media_files: List[Dict] = None
-    ) -> str:
-        await self.rate_limiter.acquire()
-
-        try:
-            # Handle the case with no media files (text-only)
-            if not media_files:
-                return await self.generate_response(prompt)
-
-            # For simplicity, we'll focus on handling the first file
-            # A more robust implementation would handle multiple files
-            media = media_files[0]
-            media_type = media["type"]
-            media_data = media["data"]
-
-            # Different handling based on media type
-            if media_type == "photo":
-                # Direct integration with analyze_image
-                return await self.analyze_image(media_data, prompt)
-
-            elif media_type in ("video", "audio"):
-                # Use a specialized prompt for video/audio
-                enhanced_prompt = f"[User uploaded a {media_type} file] {prompt}"
-                return await self.generate_response(enhanced_prompt)
-
-            elif media_type == "document":
-                # For documents, include filename information
-                filename = media.get("filename", "unknown file")
-                enhanced_prompt = f"[User uploaded a document: {filename}] {prompt}"
-                return await self.generate_response(enhanced_prompt)
-
-            # Fallback for unsupported media types
-            return await self.generate_response(
-                f"[User uploaded a file of type {media_type}] {prompt}"
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error in multimodal processing: {str(e)}")
-            return f"I'm sorry, I had trouble processing your {media_type if 'media_type' in locals() else 'media'}. Please try again or describe what you're looking for."
-
-    async def analyze_contents(
-        self, file_data: io.BytesIO, file_type: str, prompt: str
-    ) -> str:
-        try:
-            if file_type == "image":
-                # Use existing image analysis logic
-                return await self.analyze_image(file_data, prompt)
-
-            # For other file types, use specialized handling
-            # In a full implementation, you'd add specific processors for each file type
-            enhanced_prompt = f"[User uploaded a {file_type} file] {prompt}"
-            return await self.generate_response(enhanced_prompt)
-
-        except Exception as e:
-            self.logger.error(f"Error analyzing {file_type}: {str(e)}")
-            return f"I'm sorry, I encountered an error analyzing your {file_type}. {str(e)}"
-
+    # Legacy compatibility methods for existing code
     async def generate_response(
         self,
         prompt: str,
-        context: List[Dict] = None,
-        image_context: str = None,
-        document_context: str = None,
+        context: Optional[List[Dict]] = None,
+        image_context: Optional[str] = None,
+        document_context: Optional[str] = None,
     ) -> Optional[str]:
-        """Generate a text response with circuit breaker protection."""
-        try:
-            return await self.call_with_circuit_breaker(
-                "api",
-                self._generate_response_impl,  # Create a private implementation method
-                prompt,
-                context,
-                image_context,
-                document_context,
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to generate response: {str(e)}")
-            return "I'm sorry, I'm having trouble processing your request. Please try again later."
+        """Legacy method for backward compatibility"""
+        result = await self.process_multimodal_input(
+            text_prompt=prompt, context=context
+        )
+        return result.content if result.success else None
 
-    async def _generate_response_impl(
-        self,
-        prompt: str,
-        context: List[Dict] = None,
-        image_context: str = None,
-        document_context: str = None,
-    ) -> Optional[str]:
-        """Implementation of generate_response with proper error handling and context management."""
-        await self.rate_limiter.acquire()
+    async def analyze_image(
+        self, image_data: Union[bytes, io.BytesIO], prompt: str
+    ) -> str:
+        """Legacy image analysis method"""
+        media_input = MediaInput(
+            type=MediaType.IMAGE,
+            data=image_data,
+            mime_type=self.media_processor.get_image_mime_type(image_data),
+        )
 
-        try:
-            # System message with clear identity and instructions
-            system_message = (
-                "You are Gemini, an AI assistant that can help with various tasks. "
-                "When introducing yourself, always refer to yourself as Gemini. "
-                "Do not introduce yourself as DeepGem or any other name."
-            )
+        result = await self.process_multimodal_input(
+            text_prompt=prompt, media_inputs=[media_input]
+        )
 
-            memory_context = (
-                "You have the ability to remember previous conversations including "
-                "descriptions of images and documents the user has shared. When answering, "
-                "consider text conversations, image descriptions, and document content in your context. "
-                "Reference relevant previous discussions when answering the user's current question."
-            )
+        return result.content if result.success else f"Error: {result.error}"
 
-            # Build prompt with system instructions
-            full_prompt = f"{system_message}\n\n{memory_context}"
+    async def handle_multimodal_input(
+        self, prompt: str, media_files: Optional[List[Dict]] = None
+    ) -> str:
+        """Legacy multimodal method"""
+        media_inputs = []
 
-            # Add image context if provided
-            if image_context:
-                full_prompt += f"\n\nImage context: {image_context}"
-
-            # Add document context if provided
-            if document_context:
-                full_prompt += f"\n\nDocument context: {document_context}"
-
-            # Add conversation context in a format that works with the API
-            conversation_text = ""
-            if context:
-                # Ensure context isn't too long by taking the most recent entries
-                max_context_entries = 15
-                recent_context = (
-                    context[-max_context_entries:]
-                    if len(context) > max_context_entries
-                    else context
-                )
-
-                # Add a reminder about conversation length
-                if len(context) > max_context_entries:
-                    conversation_text += f"\nNote: There are {len(context) - max_context_entries} earlier messages in our conversation that aren't shown here.\n\n"
-
-                # Process each context message
-                for message in recent_context:
-                    if (
-                        isinstance(message, dict)
-                        and "role" in message
-                        and "content" in message
-                    ):
-                        role = message.get("role")
-                        content = message.get("content")
-                        if role and content:
-                            prefix = "User: " if role == "user" else "Gemini: "
-                            conversation_text += f"{prefix}{content}\n\n"
-
-            # Add the current prompt
-            full_prompt += f"\n\n{conversation_text}\nUser query: {prompt}"
-
-            # Generate text via official client.models.generate_content with proper formatting
-            self.logger.debug(f"Sending prompt to Gemini API: {full_prompt[:100]}...")
-
-            response = await asyncio.to_thread(
-                self.genai_client.models.generate_content,
-                model="gemini-2.0-flash",  # Updated to use gemini-2.0-flash
-                contents=full_prompt,  # Send as a single string
-                config=types.GenerateContentConfig(**self.generation_config),
-            )
-
-            # Process response
-            if response and hasattr(response, "text"):
-                return response.text
-            else:
-                self.logger.warning(
-                    "Empty or invalid response received from Gemini API"
-                )
-                return None
-
-        except Exception as e:
-            self.logger.error(
-                f"Error generating response in _generate_response_impl: {str(e)}"
-            )
-            # Log the traceback for debugging
-            self.logger.error(traceback.format_exc())
-            return None
-
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception_type(
-            (ResourceExhausted, ServiceUnavailable, TransportError)
-        ),
-        reraise=True,
-    )
-    @rate_limit
-    async def generate_content(
-        self, prompt: str, image_data: List = None
-    ) -> Dict[str, Any]:
-        try:
-            # Ensure we have a session
-            await self.ensure_session()
-
-            start_time = time.time()
-            model = self.vision_model
-
-            # Prepare the content parts
-            content_parts = [prompt]
-
-            if image_data:
-                for img in image_data:
-                    content_parts.append(img)
-
-            # Generate the content with timeout protection
-            response = await asyncio.wait_for(
-                model.generate_content_async(
-                    content_parts,
-                    generation_config=self.generation_config,
-                    safety_settings=[
-                        {
-                            "category": "HARM_CATEGORY_HARASSMENT",
-                            "threshold": "BLOCK_ONLY_HIGH",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_HATE_SPEECH",
-                            "threshold": "BLOCK_ONLY_HIGH",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                            "threshold": "BLOCK_ONLY_HIGH",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                            "threshold": "BLOCK_ONLY_HIGH",
-                        },
-                    ],
-                ),
-                timeout=200.0,
-            )
-
-            # Reset error counters on successful request
-            self._consecutive_failures = 0
-            self._backoff_time = 1.0
-
-            # Process response
-            time_taken = time.time() - start_time
-            self.logger.debug(f"Gemini API request completed in {time_taken:.2f}s")
-
-            if not hasattr(response, "candidates") or not response.candidates:
-                return {
-                    "status": "error",
-                    "message": "No response from Gemini API",
-                    "content": None,
+        if media_files:
+            for media in media_files:
+                media_type_map = {
+                    "photo": MediaType.IMAGE,
+                    "document": MediaType.DOCUMENT,
+                    "audio": MediaType.AUDIO,
+                    "video": MediaType.VIDEO,
                 }
 
-            result = {
-                "status": "success",
-                "content": response.text,
-                "prompt_feedback": getattr(response, "prompt_feedback", None),
-                "usage_metadata": getattr(response, "usage_metadata", None),
-            }
-
-            return result
-
-        except (ResourceExhausted, ServiceUnavailable, TransportError) as e:
-            # Handle rate limiting and server errors with exponential backoff
-            self._consecutive_failures += 1
-            self.logger.warning(
-                f"Gemini API temporary error (attempt {self._consecutive_failures}): {str(e)}"
-            )
-
-            # Apply increasingly longer backoff for consecutive failures
-            backoff = min(
-                60, self._backoff_time * (2 ** (self._consecutive_failures - 1))
-            )
-            self._backoff_time = backoff
-
-            await asyncio.sleep(backoff)
-            raise  # Let the retry decorator handle it
-
-        except asyncio.TimeoutError:
-            self.logger.error("Gemini API request timed out after 45 seconds")
-            return {
-                "status": "error",
-                "message": "Request to Gemini API timed out",
-                "content": None,
-            }
-
-        except GoogleAPIError as e:
-            self.logger.error(f"Google API error: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"Google API error: {str(e)}",
-                "content": None,
-            }
-
-        except Exception as e:
-            self.logger.error(f"Unexpected error in generate_content: {str(e)}")
-            self.logger.error(traceback.format_exc())
-            return {
-                "status": "error",
-                "message": f"Unexpected error: {str(e)}",
-                "content": None,
-            }
-
-    async def generate_content_with_retry(
-        self, content, generation_config, max_retries=5
-    ):
-        retry_delay = 1  # Start with 1 second
-
-        for attempt in range(max_retries):
-            async with self.rate_limiter:
-                try:
-                    # Use to_thread for synchronous API calls
-                    response = await asyncio.to_thread(
-                        self.vision_model.generate_content,
-                        content,
-                        generation_config=generation_config,
+                media_inputs.append(
+                    MediaInput(
+                        type=media_type_map.get(media["type"], MediaType.DOCUMENT),
+                        data=media["data"],
+                        mime_type=media.get("mime_type", "application/octet-stream"),
+                        filename=media.get("filename"),
                     )
-                    return response
-                except Exception as e:
-                    if attempt < max_retries - 1:  # Don't sleep on the last attempt
-                        if "RATE_LIMIT_EXCEEDED" in str(e).upper():
-                            self.logger.warning(
-                                f"Rate limit exceeded. Retrying in {retry_delay} seconds..."
-                            )
-                            await asyncio.sleep(retry_delay)
-                            retry_delay *= 2  # Exponential backoff
-                        else:
-                            self.logger.error(f"Error generating content: {e}")
-                            raise
-                    else:
-                        self.logger.error(
-                            f"Max retries ({max_retries}) exceeded. Unable to generate content."
-                        )
-                        raise Exception(
-                            "Service is currently unavailable. Please try again later."
-                        )
+                )
+
+        result = await self.process_multimodal_input(
+            text_prompt=prompt, media_inputs=media_inputs
+        )
+
+        return result.content if result.success else f"Error: {result.error}"
+
+    async def close(self):
+        """Clean up resources"""
+        self.logger.info("Gemini API client closed")
+
+
+# Utility functions for easy integration
+def create_image_input(
+    image_data: Union[bytes, io.BytesIO], filename: Optional[str] = None
+) -> MediaInput:
+    """Create an image media input"""
+    return MediaInput(
+        type=MediaType.IMAGE,
+        data=image_data,
+        mime_type=MediaProcessor.get_image_mime_type(image_data),
+        filename=filename,
+    )
+
+
+def create_document_input(
+    file_data: Union[bytes, io.BytesIO], filename: str
+) -> MediaInput:
+    """Create a document media input"""
+    return MediaInput(
+        type=MediaType.DOCUMENT,
+        data=file_data,
+        mime_type=MediaProcessor.get_document_mime_type(filename),
+        filename=filename,
+    )
+
+
+def create_text_input(text: str) -> MediaInput:
+    """Create a text media input"""
+    return MediaInput(type=MediaType.TEXT, data=text, mime_type="text/plain")
+
+
+def create_audio_input(
+    audio_data: Union[bytes, io.BytesIO], filename: Optional[str] = None
+) -> MediaInput:
+    """Create an audio media input"""
+    return MediaInput(
+        type=MediaType.AUDIO,
+        data=audio_data,
+        mime_type="audio/mpeg",
+        filename=filename,
+    )
+
+
+def create_video_input(
+    video_data: Union[bytes, io.BytesIO], filename: Optional[str] = None
+) -> MediaInput:
+    """Create a video media input"""
+    return MediaInput(
+        type=MediaType.VIDEO,
+        data=video_data,
+        mime_type="video/mp4",
+        filename=filename,
+    )

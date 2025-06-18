@@ -10,7 +10,7 @@ import asyncio
 from services.gemini_api import GeminiAPI
 import mimetypes
 import re
-from services.document_processing import DocumentProcessor
+from utils.docgen.document_processor import DocumentProcessor
 
 logger = logging.getLogger(__name__)
 
