@@ -1,9 +1,11 @@
-FROM python:3.11-slim-bookworm AS builder
+# syntax=docker/dockerfile:1.4
 
-# 1. Install uv binary (pin specific version for reproducibility)
-COPY --from=ghcr.io/astral-sh/uv:python3.11-bookworm-slim /uv /uvx /bin/uv
+FROM python:3.11-slim-bookworm AS base
 
-# 2. Set build environment variables for caching and bytecode compilation
+FROM base AS builder
+# Copy uv binaries from the distroless uv image
+COPY --from=ghcr.io/astral-sh/uv:python3.11-bookworm-slim /uv /uvx /usr/local/bin/
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
@@ -12,45 +14,43 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 3. Install system build dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc libffi-dev g++ && \
-    rm -rf /var/lib/apt/lists/*
+# Install build dependencies
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends gcc g++ libffi-dev \
+  && rm -rf /var/lib/apt/lists/*
 
-# 4. Copy only lock and project file to install dependencies separately
-COPY pyproject.toml uv.lock* ./
-
-# 5. Sync dependencies (without installing our project), reuse uv cache
+# Install dependencies (without installing project) using cached uv
+COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project --no-dev
 
-# 6. Copy full source and install the project itself (non-editable mode recommended)
+# Copy app source and install project
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable
+    uv sync --locked --no-dev
 
-# 7. Clean up build tools to reduce image size
-RUN apt-get remove -y gcc g++ libffi-dev && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-FROM python:3.11-slim-bookworm
+# Remove build tools
+RUN apt-get remove -y gcc g++ libffi-dev \
+  && apt-get autoremove -y \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
 
+##########
+# Final #
+##########
+FROM base
 WORKDIR /app
 
-# Copy environment produced by uv
+# Copy virtual environment and uv binaries
 COPY --from=builder /app/.venv /app/.venv
-
-# Make uv binaries available if needed at runtime
-COPY --from=builder /bin/uv /bin/uv
-COPY --from=builder /bin/uvx /bin/uvx
+COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
+COPY --from=builder /usr/local/bin/uvx /usr/local/bin/uvx
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8000
 
-# Copy application source
 COPY . .
 
 EXPOSE 8000
