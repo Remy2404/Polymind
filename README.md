@@ -41,7 +41,8 @@ cd Telegram-Gemini-Bot
 python -m venv venv
 source venv/bin/activate     # macOS/Linux
 venv\Scripts\activate        # Windows
-pip install -r requirements.txt
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv pip install -r requirements.txt
 ```
 
 ## Configuration
@@ -63,7 +64,7 @@ LOGS_DIR=logs
 
 ## Usage
 ```bash
-uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ## Commands
@@ -105,4 +106,3 @@ Contributions are welcome. Fork the repo, create a feature branch, commit your c
 
 ## License
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-+-+-+-+-+-+

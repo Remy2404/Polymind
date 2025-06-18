@@ -1,5 +1,8 @@
 import logging
 import html
+import re
+import subprocess
+import tempfile
 from typing import List, Optional, Union, Any
 from telegramify_markdown import convert, escape_markdown, markdownify, customize
 from telegram.error import BadRequest
@@ -9,8 +12,36 @@ class ResponseFormatter:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
+    # --- NEW FEATURE: Table conversion support ---
+    def _convert_tables(self, text: str) -> str:
+        pattern = r"(?:\|.*\|\s*\n)(?:\|[-: ]+\|\s*\n)(?:\|.*\|\s*\n?)+"
+
+        def repl(match):
+            rows = match.group(0).strip().splitlines()
+            return "\n".join(f"```\n{row}\n```" for row in rows)
+
+        return re.sub(pattern, repl, text)
+
+    # --- NEW FEATURE: Spoiler & underline support ---
+    def _handle_spoilers_and_underlines(self, text: str) -> str:
+        text = re.sub(
+            r"\|\|(.+?)\|\|", lambda m: f"||{escape_markdown(m.group(1))}||", text
+        )
+        text = re.sub(
+            r"__(.+?)__", lambda m: f"__{escape_markdown(m.group(1))}__", text
+        )
+        return text
+
+    # --- NEW FEATURE: Mermaid rendering support ---
+    def _render_mermaid_to_image(self, mmd_text: str) -> Any:
+        with tempfile.NamedTemporaryFile(suffix=".mmd", delete=False) as src:
+            src.write(mmd_text.encode())
+            src.flush()
+            png = src.name.replace(".mmd", ".png")
+        subprocess.run(["mmdc", "-i", src.name, "-o", png], check=True)
+        return open(png, "rb")
+
     async def format_telegram_markdown(self, text: str) -> str:
-        """Convert raw Markdown to Telegram MarkdownV2."""
         text = str(text)
         try:
             return convert(text)
@@ -19,7 +50,6 @@ class ResponseFormatter:
             return self._escape_all(text)
 
     async def escape_markdown_text(self, text: str) -> str:
-        """Escape MarkdownV2 special characters."""
         text = str(text)
         try:
             return escape_markdown(text)
@@ -27,11 +57,13 @@ class ResponseFormatter:
             self.logger.error(f"escape_markdown_text error: {e}")
             return self._escape_all(text)
 
+    # --- OVERRIDDEN: Markdownify with table + spoiler/underline handling ---
     async def markdownify_text(
         self, md: str, normalize_whitespace: bool = False
     ) -> str:
-        """Convert Markdown to Telegram format, with optional whitespace normalization."""
         md = str(md)
+        md = self._convert_tables(md)
+        md = self._handle_spoilers_and_underlines(md)
         try:
             return markdownify(
                 md, normalize_whitespace=normalize_whitespace, latex_escape=True
@@ -41,7 +73,6 @@ class ResponseFormatter:
             return await self.format_telegram_markdown(md)
 
     async def format_telegram_html(self, text: str) -> str:
-        """Escape text for Telegram HTML mode."""
         try:
             return html.escape(str(text))
         except Exception as e:
@@ -49,7 +80,6 @@ class ResponseFormatter:
             return html.escape(str(text))
 
     def set_markdown_options(self, **opts) -> "ResponseFormatter":
-        """Customize telegramify-markdown behavior."""
         cfg = customize
         if "strict_markdown" in opts:
             cfg.strict_markdown = bool(opts["strict_markdown"])
@@ -69,125 +99,224 @@ class ResponseFormatter:
                     setattr(cfg.markdown_symbol, name, symbols[name])
         return self
 
+    # --- OVERRIDDEN: Markdown-safe splitting + table pre-processing ---
     async def split_long_message(self, text: str, max_length: int = 4096) -> List[str]:
-        """Break long text into Telegram-friendly chunks."""
-        text = str(text or "")
-        if max_length <= 0:
-            max_length = 4096
+        """Split long messages into chunks that fit within Telegram's limits"""
+        text = self._convert_tables(str(text or ""))
+        
         if len(text) <= max_length:
             return [text]
-
-        chunks, current = [], ""
-        for line in text.splitlines():
-            if len(line) > max_length:
-                if current:
-                    chunks.append(current)
-                    current = ""
-                for word in line.split():
-                    if len((temp := (current + " " + word).strip())) > max_length:
-                        chunks.append(current)
-                        current = word
+        
+        chunks = []
+        
+        # Try to split by paragraphs first (double newlines)
+        paragraphs = text.split('\n\n')
+        current_chunk = ""
+        
+        for paragraph in paragraphs:
+            # If a single paragraph is too long, we need to split it further
+            if len(paragraph) > max_length:
+                # If we have content in current_chunk, save it first
+                if current_chunk.strip():
+                    chunks.append(current_chunk.strip())
+                    current_chunk = ""
+                
+                # Split the long paragraph by sentences or lines
+                lines = paragraph.split('\n')
+                for line in lines:
+                    if len(line) > max_length:
+                        # If a single line is too long, split by characters
+                        while len(line) > max_length:
+                            split_point = max_length
+                            # Try to find a good split point (space, comma, etc.)
+                            for i in range(max_length - 100, max_length):
+                                if i < len(line) and line[i] in ' ,.;:':
+                                    split_point = i + 1
+                                    break
+                            
+                            chunks.append(line[:split_point].strip())
+                            line = line[split_point:]
+                        
+                        if line.strip():
+                            current_chunk = line.strip()
                     else:
-                        current = temp
-                continue
-            if len(current) + len(line) + 1 > max_length:
-                chunks.append(current)
-                current = line
+                        # Check if adding this line would exceed the limit
+                        if len(current_chunk) + len(line) + 1 > max_length:
+                            if current_chunk.strip():
+                                chunks.append(current_chunk.strip())
+                            current_chunk = line
+                        else:
+                            if current_chunk:
+                                current_chunk += "\n" + line
+                            else:
+                                current_chunk = line
             else:
-                current = f"{current}\n{line}" if current else line
-        if current:
-            chunks.append(current)
-        return chunks
+                # Check if adding this paragraph would exceed the limit
+                if len(current_chunk) + len(paragraph) + 2 > max_length:
+                    if current_chunk.strip():
+                        chunks.append(current_chunk.strip())
+                    current_chunk = paragraph
+                else:
+                    if current_chunk:
+                        current_chunk += "\n\n" + paragraph
+                    else:
+                        current_chunk = paragraph
+        
+        # Add the last chunk if there's any content
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        
+        # Ensure no chunk is empty and all are within limits
+        final_chunks = []
+        for chunk in chunks:
+            if chunk.strip() and len(chunk) <= max_length:
+                final_chunks.append(chunk)
+            elif chunk.strip() and len(chunk) > max_length:
+                # Emergency split if we still have oversized chunks
+                while len(chunk) > max_length:
+                    final_chunks.append(chunk[:max_length-3] + "...")
+                    chunk = "..." + chunk[max_length-3:]
+                if chunk.strip():
+                    final_chunks.append(chunk)
+        
+        return final_chunks if final_chunks else [text[:max_length]]
 
     def format_with_model_indicator(
         self, text: str, model: str, is_reply: bool = False
     ) -> str:
-        """Add model name header (and optional 'replying to')."""
         text = str(text)
         header = model + ("\n↪️ Replying to message\n" if is_reply else "\n")
         return f"{header}{text}"
 
     def _escape_all(self, text: str) -> str:
-        """Helper: manually escape all MarkdownV2 specials."""
         specials = r"_*[]()~`>#+\-=|{}.!".split()
         for ch in specials:
             text = text.replace(ch, f"\\{ch}")
         return text
 
+    # --- OVERRIDDEN: Detect mermaid blocks and render as image ---
     async def safe_send_message(
-        self, 
-        message, 
-        text: str, 
-        reply_to_message_id: Optional[int] = None
+        self,
+        message,
+        text: str,
+        reply_to_message_id: Optional[int] = None,
+        disable_web_page_preview: bool = False,
     ) -> Optional[Any]:
-        """
-        Safely send a message with multiple formatting fallbacks.
-        
-        Tries multiple approaches in order:
-        1. MarkdownV2 formatting
-        2. HTML formatting
-        3. Escaped text
-        4. Plain text
-        
-        Args:
-            message: The original message to reply to (Message or MockMessage)
-            text: The text content to send
-            reply_to_message_id: Optional message ID to reply to
-            
-        Returns:
-            The sent Message object, or None if all attempts failed
-        """
-        if not text or not text.strip():
-            self.logger.warning("Attempted to send empty message")
-            return None
-            
-        chat_id = message.chat_id
-        # Handle both real Message objects and MockMessage objects
-        bot = getattr(message, 'bot', None) or message.get_bot()
+        if text and text.strip().startswith("```mermaid"):
+            mmd = re.sub(r"^```mermaid\s*|```$", "", text.strip(), flags=re.DOTALL)
+            try:
+                img = self._render_mermaid_to_image(mmd)
+                return await message.reply_photo(
+                    photo=img,
+                    caption="Mermaid diagram",
+                    reply_to_message_id=reply_to_message_id,
+                    disable_web_page_preview=disable_web_page_preview,
+                )
+            except Exception as e:
+                self.logger.error(f"Mermaid rendering failed: {e}")
+                # fallback below
+
+        # Check if message is too long and split it
+        if len(text) > 4000:  # Leave some margin below Telegram's 4096 limit
+            chunks = await self.split_long_message(text, max_length=4000)
+            results = []
+            for i, chunk in enumerate(chunks):
+                try:
+                    # Only use reply_to_message_id for the first chunk
+                    reply_id = reply_to_message_id if i == 0 else None
+                    result = await self._send_single_message(
+                        message, chunk, reply_id, disable_web_page_preview
+                    )
+                    if result:
+                        results.append(result)
+                except Exception as e:
+                    self.logger.error(f"Failed to send chunk {i+1}: {e}")
+            return results[0] if results else None
+
+        # For normal-length messages, try different formatting approaches
+        return await self._send_single_message(
+            message, text, reply_to_message_id, disable_web_page_preview
+        )
+
+    async def _send_single_message(
+        self,
+        message,
+        text: str,
+        reply_to_message_id: Optional[int] = None,
+        disable_web_page_preview: bool = False,
+    ) -> Optional[Any]:
+        """Send a single message with multiple formatting fallbacks"""
         
         # Try MarkdownV2 first
         try:
             formatted_text = await self.format_telegram_markdown(text)
-            return await bot.send_message(
-                chat_id=chat_id,
+            return await message.reply_text(
                 text=formatted_text,
-                parse_mode='MarkdownV2',
-                reply_to_message_id=reply_to_message_id
+                parse_mode="MarkdownV2",
+                reply_to_message_id=reply_to_message_id,
+                disable_web_page_preview=disable_web_page_preview,
             )
-        except Exception as e:
-            self.logger.debug(f"MarkdownV2 formatting failed: {e}")
-        
-        # Try HTML formatting
+        except Exception:
+            pass
+
+        # Try HTML
         try:
             html_text = await self.format_telegram_html(text)
-            return await bot.send_message(
-                chat_id=chat_id,
+            return await message.reply_text(
                 text=html_text,
-                parse_mode='HTML',
-                reply_to_message_id=reply_to_message_id
+                parse_mode="HTML",
+                reply_to_message_id=reply_to_message_id,
+                disable_web_page_preview=disable_web_page_preview,
             )
-        except Exception as e:
-            self.logger.debug(f"HTML formatting failed: {e}")
-        
-        # Try escaped markdown
+        except Exception:
+            pass
+
+        # Try escaped MarkdownV2
         try:
-            escaped_text = await self.escape_markdown_text(text)
-            return await bot.send_message(
-                chat_id=chat_id,
-                text=escaped_text,
-                parse_mode='MarkdownV2',
-                reply_to_message_id=reply_to_message_id
+            escaped = await self.escape_markdown_text(text)
+            return await message.reply_text(
+                text=escaped,
+                parse_mode="MarkdownV2",
+                reply_to_message_id=reply_to_message_id,
+                disable_web_page_preview=disable_web_page_preview,
             )
-        except Exception as e:
-            self.logger.debug(f"Escaped markdown failed: {e}")
-        
-        # Final fallback: plain text
+        except Exception:
+            pass
+
+        # Final fallback - plain text
         try:
-            return await bot.send_message(
-                chat_id=chat_id,
+            return await message.reply_text(
                 text=text,
-                reply_to_message_id=reply_to_message_id
+                reply_to_message_id=reply_to_message_id,
+                disable_web_page_preview=disable_web_page_preview,
             )
         except Exception as e:
-            self.logger.error(f"All message sending attempts failed: {e}")
+            self.logger.error(f"All send attempts failed: {e}")
             return None
+
+    async def format_response(
+        self, content: str, user_id: int = None, model_name: str = None
+    ) -> str:
+        try:
+            content = str(content) if content else ""
+            if model_name:
+                model_badges = {
+                    "gemini-2.0-flash": "🤖 *Gemini 2\\.0 Flash*",
+                    "gemini": "🤖 *Gemini*",
+                    "deepseek": "🧠 *DeepSeek*",
+                    "openrouter": "🔀 *OpenRouter*",
+                    "gpt": "🔥 *GPT*",
+                    "claude": "🌟 *Claude*",
+                }
+                badge = next(
+                    (b for k, b in model_badges.items() if k in model_name.lower()),
+                    None,
+                )
+                if not badge:
+                    disp = model_name.replace("-", "\\-").replace(".", "\\.")
+                    badge = f"🤖 *{disp}*"
+                content = f"{badge}\n\n{content}"
+            return await self.format_telegram_markdown(content)
+        except Exception as e:
+            self.logger.error(f"Error formatting response: {e}")
+            return await self.escape_markdown_text(str(content or ""))

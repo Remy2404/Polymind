@@ -26,7 +26,6 @@ from src.services.rate_limiter import RateLimiter
 from src.services.flux_lora_img import flux_lora_image_generator
 from src.utils.docgen.document_processor import DocumentProcessor
 from src.utils.ignore_message import message_filter
-import google.generativeai as genai
 from src.services.group_chat.integration import GroupChatIntegration
 
 logger = logging.getLogger(__name__)
@@ -142,12 +141,8 @@ class TelegramBot:
     def _init_model_apis(self):
         """Initialize AI model APIs."""
         # Gemini API
-        model_name = "gemini-2.0-flash"
-        vision_model = genai.GenerativeModel(model_name)
         rate_limiter = RateLimiter(requests_per_minute=30)
-        self.gemini_api = GeminiAPI(
-            vision_model=vision_model, rate_limiter=rate_limiter
-        )
+        self.gemini_api = GeminiAPI(rate_limiter=rate_limiter)
 
         # OpenRouter API
         openrouter_rate_limiter = RateLimiter(requests_per_minute=20)
@@ -226,12 +221,11 @@ class TelegramBot:
         )
 
         # Initialize DocumentProcessor and MessageHandlers
-        self.document_processor = DocumentProcessor(bot=self.application.bot)
+        self.document_processor = DocumentProcessor(gemini_api=self.gemini_api)
         self.message_handlers = MessageHandlers(
             self.gemini_api,
             self.user_data_manager,
             self.telegram_logger,
-            self.document_processor,
             self.text_handler,
             deepseek_api=self.deepseek_api,
             openrouter_api=self.openrouter_api,
@@ -247,6 +241,7 @@ class TelegramBot:
         self.message_handlers.prompt_formatter = self.prompt_formatter
         self.message_handlers.preferences_manager = self.preferences_manager
         self.message_handlers._conversation_manager = self.conversation_manager
+        self.message_handlers.document_processor = self.document_processor
 
         # Initialize other services
         self.reminder_manager = ReminderManager(self.application.bot)

@@ -37,6 +37,7 @@ from src.services.user_data_manager import UserDataManager
 from src.utils.log.telegramlog import TelegramLogger
 from src.handlers.text_handlers import TextHandler
 from src.services.ai_command_router import AICommandRouter
+from src.utils.docgen.document_processor import DocumentProcessor
 
 # Import utility classes
 from src.handlers.message_context_handler import MessageContextHandler
@@ -75,6 +76,9 @@ class MessageHandlers:
         # Initialize essential utility classes only
         self.context_handler = MessageContextHandler()
         self.response_formatter = ResponseFormatter()
+        
+        # Initialize document processor
+        self.document_processor = DocumentProcessor(gemini_api)
 
         # Initialize AI command router
         self.ai_command_router = None
@@ -797,6 +801,8 @@ class MessageHandlers:
             document_file = await context.bot.get_file(file_id)
             file_content = await document_file.download_as_bytearray()
             document_file_obj = io.BytesIO(file_content)
+            
+            self.logger.info(f"Downloaded document: {file_name}, size: {len(file_content)} bytes, extension: {file_extension}")
 
             # Default prompt if caption is empty
             prompt = (
@@ -805,6 +811,7 @@ class MessageHandlers:
             )
 
             # Use enhanced document processing for PDFs
+            self.logger.info(f"Starting document processing for {file_extension} file")
             if file_extension.lower() == "pdf":
                 response = await self.document_processor.process_document_enhanced(
                     file=document_file_obj, file_extension=file_extension, prompt=prompt
@@ -813,6 +820,8 @@ class MessageHandlers:
                 response = await self.document_processor.process_document_from_file(
                     file=document_file_obj, file_extension=file_extension, prompt=prompt
                 )
+            
+            self.logger.info(f"Document processing completed. Response success: {response.get('success', False) if response else False}")
 
             # Delete status message
             try:
@@ -887,11 +896,13 @@ class MessageHandlers:
                 )
 
         except ValueError as ve:
-            await update.message.reply_text(f"Error: {str(ve)}")
+            self.logger.error(f"ValueError processing document: {str(ve)}")
+            await update.message.reply_text(f"Document processing error: {str(ve)}")
         except Exception as e:
             self.logger.error(f"Error processing document: {str(e)}")
+            self.logger.error(f"Document processing traceback: {traceback.format_exc()}")
             await update.message.reply_text(
-                "Sorry, I couldn't process your document. Please ensure it's in a supported format."
+                f"Sorry, I couldn't process your document. Error: {str(e)[:100]}..."
             )
 
     async def _error_handler(
