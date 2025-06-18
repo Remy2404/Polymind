@@ -22,7 +22,7 @@ from google.api_core.exceptions import (
 )
 from PIL import Image, UnidentifiedImageError
 
-from services.rate_limiter import RateLimiter
+from src.services.rate_limiter import RateLimiter
 from dotenv import load_dotenv
 
 # Load environment variables

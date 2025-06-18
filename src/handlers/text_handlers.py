@@ -5,8 +5,8 @@ from telegram import Update, Message
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 from src.utils.log.telegramlog import telegram_logger
-from services.gemini_api import GeminiAPI
-from services.user_data_manager import UserDataManager
+from src.services.gemini_api import GeminiAPI
+from src.services.user_data_manager import UserDataManager
 from typing import List, Dict, Any
 import asyncio
 from .message_context_handler import MessageContextHandler
@@ -14,8 +14,8 @@ from .response_formatter import ResponseFormatter
 from .media_context_extractor import MediaContextExtractor
 from src.services.memory_context.memory_manager import MemoryManager
 from src.services.memory_context.model_history_manager import ModelHistoryManager
-from services.model_handlers.factory import ModelHandlerFactory
-from services.model_handlers.prompt_formatter import PromptFormatter
+from src.services.model_handlers.factory import ModelHandlerFactory
+from src.services.model_handlers.prompt_formatter import PromptFormatter
 from src.services.memory_context.conversation_manager import ConversationManager
 from .text_processing.intent_detector import IntentDetector
 from .text_processing.media_analyzer import MediaAnalyzer

@@ -10,7 +10,7 @@ from telegram import (
 )
 from telegram.constants import ChatAction
 from telegram.ext import MessageHandler, filters, ContextTypes
-from services.multimodal_processor import TelegramMultimodalProcessor
+from src.services.multimodal_processor import TelegramMultimodalProcessor
 from src.handlers.text_handlers import TextHandler
 from src.services.ai_command_router import AICommandRouter
 from src.utils.docgen.document_processor import DocumentProcessor
@@ -25,7 +25,7 @@ from src.services.media.voice_processor import (
 )
 from src.services.memory_context.conversation_manager import ConversationManager
 from src.services.group_chat.integration import GroupChatIntegration
-from src.services.model_handlers.model_configs import ModelConfigurations, Provider
+from src.services.model_handlers.model_configs import ModelConfigurations, Provider, ModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,162 @@ class MessageHandlers:
 
         # Initialize group chat integration
         self._group_chat_integration = None
+
+        # Initialize all available models from ModelConfigurations
+        self.all_models = ModelConfigurations.get_all_models()
+        self.logger.info(f"Initialized with {len(self.all_models)} available models")
+        
+        # Log available models by provider for debugging
+        for provider in Provider:
+            provider_models = ModelConfigurations.get_models_by_provider(provider)
+            if provider_models:
+                self.logger.info(f"{provider.value.title()} models: {len(provider_models)} available")
+                # Log some model names for verification
+                model_names = list(provider_models.keys())[:5]  # First 5 models
+                self.logger.debug(f"  Examples: {model_names}")
+
+        # Log total free models count
+        free_models = ModelConfigurations.get_free_models()
+        self.logger.info(f"Free OpenRouter models available: {len(free_models)}")
+
+        # Verify some commonly used models are available
+        common_models = ["llama-3.3-8b", "deepseek-r1-zero", "gemini", "deepseek"]
+        for model_id in common_models:
+            self.log_model_verification(model_id)
+
+    def get_all_models(self) -> dict:
+        """Get all available models - useful for external access."""
+        return self.all_models
+
+    def get_models_by_provider(self, provider: Provider) -> dict:
+        """Get models by specific provider."""
+        return ModelConfigurations.get_models_by_provider(provider)
+
+    def get_free_models(self) -> dict:
+        """Get all free models."""
+        return ModelConfigurations.get_free_models()
+
+    def log_model_verification(self, model_id: str) -> bool:
+        """Log verification for a specific model and return if it exists."""
+        model_config = self.get_model_config(model_id)
+        if model_config:
+            self.logger.info(f"✅ Model '{model_id}' verified:")
+            self.logger.info(f"  - Display name: {model_config.display_name}")
+            self.logger.info(f"  - Provider: {model_config.provider.value}")
+            self.logger.info(f"  - OpenRouter key: {model_config.openrouter_model_key or 'N/A'}")
+            self.logger.info(f"  - Emoji: {model_config.indicator_emoji}")
+            return True
+        else:
+            self.logger.warning(f"❌ Model '{model_id}' not found in configurations")
+            return False
+
+    def get_model_stats(self) -> dict:
+        """Get statistics about available models."""
+        total_models = len(self.all_models)
+        free_models = len(self.get_free_models())
+        
+        provider_counts = {}
+        for provider in Provider:
+            provider_models = self.get_models_by_provider(provider)
+            provider_counts[provider.value] = len(provider_models)
+        
+        return {
+            "total_models": total_models,
+            "free_models": free_models,
+            "provider_counts": provider_counts,
+            "model_ids": list(self.all_models.keys())[:10]  # First 10 model IDs for reference
+        }
+
+    def get_model_config(self, model_id: str) -> ModelConfig:
+        """Get model configuration by ID."""
+        return self.all_models.get(model_id)
+
+    def get_model_indicator_and_config(self, model_id: str) -> tuple[str, ModelConfig]:
+        """Get model indicator emoji and configuration for a model."""
+        model_config = self.get_model_config(model_id)
+        if model_config:
+            return f"{model_config.indicator_emoji} {model_config.display_name}", model_config
+        else:
+            # Fallback for unknown models
+            self.logger.warning(f"Unknown model ID: {model_id}, using default")
+            return "🤖 Unknown Model", None
+
+    async def generate_ai_response(self, prompt: str, model_id: str, user_id: int, conversation_context: list = None) -> str:
+        """Generate AI response using the specified model with conversation context."""
+        model_config = self.get_model_config(model_id)
+        
+        if not model_config:
+            self.logger.error(f"Model configuration not found for: {model_id}")
+            return f"Sorry, the model '{model_id}' is not available."
+
+        # Enhanced conversation context debugging
+        if conversation_context:
+            self.logger.info(f"🧠 AI Context Debug - Model: {model_id}")
+            self.logger.info(f"   └─ Context messages: {len(conversation_context)}")
+            
+            # Show context summary
+            for i, msg in enumerate(conversation_context[-5:]):  # Last 5 messages
+                role = msg.get('role', 'unknown')
+                content = msg.get('content', '')
+                preview = content[:100] + ("..." if len(content) > 100 else "")
+                self.logger.info(f"   └─ Message {i+1} [{role.upper()}]: {preview}")
+                
+                # Highlight name mentions
+                if 'name' in content.lower():
+                    self.logger.info(f"   └─ ⭐ Contains name/identity information!")
+                    
+            # Log the current prompt for reference
+            self.logger.info(f"   └─ Current prompt: {prompt[:100]}...")
+        else:
+            self.logger.info(f"⚠ No conversation context provided for model: {model_id}")
+
+        try:
+            self.logger.info(f"Generating response with model: {model_id}")
+            self.logger.info(f"Attempting to use {model_config.provider.value.title()} API with {model_id} model")
+            
+            if model_config.provider == Provider.GEMINI:
+                self.logger.info("Successfully used Gemini API")
+                return await self.gemini_api.generate_response(prompt)
+                
+            elif model_config.provider == Provider.DEEPSEEK and hasattr(self, "deepseek_api") and self.deepseek_api:
+                self.logger.info("Successfully used DeepSeek API")
+                return await self.deepseek_api.generate_response(prompt)
+                
+            elif model_config.provider == Provider.OPENROUTER and hasattr(self, "openrouter_api") and self.openrouter_api:
+                # Use the openrouter_model_key for proper API mapping
+                if model_config.openrouter_model_key:
+                    self.logger.info("Successfully used OpenRouter API with model key")
+                    response = await self.openrouter_api.generate_response_with_model_key(
+                        prompt=prompt,
+                        openrouter_model_key=model_config.openrouter_model_key,
+                        context=conversation_context
+                    )
+                else:
+                    # Fix the parameter order - use named parameters with conversation context
+                    self.logger.info("Successfully used OpenRouter API with model ID")
+                    response = await self.openrouter_api.generate_response(
+                        prompt=prompt, 
+                        context=conversation_context, 
+                        model=model_id
+                    )
+                
+                # Debug the AI response for context usage
+                if response and conversation_context:
+                    context_keywords = ['name', 'your name', 'my name']
+                    if any(keyword in response.lower() for keyword in context_keywords):
+                        self.logger.info("✅ AI response appears to use conversation context")
+                    else:
+                        self.logger.warning("⚠ AI response may not be using conversation context effectively")
+                
+                return response
+                    
+            else:
+                self.logger.warning(f"No API available for provider: {model_config.provider.value}")
+                return f"Sorry, the {model_config.display_name} model is currently unavailable."
+                
+        except Exception as e:
+            self.logger.error(f"Error generating response with {model_id}: {str(e)}")
+            return f"Sorry, there was an error with the {model_config.display_name} model: {str(e)}"
 
     async def _handle_text_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -338,76 +494,44 @@ class MessageHandlers:
             if not hasattr(self, "voice_processor") or self.voice_processor is None:
                 try:
                     self.voice_processor = await create_voice_processor(
-                        engine=SpeechEngine.AUTO  # Auto-select best engine
+                        engine=SpeechEngine.FASTER_WHISPER  # Use specific engine
                     )
-
-                    # Log available engines
-                    info = self.voice_processor.get_engine_info()
-                    available = [
-                        name
-                        for name, avail in info["available_engines"].items()
-                        if avail
-                    ]
-                    self.logger.info(
-                        f"Enhanced voice processor initialized with engines: {available}"
-                    )
-
+                    self.logger.info("Enhanced voice processor initialized with Faster-Whisper")
                 except Exception as e:
-                    self.logger.error(
-                        f"Failed to initialize enhanced voice processor: {e}"
-                    )
+                    self.logger.error(f"Failed to initialize enhanced voice processor: {e}")
                     # Fallback to basic voice processor
                     self.voice_processor = VoiceProcessor()
 
             # Initialize preferences manager if not available
-            if (
-                not hasattr(self, "preferences_manager")
-                or self.preferences_manager is None
-            ):
+            if not hasattr(self, "preferences_manager") or self.preferences_manager is None:
                 from src.services.user_preferences_manager import UserPreferencesManager
+                self.preferences_manager = UserPreferencesManager(self.user_data_manager)
 
-                self.preferences_manager = UserPreferencesManager(
-                    self.user_data_manager
-                )
+            # Get user's language preference
+            user_lang = await self.preferences_manager.get_user_language_preference(user_id) or "en"
 
-            # Get user's language preference using UserPreferencesManager
-            user_lang = (
-                await self.preferences_manager.get_user_language_preference(user_id)
-                or "en"
-            )
-
-            # If not found in preferences, try the instance user_data_manager
+            # If not found in preferences, use Telegram's language code
             if user_lang == "en" and update.effective_user.language_code:
                 user_lang = update.effective_user.language_code
 
             # Enhanced language mapping with better Khmer support
             language_map = {
-                "en": "en-US",
-                "km": "km-KH",
-                "kh": "km-KH",  # Alternative code sometimes used
-                "ru": "ru-RU",
-                "fr": "fr-FR",
-                "es": "es-ES",
-                "de": "de-DE",
-                "ja": "ja-JP",
-                "zh": "zh-CN",
-                "th": "th-TH",
-                "vi": "vi-VN",
+                "en": "en-US", "km": "km-KH", "kh": "km-KH", "ru": "ru-RU", 
+                "fr": "fr-FR", "es": "es-ES", "de": "de-DE", "ja": "ja-JP",
+                "zh": "zh-CN", "th": "th-TH", "vi": "vi-VN",
             }
 
             # Extract language prefix properly
             lang_prefix = user_lang.split("-")[0] if "-" in user_lang else user_lang
             lang = language_map.get(lang_prefix, "en-US")
 
-            # Set flag for Khmer processing - FORCE Khmer processing if user has set language to km/kh
+            # Set flag for Khmer processing
             is_khmer = lang_prefix in ["km", "kh"]
 
             # Log the detected language for debugging
-            self.logger.info(
-                f"Voice recognition language set to: {lang}, is_khmer={is_khmer}"
-            )
+            self.logger.info(f"Voice recognition language set to: {lang}, is_khmer={is_khmer}")
 
-            # Show processing message in the appropriate language
+            # Show processing message
             processing_text = (
                 "កំពុងដំណើរការសារសំឡេងរបស់អ្នក... សូមរង់ចាំ...\n(Processing your voice message. Please wait...)"
                 if is_khmer
@@ -418,40 +542,27 @@ class MessageHandlers:
 
             # Use enhanced VoiceProcessor for downloading and converting voice file
             voice_file = await context.bot.get_file(update.message.voice.file_id)
-            ogg_file_path, wav_file_path = (
-                await self.voice_processor.download_and_convert(
-                    voice_file, str(user_id), is_khmer
-                )
+            ogg_file_path, wav_file_path = await self.voice_processor.download_and_convert(
+                voice_file, str(user_id), is_khmer
             )
 
-            # Use enhanced VoiceProcessor for transcribing the voice file with best engine
+            # Use enhanced VoiceProcessor for transcribing the voice file
             if hasattr(self.voice_processor, "get_best_transcription"):
-                # Use enhanced transcription with multiple engines
-                text, recognition_language, metadata = (
-                    await self.voice_processor.get_best_transcription(
-                        wav_file_path, language=lang, confidence_threshold=0.6
-                    )
+                text, recognition_language, metadata = await self.voice_processor.get_best_transcription(
+                    wav_file_path, language=lang, confidence_threshold=0.6
                 )
-
-                # Get engine and confidence info
                 engine_used = metadata.get("engine", "unknown")
                 confidence = metadata.get("confidence", 0.0)
-
-                self.logger.info(
-                    f"Enhanced transcription: engine={engine_used}, confidence={confidence:.2f}"
-                )
-
+                self.logger.info(f"Enhanced transcription: engine={engine_used}, confidence={confidence:.2f}")
             else:
                 # Fallback to basic transcription
-                text, recognition_language = await self.voice_processor.transcribe(
-                    wav_file_path, lang, is_khmer
-                )
+                text, recognition_language = await self.voice_processor.transcribe(wav_file_path, lang, is_khmer)
                 metadata = {"engine": "basic", "confidence": 0.7}
                 engine_used = "basic"
                 confidence = 0.7
 
             if not text:
-                # Language-specific error message with helpful tips
+                # Language-specific error message
                 error_text = (
                     "សូមអភ័យទោស មិនអាចយល់សំឡេងបានទេ។ សូមសាកល្បងម្តងទៀតជាមួយសំឡេងច្បាស់ជាងនេះ។\n\n"
                     "Sorry, I couldn't understand the audio. Please try again with clearer audio."
@@ -463,296 +574,176 @@ class MessageHandlers:
                     "• Make sure you're in a quiet environment"
                 )
 
-                # Update status message instead of deleting
+                # Update status message
                 try:
                     await status_message.edit_text(error_text, parse_mode="Markdown")
-                except Exception as edit_error:
-                    self.logger.warning(
-                        f"Could not edit status message: {str(edit_error)}"
-                    )
-                    try:
-                        await update.message.reply_text(
-                            error_text, parse_mode="Markdown"
-                        )
-                    except:
-                        pass
+                except Exception:
+                    await update.message.reply_text(error_text, parse_mode="Markdown")
                 return
 
             # Delete the status message safely
             try:
                 await status_message.delete()
             except Exception as msg_error:
-                self.logger.warning(
-                    f"Could not delete status message: {str(msg_error)}"
-                )
-                try:
-                    await status_message.edit_text("✓ Processing complete")
-                except:
-                    pass
+                self.logger.warning(f"Could not delete status message: {str(msg_error)}")
 
-            # Show the transcribed text to the user using ResponseFormatter with engine info
-            if confidence > 0.8:
-                confidence_emoji = "🟢"  # High confidence
-            elif confidence > 0.6:
-                confidence_emoji = "🟡"  # Medium confidence
+            # Show the transcribed text with confidence indicator
+            confidence_emoji = "🟢" if confidence > 0.8 else "🟡" if confidence > 0.6 else "🔴"
+            
+            # Improved formatting for voice message transcription
+            if is_khmer:
+                transcript_text = f"🎤 *បំលែងសំឡេងទៅជាអក្សរ*\n\n{text}"
             else:
-                confidence_emoji = "🔴"  # Low confidence
+                transcript_text = f"🎤 **Voice Message Transcribed** {confidence_emoji}\n\n{text}"
+                
+                # Add engine info only if confidence is good and not Khmer
+                if confidence > 0.8:
+                    transcript_text += f"\n\n_Engine: {engine_used.title()}, Confidence: {confidence:.1%}_"
 
-            transcript_text = (
-                f"🎤 *បំលែងសំឡេងទៅជាអក្សរ (Transcription)*: \n{text}"
-                if is_khmer
-                else f"🎤 **Voice Message Transcribed** {confidence_emoji}\n\n{text}"
-            )
-
-            # Add engine info for debugging (optional, can be disabled in production)
-            if confidence > 0 and not is_khmer:
-                transcript_text += (
-                    f"\n\n_Engine: {engine_used.title()}, Confidence: {confidence:.1%}_"
-                )
-
-            # Use safe_send_message for better error handling
+            # Send transcript message
             try:
-                transcript_message = await self.response_formatter.safe_send_message(
-                    update.message, transcript_text
-                )
+                await self.response_formatter.safe_send_message(update.message, transcript_text)
             except Exception as reply_error:
-                self.logger.error(
-                    f"Error sending transcript message: {str(reply_error)}"
-                )
-                # Continue with processing since this isn't critical
-                transcript_message = await update.message.reply_text(
-                    f"🎤 Transcription: \n{text}"
-                )
+                self.logger.error(f"Error sending transcript message: {str(reply_error)}")
+                await update.message.reply_text(f"🎤 Transcription: \n{text}")
 
-            # Log the transcribed text with engine info
-            self.telegram_logger.log_message(
-                f"Transcribed {recognition_language} text: {text}", user_id
-            )
+            # Log the transcribed text
+            self.telegram_logger.log_message(f"Transcribed {recognition_language} text: {text}", user_id)
 
             # Initialize user data if not already initialized
             await self.user_data_manager.initialize_user(user_id)
 
-            # Create text handler instance
-            text_handler = TextHandler(
-                self.gemini_api,
-                self.user_data_manager,
-                self.openrouter_api if hasattr(self, "openrouter_api") else None,
-                self.deepseek_api if hasattr(self, "deepseek_api") else None,
-            )
-
-            # Get or create ConversationManager
-            if (
-                not hasattr(self, "_conversation_manager")
-                or not self._conversation_manager
-            ):
-                self._conversation_manager = ConversationManager(
-                    text_handler.memory_manager, text_handler.model_history_manager
-                )
-
-            # Make sure model history manager knows about user's model preference
-            if hasattr(text_handler, "model_history_manager"):
-                # Get the user's selected model early
-                user_settings = await self.user_data_manager.get_user_settings(
-                    str(user_id)
-                )
-                preferred_model = await self.user_data_manager.get_user_preference(
-                    user_id, "preferred_model", None
-                )
-                active_model = (
-                    preferred_model
-                    if preferred_model
-                    else user_settings.get("active_model", "gemini")
-                )
-
-                # Set the selected model in model history manager
-                if hasattr(text_handler.model_history_manager, "select_model_for_user"):
-                    text_handler.model_history_manager.select_model_for_user(
-                        user_id, active_model
+            # Use the TextHandler's conversation manager instead of creating a separate one
+            # This ensures voice and text messages share the same conversation context
+            if hasattr(self.text_handler, 'conversation_manager'):
+                conversation_manager = self.text_handler.conversation_manager
+            else:
+                # Fallback: create our own if text handler doesn't have one
+                if not hasattr(self, "_conversation_manager") or not self._conversation_manager:
+                    # Create text handler for conversation manager
+                    text_handler = TextHandler(
+                        self.gemini_api, self.user_data_manager,
+                        self.openrouter_api if hasattr(self, "openrouter_api") else None,
+                        self.deepseek_api if hasattr(self, "deepseek_api") else None,
                     )
+                    self._conversation_manager = ConversationManager(
+                        text_handler.memory_manager, text_handler.model_history_manager
+                    )
+                conversation_manager = self._conversation_manager
 
-            # Use ConversationManager to save voice interaction to memory
-            language_label = "km" if is_khmer else lang.split("-")[0]
-            await self._conversation_manager.save_media_interaction(
-                user_id,
-                "voice",
-                text,
-                f"I've transcribed your voice message which said: {text}",
+            # Save voice interaction to shared conversation memory
+            await conversation_manager.save_media_interaction(
+                user_id, "voice", text, f"I've transcribed your voice message which said: {text}"
             )
 
-            # NEW CODE: Process the transcribed text with the AI model
-            await context.bot.send_chat_action(
-                chat_id=update.effective_chat.id, action=ChatAction.TYPING
-            )
+            # Process the transcribed text with AI
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
-            # Treat the transcribed text as a regular text message for AI processing
-            # Pass the quoted text context if it exists
+            # Prepare prompt with quoted text context if it exists
             prompt = text
             if quoted_text:
-                prompt = self.context_handler.format_prompt_with_quote(
-                    text, quoted_text
-                )
+                prompt = self.context_handler.format_prompt_with_quote(text, quoted_text)
 
-            # Get the user's selected model
+            # Get user's selected model efficiently
             user_settings = await self.user_data_manager.get_user_settings(str(user_id))
+            preferred_model = await self.user_data_manager.get_user_preference(user_id, "preferred_model", None)
+            
+            # Determine active model
+            active_model = preferred_model or user_settings.get("active_model", "gemini")
 
-            # First check if there's a preferred_model in the user preferences
-            preferred_model = await self.user_data_manager.get_user_preference(
-                user_id, "preferred_model", None
-            )
-
-            # Log detailed model selection information
+            # Log model selection
             self.logger.info(f"Voice message model selection - User: {user_id}")
-            self.logger.info(f"  - preferred_model from preferences: {preferred_model}")
-            self.logger.info(
-                f"  - active_model from user settings: {user_settings.get('active_model', 'not set')}"
-            )
+            self.logger.info(f" - preferred_model from preferences: {preferred_model}")
+            self.logger.info(f" - active_model from user settings: {user_settings.get('active_model', 'not set')}")
+            self.logger.info(f"SELECTED MODEL: '{active_model}' for voice response. Prompt: {prompt[:50]}...")
 
-            # If preferred_model is set, use that, otherwise fall back to the active_model setting or default to gemini
-            active_model = (
-                preferred_model
-                if preferred_model
-                else user_settings.get("active_model", "gemini")
-            )
+            # Get model indicator and config
+            model_indicator, model_config = self.get_model_indicator_and_config(active_model)
+            self.logger.info(f"Using model indicator: {model_indicator} for model: {active_model}")
 
-            # Log the model being used
-            self.logger.info(
-                f"SELECTED MODEL: '{active_model}' for voice response. Prompt: {prompt[:50]}..."
-            )
-
-            # Get the appropriate model indicator
-            model_indicator = "🔮 Gemini"  # Default
-            if active_model == "deepseek":
-                model_indicator = "🧠 DeepSeek"
-            elif active_model == "deepcoder":
-                model_indicator = "💻 DeepCoder"
-            elif active_model == "llama4_maverick":
-                model_indicator = "🦙 Llama-4"
-            elif active_model == "llama-3.3-8b":
-                model_indicator = "🦙 Llama-3.3"
-            elif "llama" in active_model.lower():
-                model_indicator = "🦙 Llama"
-            elif "deepseek" in active_model.lower():
-                model_indicator = "🧠 DeepSeek"
-
-            # Log the model indicator for debugging
-            self.logger.info(
-                f"Using model indicator: {model_indicator} for model: {active_model}"
-            )
-
-            # Generate AI response based on active model
-            ai_response = ""
+            # Get conversation history for context (same as text handler)
             try:
-                self.logger.info(f"Generating response with model: {active_model}")
-
-                if active_model == "gemini":
-                    ai_response = await self.gemini_api.generate_response(prompt)
-                    self.logger.info("Used Gemini API for response")
-
-                elif active_model == "deepseek" and hasattr(self, "deepseek_api"):
-                    ai_response = await self.deepseek_api.generate_response(prompt)
-                    self.logger.info("Used DeepSeek API for response")
-
-                elif active_model == "llama4_maverick" and hasattr(
-                    self, "openrouter_api"
-                ):
-                    self.logger.info(
-                        "Attempting to use OpenRouter API with llama4_maverick model"
-                    )
-                    ai_response = await self.openrouter_api.generate_response(
-                        prompt, active_model
-                    )
-                    self.logger.info(
-                        "Successfully used OpenRouter API with llama4_maverick"
-                    )
-
-                elif active_model == "deepcoder" and hasattr(self, "openrouter_api"):
-                    ai_response = await self.openrouter_api.generate_response(
-                        prompt, active_model
-                    )
-                    self.logger.info("Used OpenRouter API with deepcoder model")
-
-                elif active_model == "llama-3.3-8b" and hasattr(self, "openrouter_api"):
-                    self.logger.info(
-                        "Attempting to use OpenRouter API with llama-3.3-8b model"
-                    )
-                    ai_response = await self.openrouter_api.generate_response(
-                        prompt, active_model
-                    )
-                    self.logger.info(
-                        "Successfully used OpenRouter API with llama-3.3-8b"
-                    )
-
-                elif hasattr(self, "openrouter_api"):
-                    self.logger.info(
-                        f"Using fallback to OpenRouter API with model: {active_model}"
-                    )
-                    ai_response = await self.openrouter_api.generate_response(
-                        prompt, active_model
-                    )
-
-                else:
-                    self.logger.warning(
-                        f"No suitable API found for model: {active_model}"
-                    )
-                    ai_response = "Sorry, I couldn't process your voice message with the selected model. Please try with a different model."
-            except Exception as e:
-                self.logger.error(
-                    f"Error generating response with {active_model}: {str(e)}",
-                    exc_info=True,
+                conversation_history = await conversation_manager.get_conversation_history(
+                    user_id, max_messages=10, model=active_model
                 )
-                ai_response = f"Sorry, there was an error generating a response with the {active_model} model. Technical details: {str(e)}"
+                self.logger.info(f"Retrieved {len(conversation_history)} conversation history messages for voice response")
+                
+                # Enhanced debug: Log conversation context for troubleshooting
+                if conversation_history:
+                    self.logger.info(f"Voice context debug - First message: {conversation_history[0].get('content', 'N/A')[:100]}...")
+                    self.logger.info(f"Voice context debug - Last message: {conversation_history[-1].get('content', 'N/A')[:100]}...")
+                else:
+                    self.logger.warning("No conversation history found for voice message context")
+                    
+            except Exception as e:
+                self.logger.warning(f"Failed to retrieve conversation history: {str(e)}")
+                conversation_history = None
+
+            # Generate AI response with conversation context
+            ai_response = await self.generate_ai_response(prompt, active_model, user_id, conversation_history)
 
             if not ai_response:
-                self.logger.warning(
-                    f"Empty AI response for user {user_id} with active model {active_model}"
-                )
+                self.logger.warning(f"Empty AI response for user {user_id} with active model {active_model}")
                 ai_response = "I'm sorry, I couldn't generate a response at this time. Please try again later."
 
-            # Format the response with model indicator
-            formatted_response = self.response_formatter.format_with_model_indicator(
-                ai_response, model_indicator, quoted_text is not None
-            )
-
             # Log successful response generation
-            self.logger.info(
-                f"Generated AI response of length {len(ai_response)} for voice message"
+            self.logger.info(f"Generated AI response of length {len(ai_response)} for voice message")
+
+            # Enhanced voice message formatting with better context awareness
+            voice_intro = "🎤 **Voice Response:**"
+            
+            # Add context cue based on conversation content
+            context_hint = ""
+            if conversation_history and "name" in prompt.lower():
+                # Check if we have name context
+                has_name_context = any(
+                    'name' in msg.get('content', '').lower()
+                    for msg in conversation_history
+                )
+                if has_name_context:
+                    context_hint = "_Based on our conversation..._\n\n"
+                else:
+                    context_hint = "_I don't have your name in our conversation history..._\n\n"
+            elif conversation_history and len(conversation_history) > 0:
+                context_hint = "_Continuing our conversation..._\n\n"
+            
+            # Format the response specifically for voice interaction
+            voice_formatted_response = f"{voice_intro}\n\n{context_hint}{ai_response}"
+            
+            # Apply model indicator formatting
+            formatted_response = self.response_formatter.format_with_model_indicator(
+                voice_formatted_response, model_indicator, quoted_text is not None
             )
 
-            # Split long messages if needed
-            response_chunks = await self.response_formatter.split_long_message(
+            # Format for Telegram (same as text handler) - this was missing!
+            telegram_formatted_response = await self.response_formatter.format_telegram_markdown(
                 formatted_response
             )
 
-            # Send the response chunks
-            for chunk in response_chunks:
-                await update.message.reply_text(chunk)
+            # Send the response using the response formatter for proper formatting
+            await self.response_formatter.safe_send_message(update.message, formatted_response)
 
-            # Save the conversation pair
-            await self._conversation_manager.save_message_pair(
-                user_id, prompt, ai_response, active_model
-            )
+            # Save the conversation pair with voice message indicator for consistency
+            voice_enhanced_prompt = f"[Voice Message Transcribed]: {prompt}"
+            await conversation_manager.save_message_pair(user_id, voice_enhanced_prompt, ai_response, active_model)
 
         except Exception as e:
-            self.logger.error(
-                f"Error processing voice message: {str(e)}", exc_info=True
-            )
-            error_message = "Sorry, there was an error processing your voice message. Please try again later."
-
-            # Check if we're at the transcription step but have no text
+            self.logger.error(f"Error processing voice message: {str(e)}", exc_info=True)
+            
+            # Determine appropriate error message based on processing stage
             if "text" in locals() and not text:
                 error_message = "Sorry, I couldn't transcribe your voice message. Please try speaking more clearly or in a quieter environment."
-            # Check if we're at the AI response step
             elif "prompt" in locals() and "ai_response" not in locals():
                 error_message = "I understood your voice message, but I'm having trouble generating a response right now. Please try again later."
+            else:
+                error_message = "Sorry, there was an error processing your voice message. Please try again later."
 
+            # Send error message
             try:
                 if "status_message" in locals() and status_message:
                     try:
                         await status_message.edit_text(error_message)
-                    except Exception as edit_error:
-                        self.logger.warning(
-                            f"Could not edit status message: {str(edit_error)}"
-                        )
+                    except Exception:
                         await update.message.reply_text(error_message)
                 else:
                     await update.message.reply_text(error_message)

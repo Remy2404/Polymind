@@ -52,8 +52,7 @@ class VoiceConfig:
         "ko": {"normalize": True, "high_pass_filter": 120, "volume_boost": 2},
         "ar": {"normalize": True, "high_pass_filter": 150, "volume_boost": 3},
         "hi": {"normalize": True, "high_pass_filter": 100, "volume_boost": 2},
-        "th": {"normalize": True, "high_pass_filter": 200, "volume_boost": 3},  # Thai
-        "km": {"normalize": True, "high_pass_filter": 300, "volume_boost": 3},  # Khmer
+        "km": {"normalize": True, "high_pass_filter": 300, "volume_boost": 3},
         "default": {"normalize": True, "high_pass_filter": 80, "volume_boost": 0},
     }    # Confidence threshold for Faster-Whisper
     CONFIDENCE_THRESHOLDS = {
@@ -62,17 +61,17 @@ class VoiceConfig:
 
     # VAD (Voice Activity Detection) settings
     VAD_SETTINGS = {
-        "aggressiveness": 2,  # 0-3, higher = more aggressive
-        "min_speech_ratio": 0.3,  # Minimum ratio of speech frames
-        "frame_duration_ms": 30,  # Frame duration in milliseconds
-    }    # Audio processing settings
+        "aggressiveness": 2,  
+        "min_speech_ratio": 0.3, 
+        "frame_duration_ms": 30,  
+    } 
     AUDIO_SETTINGS = {
-        "sample_rate": 16000,  # 16kHz is optimal for speech recognition
-        "channels": 1,  # Mono
-        "bit_depth": 16,  # 16-bit
-        "chunk_size": 4000,  # Frames per chunk for processing
-        "max_file_size_mb": 50,  # Maximum audio file size
-        "timeout_seconds": 300,  # Maximum processing time
+        "sample_rate": 16000,
+        "channels": 1,
+        "bit_depth": 16,
+        "chunk_size": 4000,
+        "max_file_size_mb": 50,
+        "timeout_seconds": 300,
     }
 
     @classmethod
@@ -127,45 +126,40 @@ class VoiceConfig:
 
     @classmethod
     def from_env(cls) -> Dict[str, Any]:
-        """Load configuration from environment variables"""
+        """Load configuration - now hardcoded for stability"""
         config = {}
 
-        # Basic voice settings
-        config["enabled"] = (
-            os.getenv("VOICE_PROCESSING_ENABLED", "true").lower() == "true"
-        )
-        config["default_engine"] = os.getenv("VOICE_DEFAULT_ENGINE", "auto")
-        config["quality"] = os.getenv("VOICE_QUALITY", "medium")
-        config["max_file_size_mb"] = int(os.getenv("VOICE_MAX_FILE_SIZE_MB", "50"))
-        config["timeout_seconds"] = int(os.getenv("VOICE_TIMEOUT_SECONDS", "300"))
-        config["enable_vad"] = os.getenv("VOICE_ENABLE_VAD", "true").lower() == "true"
-        config["cache_models"] = (
-            os.getenv("VOICE_CACHE_MODELS", "true").lower() == "true"
-        )
-        config["language_detection"] = (
-            os.getenv("VOICE_LANGUAGE_DETECTION", "true").lower() == "true"
-        )
+        # Hardcoded voice settings (no longer dependent on .env)
+        config["enabled"] = True
+        config["default_engine"] = "faster_whisper"
+        config["quality"] = "medium"
+        config["max_file_size_mb"] = 50
+        config["timeout_seconds"] = 300
+        config["enable_vad"] = True
+        config["cache_models"] = True
+        config["language_detection"] = True
 
-        # Engine preferences from environment
-        engine_prefs = {}
-        for lang_code in ["en", "es", "fr", "zh", "ja", "ko", "ru", "ar"]:
-            env_var = f"VOICE_ENGINE_PREFERENCES_{lang_code.upper()}"
-            pref_string = os.getenv(env_var)
-            if pref_string:
-                engine_prefs[lang_code] = [
-                    engine.strip() for engine in pref_string.split(",")
-                ]
+        # Hardcoded engine preferences (all languages use faster_whisper)
+        engine_prefs = {
+            "en": ["faster_whisper"],
+            "kh": ["faster_whisper"],
+            "km": ["faster_whisper"],
+            "de": ["faster_whisper"],
+            "es": ["faster_whisper"],
+            "fr": ["faster_whisper"],
+            "zh": ["faster_whisper"],
+            "ja": ["faster_whisper"],
+            "ko": ["faster_whisper"],
+            "ru": ["faster_whisper"],
+            "ar": ["faster_whisper"],
+        }
 
-        # Merge with defaults
+        # Merge with class defaults
         final_prefs = cls.ENGINE_PREFERENCES.copy()
         final_prefs.update(engine_prefs)
         config["engine_preferences"] = final_prefs
 
         return config
-
-    # ...existing code...
-
-
 class VoiceStats:
     """Statistics tracking for voice processing"""
 
@@ -252,14 +246,14 @@ voice_config = VoiceConfig()
 voice_stats = VoiceStats()
 
 
-# Environment-based configuration
+# Hardcoded configuration (no longer dependent on environment)
 def load_config_from_env() -> Dict[str, Any]:
-    """Load configuration from environment variables"""
+    """Load configuration - now hardcoded for stability"""
     return {
-        "default_quality": VoiceQuality(os.getenv("VOICE_QUALITY", "medium")),
-        "max_file_size_mb": int(os.getenv("VOICE_MAX_FILE_SIZE_MB", "50")),
-        "timeout_seconds": int(os.getenv("VOICE_TIMEOUT_SECONDS", "300")),
-        "enable_vad": os.getenv("VOICE_ENABLE_VAD", "true").lower() == "true",
-        "cache_models": os.getenv("VOICE_CACHE_MODELS", "true").lower() == "true",
-        "log_level": os.getenv("VOICE_LOG_LEVEL", "INFO"),
+        "default_quality": VoiceQuality.MEDIUM,  
+        "max_file_size_mb": 50,  
+        "timeout_seconds": 300, 
+        "enable_vad": True,  
+        "cache_models": True,  
+        "log_level": "INFO",  
     }

@@ -4,9 +4,10 @@ import aiohttp
 import asyncio
 import logging
 import traceback
+import time
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
-from services.rate_limiter import RateLimiter, rate_limit
+from src.services.rate_limiter import RateLimiter, rate_limit
 from src.utils.log.telegramlog import telegram_logger
 
 # Load environment variables
@@ -124,14 +125,16 @@ class OpenRouterAPI:
         if self.session and not self.session.closed:
             await self.session.close()
             self.logger.info("Closed OpenRouter API aiohttp session")
-            self.session = None    @rate_limit
+            self.session = None
+
+    @rate_limit
     async def generate_response(
         self,
         prompt: str,
         context: List[Dict] = None,
         model: str = "deepseek-r1-zero",
         temperature: float = 0.7,
-        max_tokens: int = 263840,
+        max_tokens: Optional[int] = None,
         timeout: float = 300.0,
     ) -> Optional[str]:
         """Generate a text response using the OpenRouter API."""
@@ -142,51 +145,55 @@ class OpenRouterAPI:
             session = await self.ensure_session()
 
             # Map model ID to OpenRouter model path
-            openrouter_model = self.available_models.get(model, model)
-
-            # Log the model mapping
+            openrouter_model = self.available_models.get(model, model)            # Log the model mapping
             self.logger.info(f"OpenRouter model mapping: {model} -> {openrouter_model}")
 
             # Prepare the messages
-            messages = (
-                []
-            )  # Add system message            # Customize system message based on model
-            system_message = "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."
+            messages = []
+            # Customize system message based on model and context
+            if context:
+                # Enhanced system message when conversation context is available
+                system_message = "You are an advanced AI assistant that helps users with various tasks. You have access to the conversation history, so please refer to previous messages when relevant. Pay attention to personal information shared earlier, like names, preferences, and ongoing topics. Be conversational, helpful, and remember context from earlier in our discussion."
+            else:
+                # Basic system message when no context is available
+                system_message = "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."
 
+            # Customize system message further based on specific model
             if model == "llama4_maverick":
                 system_message = (
-                    "You are Llama-4 Maverick, an advanced AI assistant by Meta."
+                    "You are Llama-4 Maverick, an advanced AI assistant by Meta. "
+                    + ("Pay attention to conversation history and refer to previous messages when relevant." if context else "")
                 )
             elif model == "deepcoder":
-                system_message = "You are DeepCoder, an AI specialized in programming and software development."
+                system_message = "You are DeepCoder, an AI specialized in programming and software development." + (" Use conversation context when relevant." if context else "")
             elif "deepseek" in model:
-                system_message = "You are DeepSeek, an advanced reasoning AI model that excels at complex problem-solving."
+                system_message = "You are DeepSeek, an advanced reasoning AI model that excels at complex problem-solving." + (" Use conversation history to provide contextual responses." if context else "")
             elif "qwen" in model:
-                system_message = "You are Qwen, a multilingual AI assistant created by Alibaba Cloud."
+                system_message = "You are Qwen, a multilingual AI assistant created by Alibaba Cloud." + (" Reference previous messages in our conversation when helpful." if context else "")
             elif "gemma" in model:
                 system_message = (
-                    "You are Gemma, a lightweight and efficient AI assistant by Google."
+                    "You are Gemma, a lightweight and efficient AI assistant by Google." + (" Be aware of conversation context and refer to earlier messages." if context else "")
                 )
             elif "mistral" in model:
                 system_message = (
-                    "You are Mistral, a high-performance European AI language model."
+                    "You are Mistral, a high-performance European AI language model." + (" Use conversation history to maintain context." if context else "")
                 )
             elif "phi" in model:
-                system_message = "You are Phi, a compact and efficient AI model by Microsoft, specialized in reasoning."
+                system_message = "You are Phi, a compact and efficient AI model by Microsoft, specialized in reasoning." + (" Pay attention to conversation flow and context." if context else "")
             elif "llama" in model:
                 system_message = (
-                    "You are LLaMA, an advanced AI assistant created by Meta."
+                    "You are LLaMA, an advanced AI assistant created by Meta." + (" Remember information from our ongoing conversation." if context else "")
                 )
             elif "claude" in model:
                 system_message = (
-                    "You are Claude, a helpful AI assistant created by Anthropic."
+                    "You are Claude, a helpful AI assistant created by Anthropic." + (" Use conversation history to provide better responses." if context else "")
                 )
             elif "hermes" in model:
-                system_message = "You are Hermes, a versatile AI assistant optimized for helpful conversations."
+                system_message = "You are Hermes, a versatile AI assistant optimized for helpful conversations." + (" Maintain conversation context and refer to previous messages." if context else "")
             elif "olympic" in model:
-                system_message = "You are OlympicCoder, an AI specialized in competitive programming and complex algorithms."
+                system_message = "You are OlympicCoder, an AI specialized in competitive programming and complex algorithms." + (" Consider previous discussion context." if context else "")
             elif "magnum" in model:
-                system_message = "You are Magnum, an AI optimized for creative writing and storytelling."
+                system_message = "You are Magnum, an AI optimized for creative writing and storytelling." + (" Build on our conversation history." if context else "")
 
             messages.append(
                 {
@@ -202,17 +209,21 @@ class OpenRouterAPI:
                         messages.append(msg)
 
             # Add the current prompt
-            messages.append({"role": "user", "content": prompt})  # Prepare the payload
+            messages.append({"role": "user", "content": prompt})
+
+            # Prepare the payload
             payload = {
                 "model": openrouter_model,
                 "messages": messages,
                 "temperature": temperature,
-                "max_tokens": max_tokens,
             }
+            if max_tokens is not None:
+                payload["max_tokens"] = max_tokens
 
             self.logger.info(
                 f"Sending request to OpenRouter API with model {model} (mapped to {openrouter_model})"
-            )            # Send the request
+            )
+            # Send the request
             async with session.post(
                 self.api_url, headers=self.headers, json=payload, timeout=timeout
             ) as response:
@@ -281,3 +292,99 @@ class OpenRouterAPI:
             self.logger.error(f"OpenRouter API error: {str(e)}")
             self.logger.error(traceback.format_exc())
             raise Exception(f"Unexpected error when calling OpenRouter API: {str(e)}")
+
+    @rate_limit
+    async def generate_response_with_model_key(
+        self,
+        prompt: str,
+        openrouter_model_key: str,
+        system_message: str = None,
+        context: List[Dict] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        timeout: float = 300.0,
+    ) -> Optional[str]:
+        """Generate a text response using direct OpenRouter model key."""
+        await self.rate_limiter.acquire()
+
+        try:
+            # Ensure we have a session
+            session = await self.ensure_session()
+
+            self.logger.info(f"Using OpenRouter model key: {openrouter_model_key}")
+
+            # Prepare the messages
+            messages = []
+            
+            # Add system message
+            if system_message:
+                messages.append({"role": "system", "content": system_message})
+            else:
+                messages.append({
+                    "role": "system",
+                    "content": "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."
+                })            # Add context messages if provided
+            if context:
+                self.logger.info(f"Adding {len(context)} context messages to OpenRouter request")
+                for i, msg in enumerate(context):
+                    messages.append(msg)
+                    if i < 3:  # Log first 3 context messages for debugging
+                        self.logger.debug(f"Context message {i+1}: [{msg.get('role', 'unknown')}] {msg.get('content', '')[:100]}...")
+            else:
+                self.logger.info("No context messages provided")
+
+            # Add the user prompt
+            messages.append({"role": "user", "content": prompt})
+
+            # Prepare the request data
+            data = {
+                "model": openrouter_model_key,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+
+            self.logger.info(f"Sending request to OpenRouter API with model {openrouter_model_key}")
+
+            # Make the API request
+            async with session.post(
+                self.api_url,
+                headers=self.headers,
+                json=data,
+                timeout=aiohttp.ClientTimeout(total=timeout),
+            ) as response:
+                response_text = await response.text()
+
+                if response.status == 200:
+                    response_data = await response.json()
+                    
+                    if "choices" in response_data and response_data["choices"]:
+                        content = response_data["choices"][0]["message"]["content"]
+                        self.logger.info(f"Successfully received response from OpenRouter ({len(content)} chars)")
+                        
+                        # Reset circuit breaker on success
+                        self.api_failures = 0
+                        return content
+                    else:
+                        self.logger.error(f"No choices in OpenRouter response: {response_data}")
+                        return None
+                else:
+                    self.logger.error(f"OpenRouter API HTTP error: {response.status} - {response.reason}")
+                    self.logger.error(f"Response text: {response_text}")
+                    
+                    # Increment failure counter
+                    self.api_failures += 1
+                    self.api_last_failure = time.time()
+                    
+                    return None
+
+        except asyncio.TimeoutError:
+            self.logger.error(f"OpenRouter API timeout after {timeout} seconds")
+            self.api_failures += 1
+            self.api_last_failure = time.time()
+            return None
+        except Exception as e:
+            self.logger.error(f"OpenRouter API error: {str(e)}")
+            self.api_failures += 1
+            self.api_last_failure = time.time()
+            return None
