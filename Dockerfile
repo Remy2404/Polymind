@@ -1,11 +1,14 @@
 # syntax=docker/dockerfile:1.4
 
-FROM python:3.11-slim-bookworm AS base
+#################
+# Builder stage #
+#################
+FROM python:3.11-slim-bookworm AS builder
 
-FROM base AS builder
-# Copy uv binaries from the distroless uv image
-COPY --from=ghcr.io/astral-sh/uv:python3.11-bookworm-slim /uv /uvx /usr/local/bin/
+# 1️⃣ Copy uv binaries from the distroless 'uv:latest' image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
+# 2️⃣ Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
@@ -14,34 +17,35 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends gcc g++ libffi-dev \
-  && rm -rf /var/lib/apt/lists/*
+# 3️⃣ Install system build tools
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc g++ libffi-dev && \
+    rm -rf /var/lib/apt/lists/*
 
-# Install dependencies (without installing project) using cached uv
-COPY pyproject.toml uv.lock ./
+# 4️⃣ Copy dependency files and install dependencies
+COPY pyproject.toml uv.lock* ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project --no-dev
 
-# Copy app source and install project
+# 5️⃣ Copy application code and install the project
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
-# Remove build tools
-RUN apt-get remove -y gcc g++ libffi-dev \
-  && apt-get autoremove -y \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
+# 6️⃣ Clean up build dependencies to slim the image
+RUN apt-get remove -y gcc g++ libffi-dev && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-##########
-# Final #
-##########
-FROM base
+#################
+# Final stage   #
+#################
+FROM python:3.11-slim-bookworm
+
 WORKDIR /app
 
-# Copy virtual environment and uv binaries
+# 7️⃣ Copy virtual env and uv binaries from builder
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
 COPY --from=builder /usr/local/bin/uvx /usr/local/bin/uvx
@@ -51,8 +55,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PORT=8000
 
+# 8️⃣ Copy source code and define entrypoint
 COPY . .
 
 EXPOSE 8000
-
 CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
