@@ -17,10 +17,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 3️⃣ Install system build tools
+# 3️⃣ Install system dependencies (including FFmpeg for voice processing)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc g++ libffi-dev && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends \
+    gcc g++ libffi-dev \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 # 4️⃣ Copy dependency files and install dependencies
 COPY pyproject.toml uv.lock* ./
@@ -32,7 +34,7 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
-# 6️⃣ Clean up build dependencies to slim the image
+# 6️⃣ Don't remove FFmpeg - it's needed for voice processing in production
 RUN apt-get remove -y gcc g++ libffi-dev && \
     apt-get autoremove -y && \
     apt-get clean && \
@@ -44,6 +46,12 @@ RUN apt-get remove -y gcc g++ libffi-dev && \
 FROM python:3.11-slim-bookworm
 
 WORKDIR /app
+
+# 🎤 Install runtime dependencies for voice processing
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 # 7️⃣ Copy virtual env and uv binaries from builder
 COPY --from=builder /app/.venv /app/.venv
