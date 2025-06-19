@@ -2435,14 +2435,9 @@ requires-dist = [
     { name = "google-genai", specifier = "==1.10.0" },
     { name = "google-generativeai", specifier = "==0.8.3" },
     { name = "hf-xet", specifier = ">=0.3.0" },
-<<<<<<< HEAD
-    { name = "httpx", specifier = ">=0.23.3" },
-    { name = "huggingface-hub", specifier = "==0.30.0" },
-=======
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "huggingface-hub", specifier = "==0.30.2" },
     { name = "idna", specifier = "==3.3" },
->>>>>>> english-only-voice
     { name = "langcodes", specifier = "==3.5.0" },
     { name = "lxml", specifier = "==5.3.0" },
     { name = "mangum", specifier = "==0.14.0" },
