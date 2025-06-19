@@ -41,8 +41,7 @@ cd Telegram-Gemini-Bot
 python -m venv venv
 source venv/bin/activate     # macOS/Linux
 venv\Scripts\activate        # Windows
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv pip install -r requirements.txt
+uv sync
 ```
 
 ## Configuration
@@ -72,7 +71,7 @@ uv run uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 |-------------------|--------------------------------------|
 | `/start`          | Initialize the bot                   |
 | `/help`           | List available commands              |
-| `/generate_image` | Generate an image from a prompt      |
+| `/genimg`         | Generate an image from a prompt      |
 | `/generate_video` | Create a video from a prompt         |
 | `/reset`          | Clear conversation history           |
 | `/stats`          | Show usage statistics                |
