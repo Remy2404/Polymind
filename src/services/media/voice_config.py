@@ -1,11 +1,11 @@
 """
 Voice processing configuration and settings
+Simplified to support English only to save space
 """
 
 from typing import Dict, Any, List
 from enum import Enum
 import os
-import re
 
 
 class VoiceQuality(Enum):
@@ -17,75 +17,26 @@ class VoiceQuality(Enum):
 
 
 class VoiceConfig:
-    """Configuration for voice processing with Faster-Whisper"""    # Model sizes for Faster-Whisper
+    """Configuration for voice processing with Faster-Whisper - English only"""    
+    # Model sizes for Faster-Whisper - English only
     WHISPER_MODEL_SIZES = {
         VoiceQuality.LOW: "tiny",
         VoiceQuality.MEDIUM: "base",
-        VoiceQuality.HIGH: "large-v3",
-    }
-
-    # Special model sizes for specific languages
-    LANGUAGE_SPECIFIC_MODELS = {
-        "km": "large-v3",  # Khmer requires larger model for better accuracy
-        "kh": "large-v3",  # Alternative Khmer code
-        "th": "large-v3",  # Thai also benefits from larger model
-        "vi": "base",      # Vietnamese works well with base
-        "zh": "large-v3",  # Chinese requires larger model
-        "ja": "large-v3",  # Japanese requires larger model
-        "ko": "large-v3",  # Korean requires larger model
-        "ar": "large-v3",  # Arabic requires larger model
-    }# All languages now use Faster-Whisper
+        VoiceQuality.HIGH: "base",  # Using base even for high quality to save space
+    }    
+    # English only configuration
     ENGINE_PREFERENCES = {
         "en": ["faster_whisper"],
-        "es": ["faster_whisper"],
-        "fr": ["faster_whisper"],
-        "de": ["faster_whisper"],
-        "zh": ["faster_whisper"],
-        "ja": ["faster_whisper"],
-        "ko": ["faster_whisper"],
-        "ru": ["faster_whisper"],
-        "ar": ["faster_whisper"],
-        "hi": ["faster_whisper"],
-        "km": ["faster_whisper"],  # Khmer
-        "kh": ["faster_whisper"],  # Alternative Khmer code
-        "th": ["faster_whisper"],  # Thai
-        "vi": ["faster_whisper"],  # Vietnamese
         "default": ["faster_whisper"],
-    }    # Language-specific audio preprocessing - Enhanced for Khmer
+    }    
+    # Audio preprocessing for English
     LANGUAGE_PREPROCESSING = {
-        "zh": {
-            "normalize": True,
-            "high_pass_filter": 100,
-            "low_pass_filter": 8000,
-            "volume_boost": 2,
-        },
-        "ja": {"normalize": True, "high_pass_filter": 80, "volume_boost": 1},
-        "ko": {"normalize": True, "high_pass_filter": 120, "volume_boost": 2},        "ar": {"normalize": True, "high_pass_filter": 150, "volume_boost": 3},
-        "hi": {"normalize": True, "high_pass_filter": 100, "volume_boost": 2},
-        "km": {
-            "normalize": True, 
-            "high_pass_filter": 300, 
-            "low_pass_filter": 7000,  # Add low-pass to focus on speech frequencies
-            "volume_boost": 4,  # Increased boost for Khmer
-            "noise_reduction": True,  # Enable noise reduction for Khmer
-            "sample_rate": 16000,  # Ensure optimal sample rate
-        },
-        "kh": {
-            "normalize": True, 
-            "high_pass_filter": 300, 
-            "low_pass_filter": 7000,
-            "volume_boost": 4,
-            "noise_reduction": True,
-            "sample_rate": 16000,
-        },  # Alternative Khmer
-        "th": {"normalize": True, "high_pass_filter": 200, "volume_boost": 2},  # Thai
-        "vi": {"normalize": True, "high_pass_filter": 150, "volume_boost": 2},  # Vietnamese
-        "default": {"normalize": True, "high_pass_filter": 80, "volume_boost": 0},
-    }    # Confidence threshold for Faster-Whisper
+        "en": {"normalize": True, "high_pass_filter": 80, "volume_boost": 1},
+        "default": {"normalize": True, "high_pass_filter": 80, "volume_boost": 1},
+    }    
+    # Confidence threshold for Faster-Whisper
     CONFIDENCE_THRESHOLDS = {
         "faster_whisper": 0.7,
-        "faster_whisper_khmer": 0.3,  # Much lower threshold for Khmer due to detection challenges
-        "faster_whisper_khmer_strict": 0.6,  # Strict threshold for high-confidence Khmer
     }
 
     # VAD (Voice Activity Detection) settings
@@ -127,16 +78,11 @@ class VoiceConfig:
     @classmethod
     def get_confidence_threshold(cls, engine: str) -> float:
         """Get confidence threshold for an engine"""
-        return cls.CONFIDENCE_THRESHOLDS.get(engine, 0.5)
-
-    @classmethod
+        return cls.CONFIDENCE_THRESHOLDS.get(engine, 0.5)    @classmethod
     def is_high_resource_language(cls, language: str) -> bool:
         """Check if language requires high-resource processing"""
-        high_resource_langs = ["zh", "ja", "ko", "ar", "hi", "th", "km", "kh", "vi"]
-        lang_code = (
-            language.split("-")[0].lower() if "-" in language else language.lower()
-        )
-        return lang_code in high_resource_langs
+        # No high resource languages when using English only
+        return False
 
     @classmethod
     def get_recommended_quality(
@@ -155,7 +101,6 @@ class VoiceConfig:
     def from_env(cls) -> Dict[str, Any]:
         """Load configuration - now hardcoded for stability"""
         config = {}
-
         config["enabled"] = True
         config["default_engine"] = "faster_whisper"
         config["quality"] = "medium"
@@ -166,18 +111,6 @@ class VoiceConfig:
         config["language_detection"] = True
         engine_prefs = {
             "en": ["faster_whisper"],  # VOICE_ENGINE_PREFERENCES_EN=faster_whisper
-            "es": ["faster_whisper"],  # VOICE_ENGINE_PREFERENCES_ES=faster_whisper
-            "fr": ["faster_whisper"],  # VOICE_ENGINE_PREFERENCES_FR=faster_whisper
-            "zh": ["faster_whisper"],  # VOICE_ENGINE_PREFERENCES_ZH=faster_whisper
-            "ja": ["faster_whisper"],  # VOICE_ENGINE_PREFERENCES_JA=faster_whisper
-            "ko": ["faster_whisper"],  # VOICE_ENGINE_PREFERENCES_KO=faster_whisper
-            "ru": ["faster_whisper"],  # VOICE_ENGINE_PREFERENCES_RU=faster_whisper
-            "ar": ["faster_whisper"],  # VOICE_ENGINE_PREFERENCES_AR=faster_whisper
-            # Additional common languages
-            "km": ["faster_whisper"],  # VOICE_ENGINE_PREFERENCES_KM=faster_whisper (Khmer)
-            "kh": ["faster_whisper"],  # VOICE_ENGINE_PREFERENCES_KH=faster_whisper (Alt Khmer)
-            "vi": ["faster_whisper"],  # VOICE_ENGINE_PREFERENCES_VI=faster_whisper (Vietnamese)
-            "de": ["faster_whisper"],  # VOICE_ENGINE_PREFERENCES_DE=faster_whisper (German)
         }
 
         # Merge with class defaults
@@ -185,72 +118,7 @@ class VoiceConfig:
         final_prefs.update(engine_prefs)
         config["engine_preferences"] = final_prefs
 
-        return config
-
-    @classmethod
-    def is_likely_false_english_for_khmer(cls, text: str, confidence: float = 0.0) -> bool:
-        """
-        Detect if an English transcription is likely a false positive for Khmer audio
-        
-        Args:
-            text: The transcribed text
-            confidence: The confidence score
-            
-        Returns:
-            bool: True if this is likely a false positive English transcription
-        """
-        if not text or not text.strip():
-            return False
-            
-        text_lower = text.lower().strip()
-        
-        # Common false positive patterns for Khmer -> English
-        false_positive_patterns = [
-            # Repetitive patterns
-            r'\b(\w+)\s+\1\b',  # "so so", "slide slide", "on on"
-            r'\b(\w+)\s+(\w+)\s+\1\s+\2\b',  # "so slide so slide"
-            
-            # Common false positive words for Khmer
-            r'\b(so|slide|on|it|the|and|to|of|in|that|is|for|with|as|by|at|be|or|an|are|was|but|not|have|from|they|we|she|he|his|her|him|them|their|this|that|will|would|could|should|may|might|can|than|then|now|how|what|when|where|why|who|which|more|most|some|any|no|yes|very|just|only|even|also|still|again|back|here|there|up|down|out|off|over|under|through|before|after|between|during|while|until|since|because|if|unless|although|though|however|therefore|thus|so|yet|but|and|or|nor|for|yet|so)\b',
-        ]
-        
-        # Check for repetitive patterns
-        for pattern in false_positive_patterns[:2]:  # Check repetitive patterns
-            if re.search(pattern, text_lower):
-                return True
-        
-        # Check for too many common English words (suggests false positive)
-        words = text_lower.split()
-        if len(words) > 0:
-            common_word_pattern = false_positive_patterns[2]
-            common_words = [word for word in words if re.match(common_word_pattern, word)]
-            
-            # If more than 70% of words are common English words, likely false positive
-            if len(common_words) / len(words) > 0.7:
-                return True
-        
-        # Check for very short repetitive phrases
-        if len(text_lower) < 50 and len(set(words)) < len(words) * 0.5:
-            return True
-            
-        # Low confidence with suspicious patterns
-        if confidence < 0.5:
-            suspicious_phrases = [
-                "so slide on it",
-                "so slide",
-                "slide on it", 
-                "on it on it",
-                "so so",
-                "the the",
-                "and and",
-                "to to"
-            ]
-            
-            for phrase in suspicious_phrases:
-                if phrase in text_lower:
-                    return True
-        
-        return False
+        return config    # Removed non-English language detection methods to save space
 class VoiceStats:
     """Statistics tracking for voice processing"""
 

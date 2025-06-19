@@ -507,43 +507,21 @@ class MessageHandlers:
                 from src.services.user_preferences_manager import UserPreferencesManager
                 self.preferences_manager = UserPreferencesManager(self.user_data_manager)
 
-            # Get user's language preference
-            user_lang = await self.preferences_manager.get_user_language_preference(user_id) or "en"
-
-            # If not found in preferences, use Telegram's language code
-            if user_lang == "en" and update.effective_user.language_code:
-                user_lang = update.effective_user.language_code
-
-            # Enhanced language mapping with better Khmer support
-            language_map = {
-                "en": "en-US", "km": "km-KH", "kh": "km-KH", "ru": "ru-RU", 
-                "fr": "fr-FR", "es": "es-ES", "de": "de-DE", "ja": "ja-JP",
-                "zh": "zh-CN", "th": "th-TH", "vi": "vi-VN",
-            }
-
-            # Extract language prefix properly
-            lang_prefix = user_lang.split("-")[0] if "-" in user_lang else user_lang
-            lang = language_map.get(lang_prefix, "en-US")
-
-            # Set flag for Khmer processing
-            is_khmer = lang_prefix in ["km", "kh"]
-
-            # Log the detected language for debugging
-            self.logger.info(f"Voice recognition language set to: {lang}, is_khmer={is_khmer}")
+            # English-only language setting to save space
+            lang = "en-US"
+            
+            # Log the language for debugging
+            self.logger.info(f"Voice recognition language set to: {lang} (English only)")
 
             # Show processing message
-            processing_text = (
-                "កំពុងដំណើរការសារសំឡេងរបស់អ្នក... សូមរង់ចាំ...\n(Processing your voice message. Please wait...)"
-                if is_khmer
-                else "🎤 Processing your voice message with enhanced AI recognition..."
-            )
+            processing_text = "🎤 Processing your voice message with enhanced AI recognition..."
 
             status_message = await update.message.reply_text(processing_text)
 
             # Use enhanced VoiceProcessor for downloading and converting voice file
             voice_file = await context.bot.get_file(update.message.voice.file_id)
             ogg_file_path, wav_file_path = await self.voice_processor.download_and_convert(
-                voice_file, str(user_id), is_khmer
+                voice_file, str(user_id)
             )
 
             # Use enhanced VoiceProcessor for transcribing the voice file
@@ -555,92 +533,25 @@ class MessageHandlers:
                 engine_used = metadata.get("engine", "unknown")
                 confidence = metadata.get("confidence", 0.0)
                 
-                # Enhanced logging for Khmer debugging with new metadata
-                requested_lang = metadata.get("requested_language", "unknown")
-                detected_lang = metadata.get("detected_language", "unknown")
-                language_mismatch = metadata.get("language_mismatch", False)
-                strategy_used = metadata.get("strategy", "unknown")
-                
+                # Simplified English-only logging
                 self.logger.info(f"🔍 VOICE TRANSCRIPTION RESULT:")
-                self.logger.info(f"  → Requested language: {requested_lang}")
-                self.logger.info(f"  → Detected language: {detected_lang}")
-                self.logger.info(f"  → Recognition language: {recognition_language}")
                 self.logger.info(f"  → Engine: {engine_used}")
-                self.logger.info(f"  → Strategy: {strategy_used}")
                 self.logger.info(f"  → Confidence: {confidence:.3f}")
                 self.logger.info(f"  → Text length: {len(text)} chars")
                 self.logger.info(f"  → Text preview: {text[:100]}...")
-                self.logger.info(f"  → Language mismatch: {language_mismatch}")
-                
-                # Special warning for Khmer cases with enhanced information
-                if is_khmer and language_mismatch:
-                    self.logger.warning(f"⚠️ KHMER LANGUAGE MISMATCH DETECTED:")
-                    self.logger.warning(f"  → Expected: km (Khmer)")
-                    self.logger.warning(f"  → Got: {detected_lang}")
-                    self.logger.warning(f"  → Strategy used: {strategy_used}")
-                    self.logger.warning(f"  → All attempts tried: {metadata.get('all_attempts', 0)}")
-                    self.logger.warning(f"  → This suggests the audio might not be clear Khmer speech")
-                    self.logger.warning(f"  → Or the model is auto-detecting a different language")
-                    
-                    # Add user notification for Khmer mismatch with strategy info
-                    if detected_lang == "en":
-                        # Check if this might be a false positive English transcription
-                        from src.services.media.voice_config import VoiceConfig
-                        is_false_positive = VoiceConfig.is_likely_false_english_for_khmer(text, confidence)
-                        
-                        if is_false_positive:
-                            khmer_warning = (
-                                f"🇰🇭 **ការជូនដំណឹង:** ការបំលែងនេះអាចមិនត្រឹមត្រូវទេ។\n"
-                                f"📢 **Notice:** This transcription may be incorrect (likely false positive).\n\n"
-                                f"🔍 **បញ្ហា / Issue:** អក្សរដែលបានបំលែងនេះទំនងមានភាពមិនត្រឹមត្រូវ\n"
-                                f"🔍 **Issue:** The transcribed text appears to be a false positive\n\n"
-                                f"💡 **ការណែនាំ / Recommendations:**\n"
-                                f"• និយាយឱ្យច្បាស់និងយឺត / Speak clearly and slowly\n"
-                                f"• ប្រើពាក្យខ្មែរសុទ្ធ / Use pure Khmer words\n"
-                                f"• ជៀសវាងសំឡេងរំខាន / Avoid background noise\n"
-                                f"• សាកល្បងផ្ញើម្តងទៀត / Try sending again\n\n"
-                                f"📊 **Technical:** Strategy: `{strategy_used}`, Confidence: {confidence:.1%}"
-                            )
-                        else:
-                            khmer_warning = (
-                                f"🇰🇭 **ការជូនដំណឹង:** សំឡេងរបស់អ្នកត្រូវបានសម្គាល់ជាភាសាអង់គ្លេសជំនួសឱ្យភាសាខ្មែរ។\n"
-                                f"📢 **Notice:** Your voice was detected as English instead of Khmer.\n\n"
-                                f"🔧 **ព័ត៌មានបច្ចេកទេស / Technical Info:**\n"
-                                f"• វិធីសាស្រ្ត / Strategy: `{strategy_used}`\n"
-                                f"• ការព្យាយាម / Attempts: {metadata.get('all_attempts', 0)}\n"
-                                f"• កម្រិតទំនុកចិត្ត / Confidence: {confidence:.1%}\n\n"
-                                f"💡 **ការណែនាំ / Tips:**\n"
-                                f"• និយាយឱ្យច្បាស់និងយឺត / Speak clearly and slowly\n"
-                                f"• ជៀសវាងសំឡេងរំខាន / Avoid background noise\n"
-                                f"• ប្រើឃ្លាខ្មែរសុទ្ធ / Use pure Khmer phrases\n"
-                                f"• និយាយយូរជាង / Speak for longer duration\n"
-                                f"• សាកល្បងផ្ញើម្តងទៀត / Try sending again\n\n"
-                            )
-                        
-                        # Send warning but continue with transcription
-                        try:
-                            await update.message.reply_text(khmer_warning, parse_mode="Markdown")
-                        except Exception:
-                            await update.message.reply_text(
-                                f"🇰🇭 Notice: Your Khmer voice was detected as English. "
-                                f"Strategy used: {strategy_used}. Please try speaking more clearly in pure Khmer."
-                            )
                 
                 self.logger.info(f"Enhanced transcription: engine={engine_used}, confidence={confidence:.2f}")
             else:
                 # Fallback to basic transcription
-                text, recognition_language = await self.voice_processor.transcribe(wav_file_path, lang, is_khmer)
+                text, recognition_language = await self.voice_processor.transcribe(wav_file_path, lang)
                 metadata = {"engine": "basic", "confidence": 0.7}
                 engine_used = "basic"
                 confidence = 0.7
 
             if not text:
-                # Language-specific error message
+                # English-only error message
                 error_text = (
-                    "សូមអភ័យទោស មិនអាចយល់សំឡេងបានទេ។ សូមសាកល្បងម្តងទៀតជាមួយសំឡេងច្បាស់ជាងនេះ។\n\n"
-                    "Sorry, I couldn't understand the audio. Please try again with clearer audio."
-                    if is_khmer
-                    else "❌ Sorry, I couldn't understand the audio.\n\n💡 **Tips:**\n"
+                    "❌ Sorry, I couldn't understand the audio.\n\n💡 **Tips:**\n"
                     "• Speak clearly and avoid background noise\n"
                     "• Try speaking in English for better accuracy\n"
                     "• Send shorter voice messages (under 30 seconds)\n"
@@ -663,34 +574,12 @@ class MessageHandlers:
             # Show the transcribed text with confidence indicator
             confidence_emoji = "🟢" if confidence > 0.8 else "🟡" if confidence > 0.6 else "🔴"
             
-            # Improved formatting for voice message transcription
-            if is_khmer:
-                # For Khmer, show language detection status
-                khmer_detected = metadata.get("khmer_detected", False)
-                strategy_used = metadata.get("strategy", "unknown")
-                
-                if khmer_detected:
-                    transcript_text = f"🎤 *សំឡេងបានបំលែងជាអក្សរ* ✅\n\n{text}"
-                    if strategy_used:
-                        transcript_text += f"\n\n_វិធីសាស្រ្ត: {strategy_used}_"
-                else:
-                    # Khmer requested but not detected
-                    transcript_text = (
-                        f"🎤 *Voice Transcribed* ⚠️\n\n{text}\n\n"
-                        f"🇰🇭 *ចំណាំ: មិនបានសម្គាល់ជាភាសាខ្មែរទេ*\n"
-                        f"*Note: Khmer not detected (got: {recognition_language})*"
-                    )
-            else:
-                transcript_text = f"🎤 **Voice Message Transcribed** {confidence_emoji}\n\n{text}"
-                
-                # Add engine info only if confidence is good and not Khmer
-                if confidence > 0.8:
-                    transcript_text += f"\n\n_Engine: {engine_used.title()}, Confidence: {confidence:.1%}_"
-                    
-                # Add strategy info if available
-                strategy_used = metadata.get("strategy")
-                if strategy_used and strategy_used != "unknown":
-                    transcript_text += f"\n_Strategy: {strategy_used}_"
+            # Simplified formatting for English-only voice message transcription
+            transcript_text = f"🎤 **Voice Message Transcribed** {confidence_emoji}\n\n{text}"
+            
+            # Add engine info if confidence is good
+            if confidence > 0.7:
+                transcript_text += f"\n\n_Engine: {engine_used.title()}, Confidence: {confidence:.1%}_"
 
             # Send transcript message
             try:
