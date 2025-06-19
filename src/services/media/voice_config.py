@@ -17,23 +17,24 @@ class VoiceQuality(Enum):
 
 
 class VoiceConfig:
-    """Configuration for voice processing with Faster-Whisper - English only"""    
+    """Configuration for voice processing with Faster-Whisper - English only"""
+
     # Model sizes for Faster-Whisper - English only
     WHISPER_MODEL_SIZES = {
         VoiceQuality.LOW: "tiny",
         VoiceQuality.MEDIUM: "base",
         VoiceQuality.HIGH: "base",  # Using base even for high quality to save space
-    }    
+    }
     # English only configuration
     ENGINE_PREFERENCES = {
         "en": ["faster_whisper"],
         "default": ["faster_whisper"],
-    }    
+    }
     # Audio preprocessing for English
     LANGUAGE_PREPROCESSING = {
         "en": {"normalize": True, "high_pass_filter": 80, "volume_boost": 1},
         "default": {"normalize": True, "high_pass_filter": 80, "volume_boost": 1},
-    }    
+    }
     # Confidence threshold for Faster-Whisper
     CONFIDENCE_THRESHOLDS = {
         "faster_whisper": 0.7,
@@ -41,10 +42,10 @@ class VoiceConfig:
 
     # VAD (Voice Activity Detection) settings
     VAD_SETTINGS = {
-        "aggressiveness": 2,  
-        "min_speech_ratio": 0.3, 
-        "frame_duration_ms": 30,  
-    } 
+        "aggressiveness": 2,
+        "min_speech_ratio": 0.3,
+        "frame_duration_ms": 30,
+    }
     AUDIO_SETTINGS = {
         "sample_rate": 16000,
         "channels": 1,
@@ -57,7 +58,8 @@ class VoiceConfig:
     @classmethod
     def get_model_size(cls, quality: VoiceQuality) -> str:
         """Get Whisper model size for given quality"""
-        return cls.WHISPER_MODEL_SIZES.get(quality, "base")    @classmethod
+        return cls.WHISPER_MODEL_SIZES.get(quality, "base") @ classmethod
+
     def get_engine_preference(cls, language: str) -> List[str]:
         """Get preferred engines for a language"""
         lang_code = (
@@ -78,7 +80,8 @@ class VoiceConfig:
     @classmethod
     def get_confidence_threshold(cls, engine: str) -> float:
         """Get confidence threshold for an engine"""
-        return cls.CONFIDENCE_THRESHOLDS.get(engine, 0.5)    @classmethod
+        return cls.CONFIDENCE_THRESHOLDS.get(engine, 0.5) @ classmethod
+
     def is_high_resource_language(cls, language: str) -> bool:
         """Check if language requires high-resource processing"""
         # No high resource languages when using English only
@@ -118,7 +121,9 @@ class VoiceConfig:
         final_prefs.update(engine_prefs)
         config["engine_preferences"] = final_prefs
 
-        return config    # Removed non-English language detection methods to save space
+        return config  # Removed non-English language detection methods to save space
+
+
 class VoiceStats:
     """Statistics tracking for voice processing"""
 
@@ -209,10 +214,10 @@ voice_stats = VoiceStats()
 def load_config_from_env() -> Dict[str, Any]:
     """Load configuration - now hardcoded for stability"""
     return {
-        "default_quality": VoiceQuality.MEDIUM,  
-        "max_file_size_mb": 50,  
-        "timeout_seconds": 300, 
-        "enable_vad": True,  
-        "cache_models": True,  
-        "log_level": "INFO",  
+        "default_quality": VoiceQuality.MEDIUM,
+        "max_file_size_mb": 50,
+        "timeout_seconds": 300,
+        "enable_vad": True,
+        "cache_models": True,
+        "log_level": "INFO",
     }
