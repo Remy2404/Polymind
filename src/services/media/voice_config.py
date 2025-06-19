@@ -207,18 +207,54 @@ class VoiceConfig:
         # Common false positive patterns for Khmer -> English
         false_positive_patterns = [
             # Repetitive patterns
-            r'\b(\w+)\s+\1\b',  # "so so", "slide slide", "on on"
+            r'\b(\w+)\s+\1\b',  # "so so", "slide slide"
             r'\b(\w+)\s+(\w+)\s+\1\s+\2\b',  # "so slide so slide"
             
             # Common false positive words for Khmer
             r'\b(so|slide|on|it|the|and|to|of|in|that|is|for|with|as|by|at|be|or|an|are|was|but|not|have|from|they|we|she|he|his|her|him|them|their|this|that|will|would|could|should|may|might|can|than|then|now|how|what|when|where|why|who|which|more|most|some|any|no|yes|very|just|only|even|also|still|again|back|here|there|up|down|out|off|over|under|through|before|after|between|during|while|until|since|because|if|unless|although|though|however|therefore|thus|so|yet|but|and|or|nor|for|yet|so)\b',
+            
+            # Additional Khmer-specific false positive patterns
+            r'this is.*(first|the first)',  # "This is the first..." - common false positive for Khmer greetings
+            r'(how|hello).*are you',  # Often misinterpreted from "តើ អ្នក សុខសប្បាយ ជាទេ?"
+            r'(and|so).*\b(see|look|watch|view)\b',  # Common false positive for Khmer explanations
+            r'(slide|so slide|on it|the side)',  # Very common patterns for Khmer speech
+            r'(that you|but you|for you|the you)',  # Common pattern for Khmer words
+            r'\b(hi|hello|hey)\b.*\b(so|slide|side)\b',  # Greeting followed by common Khmer false positive
         ]
         
         # Check for repetitive patterns
         for pattern in false_positive_patterns[:2]:  # Check repetitive patterns
             if re.search(pattern, text_lower):
                 return True
+
+        # Enhanced detection for additional patterns
+        for pattern in false_positive_patterns[3:]:  # Check Khmer-specific patterns
+            if re.search(pattern, text_lower):
+                return True
+
+        # Enhanced detection: repeated full phrase sequences
+        # Catch cases like "so slide on it so slide on it"
+        four_word_repeat_pattern = r"\b(\w+\s+\w+\s+\w+\s+\w+)\s+\1\b"
+        if re.search(four_word_repeat_pattern, text_lower):
+            return True
+
+        # Detect specific repeated phrases
+        if text_lower.count("so slide") > 1 or text_lower.count("slide on") > 1:
+            return True
         
+        # Extra check for "so slide on it" which is extremely common false positive
+        if "so slide on it" in text_lower or "so slide on" in text_lower or "slide on it" in text_lower:
+            return True
+            
+        # Detect common "តើ អ្នក សុខសប្បាយ ជាទេ?" mistranscriptions
+        common_khmer_greeting_mistakes = [
+            "and this is", "so is the", "this is the first", "that is the", "how are you", 
+            "hello this is", "this is a", "slide the", "on the slide"
+        ]
+        for mistake in common_khmer_greeting_mistakes:
+            if mistake in text_lower:
+                return True
+
         # Check for too many common English words (suggests false positive)
         words = text_lower.split()
         if len(words) > 0:
@@ -234,7 +270,7 @@ class VoiceConfig:
             return True
             
         # Low confidence with suspicious patterns
-        if confidence < 0.5:
+        if confidence < 0.6:
             suspicious_phrases = [
                 "so slide on it",
                 "so slide",
@@ -243,12 +279,23 @@ class VoiceConfig:
                 "so so",
                 "the the",
                 "and and",
-                "to to"
+                "to to",
+                "and this is",
+                "this is the",
+                "that is the",
+                "let me",
+                "i'm going to",
+                "i will",
+                "hello and",
             ]
             
             for phrase in suspicious_phrases:
                 if phrase in text_lower:
                     return True
+                    
+            # Check for very short outputs, which are often wrong for Khmer
+            if len(text_lower) < 15 and confidence < 0.5:
+                return True
         
         return False
 class VoiceStats:

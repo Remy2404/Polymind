@@ -18,11 +18,9 @@ from src.utils.docgen.document_processor import DocumentProcessor
 # Import utility classes
 from src.handlers.message_context_handler import MessageContextHandler
 from src.handlers.response_formatter import ResponseFormatter
-from src.services.media.voice_processor import (
-    VoiceProcessor,
-    SpeechEngine,
-    create_voice_processor,
-)
+from src.services.media.voice_config import VoiceConfig, VoiceQuality
+from src.services.user_preferences_manager import UserPreferencesManager
+from src.services.media.voice_processor import create_voice_processor
 from src.services.memory_context.conversation_manager import ConversationManager
 from src.services.group_chat.integration import GroupChatIntegration
 from src.services.model_handlers.model_configs import ModelConfigurations, Provider, ModelConfig
@@ -490,29 +488,44 @@ class MessageHandlers:
         )
 
         try:
-            # Initialize enhanced voice processor if not already done
+            # Factory initialization moved here
             if not hasattr(self, "voice_processor") or self.voice_processor is None:
-                try:
-                    self.voice_processor = await create_voice_processor(
-                        engine=SpeechEngine.FASTER_WHISPER  # Use specific engine
-                    )
-                    self.logger.info("Enhanced voice processor initialized with Faster-Whisper")
-                except Exception as e:
-                    self.logger.error(f"Failed to initialize enhanced voice processor: {e}")
-                    # Fallback to basic voice processor
-                    self.voice_processor = VoiceProcessor()
-
-            # Initialize preferences manager if not available
-            if not hasattr(self, "preferences_manager") or self.preferences_manager is None:
-                from src.services.user_preferences_manager import UserPreferencesManager
+                self.voice_processor = await create_voice_processor()
+                # Initialize preferences manager
                 self.preferences_manager = UserPreferencesManager(self.user_data_manager)
 
             # Get user's language preference
             user_lang = await self.preferences_manager.get_user_language_preference(user_id) or "en"
 
+            # Try to detect if user has previously sent Khmer messages
+            user_history = await self.user_data_manager.get_user_data(user_id)
+            has_khmer_history = False
+            
+            if user_history and 'message_history' in user_history:
+                # Check last 15 messages for Khmer content (increased from 10)
+                for msg in user_history.get('message_history', [])[-15:]:
+                    if msg.get('content') and any(char in msg.get('content', '') for char in 'កខគឃងចឆជឈញ'):
+                        has_khmer_history = True
+                        self.logger.info(f"User {user_id} has Khmer message history, will prioritize Khmer detection")
+                        break
+            
+            # Look for Khmer in recent voice transcription history
+            if not has_khmer_history and user_history and 'voice_transcriptions' in user_history:
+                # Check past voice transcriptions for Khmer language detection
+                for transcription in user_history.get('voice_transcriptions', [])[-10:]:
+                    if transcription.get('detected_language') == 'km':
+                        has_khmer_history = True
+                        self.logger.info(f"User {user_id} has previous Khmer voice transcriptions, will prioritize Khmer detection")
+                        break
+
             # If not found in preferences, use Telegram's language code
             if user_lang == "en" and update.effective_user.language_code:
                 user_lang = update.effective_user.language_code
+                
+            # Force Khmer detection if user has Khmer history
+            if has_khmer_history and user_lang == "en":
+                self.logger.info(f"Overriding default language (en) with Khmer (km) based on user history")
+                user_lang = "km"
 
             # Enhanced language mapping with better Khmer support
             language_map = {
@@ -546,20 +559,87 @@ class MessageHandlers:
                 voice_file, str(user_id), is_khmer
             )
 
-            # Use enhanced VoiceProcessor for transcribing the voice file
+            # Get audio duration for short audio detection optimization
+            audio_duration = 0
+            try:
+                import soundfile as sf
+                with sf.SoundFile(wav_file_path) as sound_file:
+                    audio_duration = float(len(sound_file)) / sound_file.samplerate
+                self.logger.info(f"Audio duration: {audio_duration:.2f}s")
+            except Exception as e:
+                self.logger.warning(f"Could not determine audio duration: {e}")
+
+            # Special handling for short audio - increase Khmer detection sensitivity
+            short_audio_khmer_mode = False
+            if audio_duration > 0 and audio_duration < 3.0 and not is_khmer:
+                self.logger.info(f"Short audio detected ({audio_duration:.2f}s), increasing Khmer detection sensitivity")
+                # For very short audio, we'll give extra weight to Khmer detection
+                short_audio_khmer_mode = True
+            
+            # Enhanced transcription with audio duration awareness
             if hasattr(self.voice_processor, "get_best_transcription"):
                 self.logger.info(f"🎤 Enhanced voice transcription starting for language: {lang}")
+                
+                # For short audio, first try with language detection auto mode
+                if short_audio_khmer_mode:
+                    self.logger.info("Short audio detected, first trying with auto language detection")
+                    # Start with auto-detection to see if Khmer is naturally detected
+                    text, recognition_language, metadata = await self.voice_processor.get_best_transcription(
+                        wav_file_path, language="auto", confidence_threshold=0.5
+                    )
+                    # If detected as Khmer, set is_khmer flag and update lang
+                    if recognition_language == "km":
+                        self.logger.info("Auto-detection identified Khmer language!")
+                        is_khmer = True
+                        lang = "km-KH"
+                        # Update status message
+                        try:
+                            await status_message.edit_text("🇰🇭 ភាសាខ្មែរត្រូវបានបង្ហាញ... កំពុងដំណើរការ\n(Khmer language detected... processing)")
+                        except Exception:
+                            pass
+                
+                # Do normal transcription with the right language setting
                 text, recognition_language, metadata = await self.voice_processor.get_best_transcription(
                     wav_file_path, language=lang, confidence_threshold=0.6
                 )
                 engine_used = metadata.get("engine", "unknown")
                 confidence = metadata.get("confidence", 0.0)
                 
+                # Detect false-positive English transcription for Khmer audio
+                if not is_khmer:
+                    from src.services.media.voice_config import VoiceConfig
+                    
+                    # More aggressively detect false positives for short audio or if user has Khmer history
+                    confidence_threshold = 0.6
+                    if short_audio_khmer_mode or has_khmer_history:
+                        confidence_threshold = 0.5
+                    
+                    is_false_positive = VoiceConfig.is_likely_false_english_for_khmer(text, confidence)
+                        
+                    if is_false_positive or (
+                        (short_audio_khmer_mode or has_khmer_history) and confidence < confidence_threshold
+                    ):
+                        self.logger.warning(f"Detected likely Khmer audio mis-transcribed as English (confidence: {confidence:.2f})")
+                        is_khmer = True
+                        lang = "km-KH"
+                        try:
+                            await status_message.edit_text("🇰🇭 អត្ថបទមើលទៅដូចជាភាសាខ្មែរ កំពុងបកប្រែឡើងវិញ...\n(Detected Khmer speech, retrying with better settings...)")
+                        except Exception:
+                            pass
+                        # Rerun transcription using Khmer enhanced settings and lower threshold
+                        text, recognition_language, metadata = await self.voice_processor.get_best_transcription(
+                            wav_file_path,
+                            language=lang,
+                            confidence_threshold=VoiceConfig.get_confidence_threshold("faster_whisper_khmer")
+                        )
+                        engine_used = metadata.get("engine", "unknown")
+                        confidence = metadata.get("confidence", 0.0)
+                
                 # Enhanced logging for Khmer debugging with new metadata
                 requested_lang = metadata.get("requested_language", "unknown")
                 detected_lang = metadata.get("detected_language", "unknown")
-                language_mismatch = metadata.get("language_mismatch", False)
                 strategy_used = metadata.get("strategy", "unknown")
+                language_mismatch = metadata.get("language_mismatch", False)
                 
                 self.logger.info(f"🔍 VOICE TRANSCRIPTION RESULT:")
                 self.logger.info(f"  → Requested language: {requested_lang}")
@@ -571,6 +651,32 @@ class MessageHandlers:
                 self.logger.info(f"  → Text length: {len(text)} chars")
                 self.logger.info(f"  → Text preview: {text[:100]}...")
                 self.logger.info(f"  → Language mismatch: {language_mismatch}")
+                
+                # Store transcription in user history for future reference
+                try:
+                    # Initialize voice_transcriptions array if needed
+                    if 'voice_transcriptions' not in user_history:
+                        user_history['voice_transcriptions'] = []
+                    
+                    # Add this transcription to history
+                    user_history['voice_transcriptions'].append({
+                        'timestamp': str(update.message.date),
+                        'detected_language': detected_lang,
+                        'requested_language': requested_lang,
+                        'confidence': confidence,
+                        'is_khmer': is_khmer,
+                        'duration': audio_duration,
+                        'strategy': strategy_used
+                    })
+                    
+                    # Keep only last 20 transcriptions
+                    if len(user_history['voice_transcriptions']) > 20:
+                        user_history['voice_transcriptions'] = user_history['voice_transcriptions'][-20:]
+                    
+                    # Save updates
+                    await self.user_data_manager.update_user_data(user_id, user_history)
+                except Exception as e:
+                    self.logger.warning(f"Could not update voice transcription history: {e}")
                 
                 # Special warning for Khmer cases with enhanced information
                 if is_khmer and language_mismatch:

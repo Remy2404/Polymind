@@ -38,8 +38,8 @@ class VoiceProcessor:
         self.temp_dir = tempfile.gettempdir()
         self.default_engine = default_engine
         
-        # Model cache (only Faster-Whisper)
-        self._faster_whisper_model = None
+        # Model cache (for different model sizes)
+        self._faster_whisper_models = {}
         
         # Initialize available engines
         self.available_engines = self._check_available_engines()
@@ -63,27 +63,65 @@ class VoiceProcessor:
             raise RuntimeError("Faster-Whisper is not available. Please install it with: pip install faster-whisper")
     
     async def _load_faster_whisper_model(self, model_size: str = "base") -> Optional[WhisperModel]:
-        """Load Faster-Whisper model"""
+        """Load Faster-Whisper model with optimized caching for different model sizes"""
         if not FASTER_WHISPER_AVAILABLE:
             return None
             
-        if self._faster_whisper_model is None:
-            try:
-                self.logger.info(f"Loading Faster-Whisper model: {model_size}")
-                # Use CPU for compatibility
-                device = "cpu"
-                compute_type = "int8"
-                
-                self._faster_whisper_model = WhisperModel(
-                    model_size, 
-                    device=device, 
-                    compute_type=compute_type
-                )
-                self.logger.info(f"Faster-Whisper model loaded on {device}")
-            except Exception as e:
-                self.logger.error(f"Failed to load Faster-Whisper model: {e}")
-                return None
-        return self._faster_whisper_model
+        # Check cache first
+        if model_size in self._faster_whisper_models:
+            self.logger.info(f"Using cached Faster-Whisper model: {model_size}")
+            return self._faster_whisper_models[model_size]
+        
+        try:
+            self.logger.info(f"Loading Faster-Whisper model: {model_size}")
+            # Use CPU for compatibility
+            device = "cpu"
+            
+            # Use optimal compute type based on model size
+            compute_type = "int8"
+            if model_size in ["large-v3", "large-v2", "large"]:
+                # More aggressive optimization for large models
+                compute_type = "int8_float16"
+                self.logger.info(f"Using optimized compute type {compute_type} for {model_size} model")
+            
+            # Setup model download cache directory to avoid re-downloading
+            download_root = os.path.join(self.temp_dir, "faster_whisper_models")
+            os.makedirs(download_root, exist_ok=True)
+            
+            # CPU thread optimization to prevent overloading with large models
+            cpu_threads = 4
+            if model_size in ["large-v3"]:
+                # Further optimization for very large models
+                cpu_threads = 2
+                self.logger.info(f"Limiting CPU threads to {cpu_threads} for {model_size} model")
+            
+            # Check if model is already downloaded
+            model_path = os.path.join(download_root, model_size)
+            local_files_only = os.path.exists(model_path) and len(os.listdir(model_path)) > 0
+            
+            if local_files_only:
+                self.logger.info(f"Using locally cached model files for {model_size}")
+            else:
+                self.logger.info(f"Model {model_size} not cached locally, will download")
+            
+            # Load the model with optimized settings
+            model = WhisperModel(
+                model_size, 
+                device=device, 
+                compute_type=compute_type,
+                cpu_threads=cpu_threads,
+                download_root=download_root,
+                local_files_only=local_files_only
+            )
+            self.logger.info(f"Faster-Whisper model {model_size} loaded on {device} with {compute_type}")
+            
+            # Cache the loaded model
+            self._faster_whisper_models[model_size] = model
+            
+            return model
+        except Exception as e:
+            self.logger.error(f"Failed to load Faster-Whisper model {model_size}: {e}")
+            return None
 
     async def download_and_convert(
         self, voice_file, user_id: str, is_khmer: bool = False
@@ -137,9 +175,39 @@ class VoiceProcessor:
             def _do_convert():
                 # Load the audio file
                 audio = AudioSegment.from_file(input_path)
+                
+                # Add audio attributes analysis for better language detection
+                audio_duration = len(audio) / 1000.0  # Duration in seconds
+                audio_rms = audio.rms
+                audio_dbfs = audio.dBFS
+                might_be_khmer = False
+                
+                # Enhanced audio analysis for Khmer detection
+                # Short messages and specific audio characteristics can help identify Khmer speech
+                if audio_duration < 8.0:  # Expanded range for short messages
+                    # Analyze audio pattern - Khmer has specific frequency distribution
+                    if audio_dbfs < -20:  # Lower volume is common in Khmer speech recordings
+                        # Calculate zero crossing rate (rough estimate of speech characteristics)
+                        samples = np.array(audio.get_array_of_samples())
+                        zero_crossings = np.sum(np.abs(np.diff(np.signbit(samples)))) / len(samples)
+                        
+                        # Khmer speech often has different frequency characteristics compared to English
+                        if (audio_duration < 3.0 and audio_rms > 50) or \
+                           (zero_crossings > 0.05 and audio_dbfs < -25):
+                            might_be_khmer = True
+                            self.logger.info(f"Audio characteristics suggest possible Khmer speech (duration: {audio_duration:.2f}s, dBFS: {audio_dbfs:.2f})")
+                            # Additional frequency analysis
+                            if len(audio) > 1000:  # Ensure enough samples for analysis
+                                try:
+                                    # Simple frequency analysis
+                                    samples = np.array(audio.get_array_of_samples())
+                                    frequency_characteristics = "high-frequency dominant" if np.mean(np.abs(np.diff(samples))) > 1000 else "low-frequency dominant"
+                                    self.logger.info(f"Audio frequency analysis: {frequency_characteristics}")
+                                except Exception as e:
+                                    self.logger.debug(f"Failed to perform frequency analysis: {e}")
 
-                # Apply preprocessing based on language
-                if is_khmer:
+                # Apply preprocessing based on language or audio characteristics
+                if is_khmer or might_be_khmer:
                     # Enhanced preprocessing for Khmer speech
                     from src.services.media.voice_config import VoiceConfig
                     khmer_settings = VoiceConfig.get_preprocessing_settings("km")
@@ -165,7 +233,7 @@ class VoiceProcessor:
                         # Simple noise gate - reduce very quiet parts
                         audio = audio.compress_dynamic_range(threshold=-20.0, ratio=4.0, attack=5.0, release=50.0)
                         
-                    self.logger.info(f"🇰🇭 Applied Khmer-specific audio preprocessing")
+                    self.logger.info(f"🇰🇭 Applied Khmer-specific audio preprocessing{' (based on audio characteristics)' if might_be_khmer and not is_khmer else ''}")
                 else:
                     # General preprocessing for better recognition
                     audio = audio.normalize()  # Normalize volume
@@ -173,7 +241,7 @@ class VoiceProcessor:
 
                 # Export as WAV with speech recognition friendly settings
                 sample_rate = 16000
-                if is_khmer:
+                if is_khmer or might_be_khmer:
                     # Ensure optimal sample rate for Khmer
                     from src.services.media.voice_config import VoiceConfig
                     khmer_settings = VoiceConfig.get_preprocessing_settings("km")
@@ -465,10 +533,103 @@ class VoiceProcessor:
         """
         lang_code = language.split('-')[0] if '-' in language else language
         
-        # Special handling for Khmer
-        if lang_code in ["km", "kh"]:
-            self.logger.info(f"🇰🇭 KHMER TRANSCRIPTION REQUESTED - Using enhanced processing")
-            return await self._transcribe_khmer_enhanced(audio_file_path, language, confidence_threshold)
+        # Optimize model loading for large-v3 - start loading immediately in the background
+        # This significantly reduces waiting time for Khmer transcription
+        model_loader_task = None
+        if lang_code in ["km", "kh", "auto"] or language == "auto":
+            # Start loading the model in background 
+            self.logger.info(f"Pre-loading large-v3 model for potential {'Khmer' if lang_code in ['km', 'kh'] else 'auto-detection'} processing")
+            model_loader_task = asyncio.create_task(self._load_faster_whisper_model("large-v3"))
+        
+        # Get audio file info for better language detection
+        audio_info = {}
+        try:
+            # Get audio duration using soundfile
+            with sf.SoundFile(audio_file_path) as sound_file:
+                audio_info['duration'] = float(len(sound_file)) / sound_file.samplerate
+                audio_info['samplerate'] = sound_file.samplerate
+                audio_info['is_short'] = audio_info['duration'] < 5.0  # Short audio under 5 seconds
+                
+                self.logger.info(f"Audio analysis: duration={audio_info['duration']:.2f}s, samplerate={audio_info['samplerate']}")
+                
+                # Enhanced audio characteristics check for possible Khmer speech
+                if audio_info['is_short']:
+                    try:
+                        audio = AudioSegment.from_file(audio_file_path)
+                        audio_info['dbfs'] = audio.dBFS
+                        audio_info['rms'] = audio.rms
+                        
+                        # Calculate basic spectral characteristics
+                        samples = np.array(audio.get_array_of_samples())
+                        audio_info['zero_crossing_rate'] = np.sum(np.abs(np.diff(np.signbit(samples)))) / len(samples)
+                        audio_info['sample_variance'] = np.var(samples)
+                        
+                        # Khmer detection heuristics
+                        if (audio_info['dbfs'] < -25 and audio_info['duration'] < 3.0) or \
+                           (audio_info['zero_crossing_rate'] > 0.05 and audio_info['dbfs'] < -27):
+                            audio_info['possible_khmer'] = True
+                            self.logger.info(f"Audio characteristics suggest possible Khmer speech (duration: {audio_info['duration']:.2f}s, dBFS: {audio_info['dbfs']:.2f}, zcr: {audio_info['zero_crossing_rate']:.3f})")
+                    except Exception as e:
+                        self.logger.warning(f"Could not analyze audio characteristics: {e}")
+        except Exception as e:
+            self.logger.warning(f"Could not analyze audio file: {e}")
+            audio_info['is_short'] = False
+            
+        # For very short messages (likely greetings) - try auto-detection first 
+        # then try specific language to see which gives better results
+        if (audio_info.get('is_short', False) and 
+            (lang_code not in ["km", "kh"] or audio_info.get('possible_khmer', False))):
+            
+            # Force large-v3 model for short audio detection for better accuracy
+            model_size_for_detection = "large-v3"
+            self.logger.info(f"Short audio detected ({audio_info.get('duration', 0):.2f}s), trying auto-detection first")
+            
+            try:
+                # Wait for model if we already started loading it
+                if model_loader_task:
+                    try:
+                        await asyncio.wait_for(asyncio.shield(model_loader_task), timeout=5.0)
+                        self.logger.info("Using pre-loaded large-v3 model for auto-detection")
+                    except asyncio.TimeoutError:
+                        self.logger.warning("Timeout waiting for pre-loaded model, continuing with fresh model load")
+                
+                # Try auto-detection for short messages that might be greetings in other languages
+                auto_result = await self._transcribe_faster_whisper(audio_file_path, "auto", model_size_for_detection)
+                auto_text, auto_lang, auto_metadata = auto_result
+                
+                from src.services.media.voice_config import VoiceConfig
+                # Check if detected as Khmer OR has Khmer false-positive patterns
+                if (auto_lang in ["km", "kh"] or 
+                    VoiceConfig.is_likely_false_english_for_khmer(auto_text, auto_metadata.get("confidence", 0)) or
+                    audio_info.get('possible_khmer', False)):
+                    
+                    self.logger.info(f"🇰🇭 Auto-detection suggests Khmer (detected={auto_lang}, audio_hints={audio_info.get('possible_khmer', False)}), switching to Khmer transcription")
+                    return await self._transcribe_khmer_enhanced(audio_file_path, "km-KH", confidence_threshold)
+                
+                if auto_metadata.get("confidence", 0) > 0.7:
+                    self.logger.info(f"Auto-detection found {auto_lang} with high confidence ({auto_metadata.get('confidence', 0):.2f}), using this result")
+                    return auto_result
+            except Exception as e:
+                self.logger.warning(f"Error in short audio detection: {str(e)}, continuing with standard flow")
+        
+        # Special handling for Khmer or suspected Khmer audio
+        if lang_code in ["km", "kh"] or audio_info.get('possible_khmer', False):
+            self.logger.info(f"🇰🇭 KHMER LANGUAGE {'EXPLICITLY REQUESTED' if lang_code in ['km', 'kh'] else 'STRONGLY SUSPECTED'} - Using enhanced processing")
+            
+            # Wait for model if we already started loading it
+            if model_loader_task:
+                try:
+                    await asyncio.wait_for(asyncio.shield(model_loader_task), timeout=10.0)
+                    self.logger.info("Using pre-loaded large-v3 model for Khmer processing")
+                except asyncio.TimeoutError:
+                    self.logger.warning("Timeout waiting for pre-loaded model, continuing with fresh model load")
+            
+            # Use Khmer language code
+            return await self._transcribe_khmer_enhanced(
+                audio_file_path, 
+                "km-KH" if lang_code in ["km", "kh"] else language, 
+                confidence_threshold
+            )
         
         # Standard processing for other languages
         self.logger.info(f"🎯 Getting best transcription for language: {language}")
@@ -521,7 +682,6 @@ class VoiceProcessor:
         self.logger.info(f"🏁 Returning best result: confidence {final_confidence:.3f}")
         
         return best_result
-    
     async def _transcribe_khmer_enhanced(
         self, 
         audio_file_path: str, 
