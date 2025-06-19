@@ -29,7 +29,13 @@ COPY pyproject.toml uv.lock* ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project --no-dev
 
-# 5️⃣ Copy application code and install the project
+# 5️⃣ Download Faster-Whisper model (large-v3)
+# This step pre-downloads the model to the HF_HOME cache directory set above.
+# It runs after dependencies are installed.
+# Use the compute_type that matches your production environment (int8_float16 from logs)
+RUN python -c "from faster_whisper import WhisperModel; import logging; logging.basicConfig(level=logging.INFO); print('Downloading large-v3 model...'); model = WhisperModel('large-v3', device='cpu', compute_type='int8_float16'); print('Download complete.')"
+
+# 6️⃣ Copy application code and install the project
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
@@ -39,7 +45,7 @@ RUN apt-get remove -y gcc g++ libffi-dev && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
-
+# 7️⃣ Don't remove FFmpeg - it's needed for voice processing in production
 #################
 # Final stage   #
 #################
@@ -53,7 +59,7 @@ RUN apt-get update && \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# 7️⃣ Copy virtual env and uv binaries from builder
+# 8️⃣ Copy virtual env, uv binaries, and the Hugging Face cache from builder
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
 COPY --from=builder /usr/local/bin/uvx /usr/local/bin/uvx
@@ -63,7 +69,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PORT=8000
 
-# 8️⃣ Copy source code and define entrypoint
+ENV HF_HOME=/app/.cache/huggingface
+# 9️⃣ Copy source code and define entrypoint
 COPY . .
 
 EXPOSE 8000
