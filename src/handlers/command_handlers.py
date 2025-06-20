@@ -114,7 +114,7 @@ class CommandHandlers:
         )
         self.model_commands = ModelCommands(self.api_manager, user_data_manager)
         self.document_commands = DocumentCommands(
-            gemini_api, user_data_manager, telegram_logger
+            gemini_api, user_data_manager, telegram_logger, self.api_manager
         )
         self.export_commands = ExportCommands(
             gemini_api, user_data_manager, telegram_logger

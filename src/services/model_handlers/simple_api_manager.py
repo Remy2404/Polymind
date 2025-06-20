@@ -234,8 +234,7 @@ class SuperSimpleAPIManager:
         """Call DeepSeek API"""
         # DeepSeek uses messages format
         messages = context or []
-        messages.append({"role": "user", "content": prompt})
-        
+        messages.append({"role": "user", "content": prompt})        
         return await api.generate_response(
             messages=messages,
             temperature=temperature,
@@ -255,11 +254,10 @@ class SuperSimpleAPIManager:
         # Use the specific OpenRouter model key
         model_key = model_config.openrouter_key or model_config.model_id
         
-        messages = context or []
-        messages.append({"role": "user", "content": prompt})
-        
+        # OpenRouter API expects prompt and context separately
         return await api.generate_response(
-            messages=messages,
+            prompt=prompt,
+            context=context,
             model=model_key,
             temperature=temperature,
             max_tokens=max_tokens

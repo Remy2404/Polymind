@@ -3,15 +3,28 @@ from typing import Optional, Tuple
 import re
 import traceback
 
-from services.gemini_api import GeminiAPI
+from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
+from src.services.model_handlers.model_configs import ModelConfigurations
+from src.services.gemini_api import GeminiAPI
+from src.services.openrouter_api import OpenRouterAPI
+from src.services.DeepSeek_R1_Distill_Llama_70B import DeepSeekLLM
 from .document_generator import DocumentGenerator
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
 class AIDocumentGenerator:
-    def __init__(self, gemini_api: GeminiAPI):
-        self.gemini_api = gemini_api
+    def __init__(self, gemini_api: GeminiAPI = None, openrouter_api: OpenRouterAPI = None, deepseek_api: DeepSeekLLM = None, api_manager=None):
+        # Use provided API manager or create a new one
+        if api_manager:
+            self.api_manager = api_manager
+        else:
+            # Initialize the unified API manager
+            self.api_manager = SuperSimpleAPIManager(
+                gemini_api=gemini_api,
+                openrouter_api=openrouter_api,
+                deepseek_api=deepseek_api
+            )
         self.document_generator = DocumentGenerator()
         self.logger = logging.getLogger(__name__)
 
@@ -63,37 +76,39 @@ class AIDocumentGenerator:
                 user_prompt += f"\n\nAdditional context: {additional_context}"
 
             full_prompt = f"{system_prompt}\n\n{user_prompt}"
-
+            
+            # Use the unified API manager to generate content with the selected model
             try:
-                ai_response = await self.gemini_api.generate_content(prompt=full_prompt)
-                self.logger.info(f"API response type: {type(ai_response)}")
+                self.logger.info(f"Generating document using model: {model}")
+                ai_response = await self.api_manager.chat(
+                    model_id=model,
+                    prompt=full_prompt,
+                    temperature=0.7,
+                    max_tokens=max_tokens
+                ) 
+                self.logger.info(f"API response received from {model}")
             except Exception as api_error:
-                self.logger.error(f"API error: {str(api_error)}")
-                try:
-                    ai_response = await self.gemini_api.generate_content(full_prompt)
-                    self.logger.info(f"Fallback API response type: {type(ai_response)}")
-                except Exception as fallback_error:
-                    self.logger.error(f"Fallback API error: {str(fallback_error)}")
+                self.logger.error(f"API error with {model}: {str(api_error)}")
+                # Try fallback to gemini if it's not the model we just tried
+                if model != "gemini":
+                    try:
+                        self.logger.info("Attempting fallback to Gemini model")
+                        ai_response = await self.api_manager.chat(
+                            model_id="gemini",
+                            prompt=full_prompt,
+                            temperature=0.7,
+                            max_tokens=max_tokens
+                        )
+                        self.logger.info("Fallback to Gemini successful")
+                    except Exception as fallback_error:
+                        self.logger.error(f"Fallback API error: {str(fallback_error)}")
+                        ai_response = "# Error Generating Document\n\nThere was a problem generating your document with the AI model. Please try again with a different model or prompt."
+                else:
                     ai_response = "# Error Generating Document\n\nThere was a problem generating your document with the AI model. Please try again with a different model or prompt."
 
-            content = ""
-            self.logger.info(f"Raw AI response: {str(ai_response)[:100]}...")
-
-            if isinstance(ai_response, dict) and "content" in ai_response:
-                content = ai_response["content"]
-                self.logger.info("Extracted content from dictionary")
-            elif isinstance(ai_response, str):
-                content = ai_response
-                self.logger.info("Using string response directly")
-            else:
-                content = (
-                    ai_response.text
-                    if hasattr(ai_response, "text")
-                    else str(ai_response)
-                )
-                self.logger.info(
-                    f"Extracted using .text attribute or str(): {content[:100]}..."
-                )
+            # The SuperSimpleAPIManager returns a string directly
+            content = ai_response if isinstance(ai_response, str) else str(ai_response)
+            self.logger.info(f"Content generated: {len(content)} characters")
 
             if not content or len(content.strip()) < 10:
                 self.logger.error("Empty or too short content generated")
