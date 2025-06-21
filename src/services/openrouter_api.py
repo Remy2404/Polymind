@@ -47,16 +47,16 @@ class OpenRouterAPI:
             "deepseek-r1-distill-llama-70b": "deepseek/deepseek-r1-distill-llama-70b:free",
             "deepseek-r1": "deepseek/deepseek-r1:free",           
             "llama4_maverick": "meta-llama/llama-4-maverick:free",
-            "llama-3.3-8b": "meta-llama/llama-3.1-8b-instruct:free",
-            "llama-3.2-11b-vision": "meta-llama/llama-3.2-11b-vision-instruct:free",
+            "llama-3.3-8b": "meta-llama/llama-3.3-8b-instruct:free",
             "llama-3.2-3b": "meta-llama/llama-3.2-3b-instruct:free",
-            "llama-3.2-1b": "meta-llama/llama-3.2-1b-instruct:free",
-            "llama-3.1-8b": "meta-llama/llama-3.1-8b-instruct:free",
+            "llama-3.2-1b": "meta-llama/llama-3.2-1b-instruct:free",            "llama-3.1-8b": "meta-llama/llama-3.1-8b-instruct:free",
+            
             "llama-3-8b": "meta-llama/llama-3-8b-instruct:free",
             # Mistral Models (Free)
             "devstral-small": "mistralai/devstral-small:free",
             "mistral-small-3-1": "mistralai/mistral-small-3.1-24b-instruct:free",
             "mistral-small-3": "mistralai/mistral-small-24b-instruct-2501:free",
+            "mistral-small-3.2-24b-instruct": "mistralai/mistral-small-3.2-24b-instruct:free",
             "mistral-7b": "mistralai/mistral-7b-instruct:free",
             # Qwen Models (Free)
             "qwen3-32b-a3b": "qwen/qwen3-32b-a3b:free",
@@ -103,6 +103,8 @@ class OpenRouterAPI:
             "starling-lm-7b": "berkeley-nest/starling-lm-7b-alpha:free",
             "airoboros-70b": "jondurbin/airoboros-l2-70b:free",
             "moonshot-kimi-dev-72b": "moonshotai/kimi-dev-72b:free",
+            "mai-ds-r1": "microsoft/mai-ds-r1:free",
+            "qwen-2.5-72b-instruct": "qwen/qwen-2.5-72b-instruct:free",
         }
 
         # Circuit breaker properties

@@ -49,7 +49,8 @@ class ModelConfig:
     description: str = ""
     system_message: str = ""
     openrouter_key: Optional[str] = None
-    max_tokens: int = 32000 
+    max_tokens: int = 32000
+    type: str = "general_purpose"
 
 
 # Provider groups for hierarchical model selection
@@ -125,6 +126,7 @@ class SuperSimpleAPIManager:
                     description=config.description,
                     system_message=config.system_message or "",
                     openrouter_key=config.openrouter_model_key,
+                    type=config.type,
                 )
 
     def get_models_by_category(self) -> Dict[str, Dict[str, Any]]:
@@ -141,22 +143,30 @@ class SuperSimpleAPIManager:
             "thudm": {"name": "🔥 THUDM Models", "emoji": "🔥", "models": {}},
             "coding": {"name": "💻 Coding Specialists", "emoji": "💻", "models": {}},
             "vision": {"name": "👁️ Vision Models", "emoji": "👁️", "models": {}},
+            "reasoning": {"name": "🧠 Reasoning Models", "emoji": "🧠", "models": {}},
             "creative": {"name": "🎭 Creative & Specialized", "emoji": "🎭", "models": {}},
-        }
-        
-        # Categorize models based on their names and providers
+        }        # Categorize models based on their types and providers
         for model_id, config in self.models.items():
             model_name = config.display_name.lower()
+            model_type = getattr(config, 'type', 'general_purpose')
             
+            # Primary categorization by provider for specific providers
             if config.provider == APIProvider.GEMINI:
                 categories["gemini"]["models"][model_id] = config
-            elif config.provider == APIProvider.DEEPSEEK or "deepseek" in model_name:
+            elif config.provider == APIProvider.DEEPSEEK:
                 categories["deepseek"]["models"][model_id] = config
+            # Use type-based categorization for OpenRouter models
+            elif model_type == "reasoning" or "deepseek" in model_name or "r1" in model_name:
+                categories["reasoning"]["models"][model_id] = config
+            elif model_type in ["vision", "multimodal"] or any(x in model_name for x in ["vision", "visual", "vl", "image"]):
+                categories["vision"]["models"][model_id] = config
+            elif model_type in ["coding_specialist", "mathematical_reasoning"] or any(x in model_name for x in ["code", "coder", "programming", "olympic"]):
+                categories["coding"]["models"][model_id] = config
             elif "llama" in model_name:
                 categories["meta_llama"]["models"][model_id] = config
             elif "qwen" in model_name:
                 categories["qwen"]["models"][model_id] = config
-            elif "phi" in model_name or "orca" in model_name:
+            elif "phi" in model_name or "mai" in model_name:
                 categories["microsoft"]["models"][model_id] = config
             elif "mistral" in model_name or "mixtral" in model_name:
                 categories["mistral"]["models"][model_id] = config
@@ -166,10 +176,6 @@ class SuperSimpleAPIManager:
                 categories["nvidia"]["models"][model_id] = config
             elif "glm" in model_name:
                 categories["thudm"]["models"][model_id] = config
-            elif any(x in model_name for x in ["code", "coder", "deepseek-coder", "programming"]):
-                categories["coding"]["models"][model_id] = config
-            elif any(x in model_name for x in ["vision", "visual", "image"]):
-                categories["vision"]["models"][model_id] = config
             else:
                 categories["creative"]["models"][model_id] = config
         

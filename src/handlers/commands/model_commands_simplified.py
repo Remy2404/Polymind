@@ -10,7 +10,7 @@ sys.path.insert(
 )
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from services.model_handlers.api_manager import UnifiedAPIManager, APIProvider
+from services.model_handlers.simple_api_manager import SuperSimpleAPIManager, APIProvider
 import logging
 
 
@@ -25,10 +25,8 @@ class ModelCommands:
     ):
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
-        self.logger = logging.getLogger(__name__)
-
-        # Initialize unified API manager
-        self.api_manager = UnifiedAPIManager(
+        self.logger = logging.getLogger(__name__)    
+        self.api_manager = SuperSimpleAPIManager(
             gemini_api=gemini_api,
             deepseek_api=deepseek_api,
             openrouter_api=openrouter_api,
@@ -143,10 +141,9 @@ class ModelCommands:
             APIProvider.DEEPSEEK: {"title": "*🧠 DeepSeek Models:*", "models": []},
             APIProvider.OPENROUTER: {
                 "title": "*🌐 OpenRouter Models (Free):*",
-                "models": [],
-            },
+                "models": [],            },
         }
-
+        
         # Group models by provider
         for model_id, config in self.api_manager.get_all_models().items():
             model_line = f"• {config.emoji} *{config.display_name}*"
@@ -155,6 +152,9 @@ class ModelCommands:
 
             if config.provider in providers_data:
                 providers_data[config.provider]["models"].append(model_line)
+            else:
+                # Handle unknown providers gracefully
+                self.logger.warning(f"Unknown provider for model {model_id}: {config.provider}")
 
         # Build message
         message_parts = ["🤖 *Available AI Models*\n"]
@@ -168,3 +168,36 @@ class ModelCommands:
         message_parts.append("💡 Use /switchmodel to change your active model.")
 
         await update.message.reply_text("\n".join(message_parts), parse_mode="Markdown")
+
+    async def current_model_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle the /currentmodel command to show current model info."""
+        user_id = update.effective_user.id
+
+        # Get current model preference
+        current_model = await self.user_data_manager.get_user_preference(
+            user_id, "preferred_model", default="gemini"
+        )
+
+        # Get current model display name and info
+        current_config = self.api_manager.get_model_config(current_model)
+        
+        if current_config:
+            message = (
+                f"ℹ️ **Current Model Information**\n\n"
+                f"**Name:** {current_config.emoji} {current_config.display_name}\n"
+                f"**Provider:** {current_config.provider.value.title()}\n"
+            )
+            
+            if current_config.description:
+                message += f"**Description:** {current_config.description}\n"
+            
+            if hasattr(current_config, 'openrouter_key') and current_config.openrouter_key:
+                message += f"**OpenRouter Key:** `{current_config.openrouter_key}`\n"
+            
+            message += f"\n✅ This model is currently active and ready to use!"
+        else:
+            message = f"❌ Current model '{current_model}' not found in configuration."
+
+        await update.message.reply_text(message, parse_mode="Markdown")
