@@ -43,6 +43,7 @@ class ResponseFormatter:
 
     async def format_telegram_markdown(self, text: str) -> str:
         text = str(text)
+        text = self._clean_unwanted_dashes(text)
         try:
             return convert(text)
         except Exception as e:
@@ -62,6 +63,7 @@ class ResponseFormatter:
         self, md: str, normalize_whitespace: bool = False
     ) -> str:
         md = str(md)
+        md = self._clean_unwanted_dashes(md)
         md = self._convert_tables(md)
         md = self._handle_spoilers_and_underlines(md)
         try:
@@ -194,6 +196,22 @@ class ResponseFormatter:
             text = text.replace(ch, f"\\{ch}")
         return text
 
+    def _clean_unwanted_dashes(self, text: str) -> str:
+        """Remove standalone dashes that appear at the end of lines"""
+        # Remove lines that contain only dashes, spaces, or are empty
+        lines = text.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            stripped = line.strip()
+            # Skip lines that are just dashes, asterisks, or empty
+            if stripped and not re.match(r'^[-*\s]+$', stripped):
+                cleaned_lines.append(line)
+            elif not stripped:  # Keep empty lines for formatting
+                cleaned_lines.append(line)
+                
+        return '\n'.join(cleaned_lines)
+
     # --- OVERRIDDEN: Detect mermaid blocks and render as image ---
     async def safe_send_message(
         self,
@@ -307,6 +325,8 @@ class ResponseFormatter:
                     "openrouter": "🔀 *OpenRouter*",
                     "gpt": "🔥 *GPT*",
                     "claude": "🌟 *Claude*",
+                    "moonshot": "🌙 *Moonshot Kimi*",
+                    "kimi": "🌙 *Kimi*",
                 }
                 badge = next(
                     (b for k, b in model_badges.items() if k in model_name.lower()),

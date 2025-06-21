@@ -34,6 +34,9 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
+# 5.5️⃣ Download spaCy language model
+RUN /app/.venv/bin/python -m spacy download en_core_web_sm
+
 # 6️⃣ Don't remove FFmpeg - it's needed for voice processing in production
 RUN apt-get remove -y gcc g++ libffi-dev && \
     apt-get autoremove -y && \

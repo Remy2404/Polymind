@@ -49,6 +49,7 @@ class ModelConfig:
     description: str = ""
     system_message: str = ""
     openrouter_key: Optional[str] = None
+    max_tokens: int = 32000 
 
 
 # Provider groups for hierarchical model selection
@@ -181,7 +182,7 @@ class SuperSimpleAPIManager:
         prompt: str,
         context: Optional[List[Dict[str, Any]]] = None,
         temperature: float = 0.7,
-        max_tokens: int = 4000,
+        max_tokens: int = 32000,
         quoted_message: Optional[str] = None,
     ) -> str:
         """🎯 Universal chat method - works with any model!"""
@@ -189,17 +190,22 @@ class SuperSimpleAPIManager:
         # Get model config
         model_config = self.models.get(model_id)
         if not model_config:
-            return f"❌ Model '{model_id}' not found!"
-
-        # Get the appropriate API
+            return f"❌ Model '{model_id}' not found!"        # Get the appropriate API
         api = self.apis.get(model_config.provider)
         if not api:
             return f"❌ API for {model_config.provider.value} not available!"
+
+        # Use dynamic token allocation if max_tokens is default
+        if max_tokens == 32000:  # Default value
+            max_tokens = self._determine_optimal_tokens(prompt, model_config)
 
         try:
             # Add system message to context if provided
             if model_config.system_message and context:
                 context = [{"role": "system", "content": model_config.system_message}] + context
+
+            # Determine optimal max_tokens dynamically
+            max_tokens = self._determine_optimal_tokens(prompt, model_config)
 
             # Route to appropriate API
             if model_config.provider == APIProvider.GEMINI:
@@ -214,6 +220,28 @@ class SuperSimpleAPIManager:
         except Exception as e:
             self.logger.error(f"Error with {model_id}: {e}")
             return f"❌ Error: {str(e)}"
+
+    def _determine_optimal_tokens(self, prompt: str, model_config: ModelConfig) -> int:
+        """Determine optimal max_tokens based on prompt and model capabilities"""
+        prompt_length = len(prompt)
+        
+        # Long form indicators that suggest need for more tokens
+        long_form_indicators = [
+            "write a", "generate", "create", "explain in detail", "step by step",
+            "tutorial", "guide", "comprehensive", "list", "examples", "detailed",
+            "analysis", "comparison", "pros and cons", "advantages", "disadvantages",
+            "100", "q&a", "qcm", "questions", "document", "essay", "article"
+        ]
+        
+        is_long_form = any(indicator in prompt.lower() for indicator in long_form_indicators)
+        
+        # Base token allocation
+        if is_long_form or prompt_length > 500:
+            return min(32000, model_config.max_tokens)  # Use full capacity for long requests
+        elif prompt_length > 200:
+            return min(16000, model_config.max_tokens)  # Medium requests
+        else:
+            return min(8000, model_config.max_tokens)   # Short requests
 
     async def _call_gemini(
         self, api: GeminiAPI, prompt: str, context: Optional[List]

@@ -144,7 +144,7 @@ class UnifiedAPIManager:
     
     async def generate_response(self, model_id: str, prompt: str, 
                               context: Optional[List[Dict[str, Any]]] = None,
-                              temperature: float = 0.7, max_tokens: int = 4000,
+                              temperature: float = 0.7, max_tokens: int = 32000,
                               quoted_message: Optional[str] = None) -> str:
         """
         Generate response using specified model.

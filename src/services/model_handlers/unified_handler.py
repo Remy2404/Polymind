@@ -102,7 +102,7 @@ class UnifiedModelHandler(ModelHandler):
         prompt: str,
         context: Optional[List[Dict[str, Any]]] = None,
         temperature: float = 0.7,
-        max_tokens: int = 4000,
+        max_tokens: int = 32000,
         quoted_message: Optional[str] = None,
         timeout: float = 60.0,
     ) -> str:

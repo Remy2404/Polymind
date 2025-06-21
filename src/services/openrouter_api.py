@@ -45,9 +45,9 @@ class OpenRouterAPI:
             "deepseek-v3-base": "deepseek/deepseek-v3-base:free",
             "deepseek-chat-v3-0324": "deepseek/deepseek-chat-v3-0324:free",
             "deepseek-r1-distill-llama-70b": "deepseek/deepseek-r1-distill-llama-70b:free",
-            "deepseek-r1": "deepseek/deepseek-r1:free",            # Meta LLaMA Models (Free)
+            "deepseek-r1": "deepseek/deepseek-r1:free",           
             "llama4_maverick": "meta-llama/llama-4-maverick:free",
-            "llama-3.3-8b": "meta-llama/llama-3.1-8b-instruct:free",  # Map 3.3 to 3.1 as fallback
+            "llama-3.3-8b": "meta-llama/llama-3.1-8b-instruct:free",
             "llama-3.2-11b-vision": "meta-llama/llama-3.2-11b-vision-instruct:free",
             "llama-3.2-3b": "meta-llama/llama-3.2-3b-instruct:free",
             "llama-3.2-1b": "meta-llama/llama-3.2-1b-instruct:free",
@@ -102,6 +102,7 @@ class OpenRouterAPI:
             "zephyr-7b": "huggingfaceh4/zephyr-7b-beta:free",
             "starling-lm-7b": "berkeley-nest/starling-lm-7b-alpha:free",
             "airoboros-70b": "jondurbin/airoboros-l2-70b:free",
+            "moonshot-kimi-dev-72b": "moonshotai/kimi-dev-72b:free",
         }
 
         # Circuit breaker properties

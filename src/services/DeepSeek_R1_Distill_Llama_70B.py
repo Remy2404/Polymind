@@ -82,7 +82,7 @@ class DeepSeekLLM:
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
-        max_tokens: int = 1024,
+        max_tokens: int = 32000,
         top_p: float = 0.9,
         frequency_penalty: float = 0.0,
         presence_penalty: float = 0.0
@@ -104,7 +104,7 @@ class DeepSeekLLM:
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
-        max_tokens: int = 1024,
+        max_tokens: int = 32000,
         top_p: float = 0.9,
         frequency_penalty: float = 0.0,
         presence_penalty: float = 0.0,

@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Demo script showing how document commands now use ModelConfigurations
-instead of hardcoded model references
-"""
-
 import sys
 from pathlib import Path
 

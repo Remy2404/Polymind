@@ -26,7 +26,7 @@ class ModelConfig:
     system_message: Optional[str] = None
     indicator_emoji: str = "🤖"
     openrouter_model_key: Optional[str] = None
-    max_tokens: int = 4000
+    max_tokens: int = 32000
     default_temperature: float = 0.7
     supports_images: bool = False
     supports_audio: bool = False
@@ -41,7 +41,7 @@ class ModelConfigurations:
     @staticmethod
     def get_all_models() -> Dict[str, ModelConfig]:
         """Get all available model configurations."""
-        return {
+        models = {
             # Gemini Models
             "gemini": ModelConfig(
                 model_id="gemini",
@@ -548,7 +548,21 @@ class ModelConfigurations:
                 system_message="You are QwQ ArliAI, enhanced for step-by-step reasoning and problem solving.",
                 description="Enhanced reasoning model - Free",
             ),
+            # Moonshot AI Models
+            "moonshot-kimi-dev-72b": ModelConfig(
+                model_id="moonshot-kimi-dev-72b",
+                display_name="Moonshot Kimi Dev 72B",
+                provider=Provider.OPENROUTER,
+                system_message="You are Kimi, a large-scale AI assistant by Moonshot AI, optimized for helpful, safe, and creative conversations.",
+                indicator_emoji="🌙",
+                openrouter_model_key="moonshotai/kimi-dev-72b:free",
+                description="MoonshotAI's Kimi Dev 72B - Free, advanced, creative, and safe assistant.",
+            ),
         }
+        # Set long context for all models
+        for m in models.values():
+            m.max_tokens = 130000
+        return models
 
     @staticmethod
     def get_models_by_provider(provider: Provider) -> Dict[str, ModelConfig]:

@@ -1,13 +1,12 @@
 import io
 import os
 import logging
-from telegram import Update, Message
+from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 from src.utils.log.telegramlog import telegram_logger
 from src.services.gemini_api import GeminiAPI
 from src.services.user_data_manager import UserDataManager
-from typing import List, Dict, Any
 import asyncio
 from .message_context_handler import MessageContextHandler
 from .response_formatter import ResponseFormatter
@@ -17,10 +16,10 @@ from src.services.memory_context.model_history_manager import ModelHistoryManage
 from src.services.model_handlers.factory import ModelHandlerFactory
 from src.services.model_handlers.prompt_formatter import PromptFormatter
 from src.services.memory_context.conversation_manager import ConversationManager
-from .text_processing.intent_detector import IntentDetector
 from .text_processing.media_analyzer import MediaAnalyzer
 from .text_processing.utilities import MediaUtilities
 from .model_fallback_handler import ModelFallbackHandler
+from src.services.ai_command_router import EnhancedIntentDetector
 
 
 class TextHandler:
@@ -58,11 +57,11 @@ class TextHandler:
         )
 
         # Initialize core components only
-        self.intent_detector = IntentDetector()
         self.media_analyzer = MediaAnalyzer(gemini_api)
-        
-        # Initialize model fallback handler
+          # Initialize model fallback handler
         self.model_fallback_handler = ModelFallbackHandler(self.response_formatter)
+          # Initialize enhanced intent detector for user intent detection
+        self.intent_detector = EnhancedIntentDetector()
         
         # Optional components (will be set externally if needed)
         self.user_model_manager = None
@@ -143,10 +142,8 @@ class TextHandler:
             thinking_message = await message.reply_text("Processing your request...🧠")
             await self._send_appropriate_chat_action(
                 update, context, has_attached_media, media_type
-            )
-
-            # Detect user intent (analyze, generate image, or chat)
-            user_intent = await self.intent_detector.detect_user_intent(
+            )            # Detect user intent (analyze, generate image, or chat)
+            user_intent = await self.intent_detector.detect_intent(
                 message_text, has_attached_media
             )
 
@@ -162,9 +159,7 @@ class TextHandler:
             )
 
             # Load user context and personal information to enhance conversation
-            user_context = await self._load_user_context(user_id, update)
-
-            # Enhance conversation history with user context if available
+            user_context = await self._load_user_context(user_id, update)            # Enhance conversation history with user context if available
             if user_context and history_context:
                 # Add user context to the beginning of history to maintain continuity
                 user_context_message = {
@@ -173,7 +168,8 @@ class TextHandler:
                 }
                 history_context.insert(0, user_context_message)
 
-            elif has_attached_media and user_intent == "analyze":
+            # Handle media analysis if media is attached and intent is analyze
+            if has_attached_media and user_intent == "analyze":
                 await self._handle_media_analysis(
                     update,
                     context,
@@ -774,7 +770,7 @@ class TextHandler:
         is_long_form_request = any(
             indicator in message_text.lower() for indicator in long_form_indicators
         )
-        max_tokens = 8000 if is_long_form_request else 4000
+        max_tokens = 32000 if is_long_form_request else 16000
 
         # Get model timeout - increase for complex questions
         base_timeout = 60.0
