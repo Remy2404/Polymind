@@ -3,7 +3,7 @@
 #################
 # Builder stage #
 #################
-FROM python:3.11-slim-bookworm AS builder
+FROM python:3.11-slim AS builder
 
 # 1️⃣ Copy uv binaries from the distroless 'uv:latest' image
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
@@ -35,7 +35,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
 # 5.5️⃣ Download spaCy language model
-RUN /app/.venv/bin/python -m spacy download en_core_web_sm
+RUN /app/.venv/bin/python -m ensurepip && \
+    /app/.venv/bin/python -m pip install --upgrade pip && \
+    /app/.venv/bin/python -m spacy download en_core_web_sm
 
 # 6️⃣ Don't remove FFmpeg - it's needed for voice processing in production
 RUN apt-get remove -y gcc g++ libffi-dev && \
@@ -44,9 +46,8 @@ RUN apt-get remove -y gcc g++ libffi-dev && \
     rm -rf /var/lib/apt/lists/*
 
 #################
-# Final stage   #
+FROM python:3.11-slim
 #################
-FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
