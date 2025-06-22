@@ -15,6 +15,21 @@ from dataclasses import dataclass
 from telegram import Update
 from telegram.ext import ContextTypes
 
+# Production mode - always disable heavy dependencies
+DISABLE_SPACY = True
+LOW_MEMORY_MODE = True
+SPACY_AVAILABLE = False
+
+# Lightweight model configs - only load if absolutely necessary
+try:
+    if not LOW_MEMORY_MODE:
+        from src.services.model_handlers.model_configs import ModelConfigurations, Provider, ModelConfig
+        MODEL_CONFIGS_AVAILABLE = True
+    else:
+        MODEL_CONFIGS_AVAILABLE = False
+except ImportError:
+    MODEL_CONFIGS_AVAILABLE = False
+
 
 class CommandIntent(Enum):
     """Streamlined command intents for production"""
@@ -51,14 +66,11 @@ class IntentResult:
 
 class EnhancedIntentDetector:
     """
-    Uses ONLY fast regex patterns - zero NLP overhead    """
+    Ultra-lightweight intent detection optimized for 0.1 vCPU / 512MB RAM
+    Uses ONLY fast regex patterns - zero NLP overhead
+    """
     
     def __init__(self):
-        # Force garbage collection optimization for low-memory instances
-        import gc
-        gc.set_threshold(50, 5, 5)  # More aggressive GC
-        gc.collect()
-        
         self.logger = logging.getLogger(__name__)
         self.model_configs = {}
         
@@ -203,13 +215,10 @@ class EnhancedIntentDetector:
 class AICommandRouter:
     """
     Ultra-lightweight AI command router for production
-    Optimized for resource-constrained environments    """
+    Optimized for resource-constrained environments
+    """
     
     def __init__(self, command_handlers, gemini_api=None):
-        # Force garbage collection optimization for low-memory instances
-        import gc
-        gc.collect()  # Clean up before initializing
-        
         self.intent_detector = EnhancedIntentDetector()
         self.command_handlers = command_handlers
         self.gemini_api = gemini_api
@@ -359,13 +368,6 @@ class AICommandRouter:
         cleaned = re.sub(r'(?i)(?:can\s+you\s+|please\s+|could\s+you\s+|i\s+(?:want|need)\s+(?:you\s+to\s+)?)', '', cleaned, count=1)
         result = cleaned.strip()
         return result if len(result) > 3 else None
-
-    def cleanup_memory(self):
-        """Force garbage collection to free memory on low-resource instances"""
-        import gc
-        gc.collect()
-        if hasattr(gc, 'set_debug'):
-            gc.set_debug(0)  # Disable debug output
 
     async def should_route_message(self, message: str, has_attached_media: bool = False) -> bool:
         """

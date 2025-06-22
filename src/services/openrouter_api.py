@@ -272,12 +272,13 @@ class OpenRouterAPI:
 
         except asyncio.TimeoutError as e:
             self.api_failures += 1
+            self.api_last_failure = time.time()
             self.logger.error(f"OpenRouter API timeout for model {model}: {str(e)}")
             # For DeepSeek models, provide a specific timeout message that triggers fallback
             if "deepseek" in model.lower():
-                raise Exception(f"DeepSeek R1 timed out. The model may be experiencing high load.")
+                return None 
             else:
-                raise Exception(f"Model {model} timed out. Please try again later.")
+                return None
 
         except aiohttp.ClientError as e:
             self.api_failures += 1

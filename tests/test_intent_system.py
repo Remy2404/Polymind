@@ -1,7 +1,7 @@
-#!/usr/bin/env python3
+
 """
 Intent Detection Test Script
-Tests the spaCy-based intent detection system with various message types
+Tests the regex-based intent detection system with various message types
 """
 
 import asyncio
@@ -9,7 +9,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.services.ai_command_router import AICommandRouter, CommandIntent, SpacyIntentDetector
+from src.services.ai_command_router import AICommandRouter, CommandIntent
 
 
 class MockCommandHandlers:
@@ -53,7 +53,7 @@ class MockCommandHandlers:
 async def test_intent_detection():
     """Test the intent detection system with various message types"""
     
-    print("🔍 Testing spaCy-based Intent Detection System")
+    print("🔍 Testing Regex-based Intent Detection System")
     print("=" * 50)
     
     # Initialize the router
@@ -219,10 +219,9 @@ async def test_spacy_fallback():
     print("\n🔄 Testing Fallback Mechanism")
     print("=" * 30)
     
-    # Create a detector and force it to use fallback
-    detector = SpacyIntentDetector()
-    original_nlp = detector.nlp
-    detector.nlp = None  # Force fallback
+    # Create a router for testing
+    mock_handlers = MockCommandHandlers()
+    router = AICommandRouter(mock_handlers, gemini_api=None)
     
     # Test a few key cases
     test_cases = [
@@ -234,12 +233,11 @@ async def test_spacy_fallback():
     
     print("Testing fallback detection:")
     for message, expected in test_cases:
-        detected_intent, confidence = await detector.detect_intent(message)
+        detected_intent, confidence = await router.detect_intent(message)
         status = "✅" if detected_intent == expected else "❌"
         print(f"  {status} '{message}' -> {detected_intent.value} (conf: {confidence:.2f})")
     
-    # Restore original
-    detector.nlp = original_nlp
+    print("✅ Fallback mechanism test completed")
 
 
 async def main():

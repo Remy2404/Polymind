@@ -7,12 +7,14 @@ import re
 from datetime import datetime, timedelta
 import aiofiles
 import os
-import spacy
 import uuid
 from collections import defaultdict
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+
+# Knowledge graph functionality - optimized for production with minimal dependencies  
+# Uses only regex patterns for fast, lightweight entity and relationship extraction
 
 
 class KnowledgeGraph:
@@ -25,30 +27,16 @@ class KnowledgeGraph:
         self.graph = nx.DiGraph()
         self.db = db
         self.storage_path = storage_path
-        self.memory_manager = memory_manager
-
-        # Create storage directory if it doesn't exist
+        self.memory_manager = memory_manager        # Create storage directory if it doesn't exist
         os.makedirs(storage_path, exist_ok=True)
 
         # Initialize entity extraction patterns
         self._init_extraction_patterns()
 
-        # Try to load NLP model
-        try:
-            self.nlp = spacy.load("en_core_web_sm")
-            self.spacy_available = True
-            # Ensure the sentencizer is in the pipeline for sentence boundary detection
-            if "sentencizer" not in self.nlp.pipe_names:
-                self.nlp.add_pipe("sentencizer")
-                self.logger.info("Added 'sentencizer' to spaCy pipeline.")
-            self.logger.info(
-                "SpaCy model loaded successfully for advanced entity extraction"
-            )
-        except Exception as e:
-            self.logger.warning(
-                f"SpaCy model not available: {str(e)}. Using regex patterns only."
-            )
-            self.spacy_available = False
+        # Use only regex-based entity extraction for production optimization
+        self.logger.info(
+            "✅ Knowledge graph initialized with regex-based entity extraction (production optimized)"
+        )
 
         # Initialize TF-IDF vectorizer for context similarity
         self.vectorizer = TfidfVectorizer(stop_words="english", max_features=1000)
@@ -203,9 +191,7 @@ class KnowledgeGraph:
             await self._save_graph()
             self.logger.info(
                 f"Added entities for document {document_id} to knowledge graph"
-            )
-
-            # Return entity summary
+            )            # Return entity summary
             return self._get_entity_summary(entities, relationships)
 
         except Exception as e:
@@ -213,48 +199,15 @@ class KnowledgeGraph:
             return None
 
     async def extract_entities(self, text: str) -> Dict[str, List[str]]:
-        """Extract entities from text using SpaCy if available, fallback to regex patterns"""
+        """Extract entities from text using fast regex patterns (production optimized)"""
         entities = {}
 
         # Initialize entity categories
         for entity_type in self.patterns.keys():
             entities[entity_type] = []
 
-        # Try SpaCy first if available
-        if self.spacy_available:
-            try:
-                # Process text with SpaCy
-                doc = self.nlp(text)
-
-                # Extract entities by type
-                for ent in doc.ents:
-                    if ent.label_ == "PERSON":
-                        entities["people"].append(ent.text)
-                    elif ent.label_ in ["ORG", "NORP"]:
-                        entities["organizations"].append(ent.text)
-                    elif ent.label_ in ["GPE", "LOC"]:
-                        entities["locations"].append(ent.text)
-                    elif ent.label_ in ["DATE", "TIME"]:
-                        entities["dates"].append(ent.text)
-
-                # Keep unique entities only
-                for entity_type in entities:
-                    entities[entity_type] = list(set(entities[entity_type]))
-
-                # Fallback to regex for specific types
-                self._apply_regex_extraction(
-                    text, entities, ["technologies", "concepts"]
-                )
-
-            except Exception as e:
-                self.logger.error(
-                    f"SpaCy entity extraction failed: {str(e)}, falling back to regex"
-                )
-                # Fallback to regex patterns
-                self._apply_regex_extraction(text, entities)
-        else:
-            # Use regex patterns for all entity types
-            self._apply_regex_extraction(text, entities)
+        # Use regex patterns for all entity types (fast and reliable)
+        self._apply_regex_extraction(text, entities)
 
         return {k: v for k, v in entities.items() if v}  # Remove empty categories
 
@@ -284,16 +237,10 @@ class KnowledgeGraph:
             else:
                 entities[entity_type] = found_entities
 
-    def _has_pos_tagger(self) -> bool:
-        """Check if the loaded spaCy model has a POS tagger."""
-        if not self.spacy_available:
-            return False
-        return "tagger" in self.nlp.pipe_names or "morphologizer" in self.nlp.pipe_names
-
     async def extract_relationships(
         self, text: str, entities: Dict[str, List[str]]
     ) -> List[Dict[str, Any]]:
-        """Extract relationships between entities from text"""
+        """Extract relationships between entities from text using regex patterns only"""
         relationships = []
 
         # Check for matching relationship patterns
@@ -324,72 +271,7 @@ class KnowledgeGraph:
                 except Exception as e:
                     self.logger.error(f"Error extracting relationship: {str(e)}")
 
-        # If SpaCy is available, use dependency parsing for additional relationships
-        if self.spacy_available:
-            try:                # Process text with SpaCy
-                doc = self.nlp(text)
-                
-                # Check if model has POS tagging capability
-                has_pos = self._has_pos_tagger()
-
-                # Extract subject-verb-object relationships
-                for sent in doc.sents:
-                    for token in sent:
-                        # Look for verb predicates
-                        if has_pos and token.pos_ == "VERB":
-                            subj = None
-                            obj = None
-
-                            # Find subject and object
-                            for child in token.children:
-                                if child.dep_ in ["nsubj", "nsubjpass"] and not subj:
-                                    subj = child
-                                elif child.dep_ in ["dobj", "pobj"] and not obj:
-                                    obj = child
-
-                            if subj and obj:
-                                # Get the full noun phrases
-                                subj_span = self._get_span_for_token(subj, has_pos)
-                                obj_span = self._get_span_for_token(obj, has_pos)
-
-                                # Find matching entities
-                                subj_entity = self._find_best_entity_match(
-                                    subj_span.text, entities
-                                )
-                                obj_entity = self._find_best_entity_match(
-                                    obj_span.text, entities
-                                )
-
-                                if subj_entity and obj_entity:
-                                    relationships.append(
-                                        {
-                                            "source": subj_entity["id"],
-                                            "target": obj_entity["id"],
-                                            "relationship": token.lemma_,
-                                            "confidence": 0.7,
-                                            "text_evidence": sent.text,
-                                        }
-                                    )
-                        elif not has_pos:
-                            # Fallback: basic pattern matching without POS tags
-                            # Look for common verb patterns in the lemma
-                            if token.lemma_ in ["be", "have", "do", "say", "get", "make", "go", "know", "take", "see", "come", "think", "look", "want", "give", "use", "find", "tell", "ask", "work", "seem", "feel", "try", "leave", "call"]:
-                                # Simple relationship extraction without dependency parsing
-                                # This is a basic fallback that won't be as accurate
-                                pass
-            except Exception as e:
-                self.logger.error(f"SpaCy relationship extraction failed: {str(e)}")
-
         return relationships
-
-    def _get_span_for_token(self, token, has_pos=True):
-        """Get the complete noun phrase for a token"""
-        if has_pos and token.pos_ in ["NOUN", "PROPN"]:
-            # Check if token is part of a noun phrase
-            for np in token.doc.noun_chunks:
-                if token in np:
-                    return np
-        return token
 
     def _find_best_entity_match(
         self, text: str, entities: Dict[str, List[str]]

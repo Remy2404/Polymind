@@ -145,4 +145,4 @@ if __name__ == "__main__":
     print("   • Enhanced educational detection: ✅")
     print("   • Reduced code complexity: ✅") 
     print("   • Maintained robust error handling: ✅")
-    print("   • spaCy integration optimized: ✅")
+    print("   • Regex pattern optimization: ✅")

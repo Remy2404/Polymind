@@ -51,7 +51,6 @@ dependencies = [
     "pytest==8.4.1",
     "scikit-learn==1.6.1",
     "scipy==1.15.2",
-    "spacy==3.8.7",
     "faster-whisper>=0.10.0",
     "soundfile>=0.12.1",
     "telegramify-markdown==0.1.17",

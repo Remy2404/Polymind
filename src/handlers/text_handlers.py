@@ -143,9 +143,8 @@ class TextHandler:
             await self._send_appropriate_chat_action(
                 update, context, has_attached_media, media_type
             )            # Detect user intent (analyze, generate image, or chat)
-            user_intent = await self.intent_detector.detect_intent(
-                message_text, has_attached_media
-            )
+            intent_result = await self.intent_detector.detect_intent(message_text)
+            user_intent = (intent_result.intent, intent_result.confidence)
 
             # Get user's preferred model
             preferred_model = await self._get_user_preferred_model(user_id)

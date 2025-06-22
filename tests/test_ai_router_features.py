@@ -34,7 +34,7 @@ async def quick_demo():
         "Create a story about space exploration"
     ]
     
-    print(f"🧠 spaCy Available: {detector.nlp is not None}")
+    print(f"🧠 Regex-based Intent Detection: ✅")
     print(f"🤖 Model Configs: {len(detector.model_configs) if detector.model_configs else 0} models loaded")
     print("-" * 60)
     

@@ -7,23 +7,12 @@
 uv sync
 ```
 
-2. Download spaCy language model:
+2. Verify installation:
 ```bash
-python -m spacy download en_core_web_sm
+python -c "print('✅ Setup complete!')"
 ```
 
-3. Verify installation:
-```bash
-python -c "import spacy; nlp = spacy.load('en_core_web_sm'); print('✅ spaCy setup complete!')"
-```
+## Bot Configuration
 
-## Alternative Models
-
-For better accuracy, you can use larger models:
-```bash
-# Medium model (more accurate)
-python -m spacy download en_core_web_md
-
-# Large model (highest accuracy)
-python -m spacy download en_core_web_lg
-```
+The bot is now optimized for low-resource servers and uses fast regex-based intent detection.
+No additional language models or heavy dependencies are required.

@@ -357,14 +357,26 @@ class MessageHandlers:
                     if not is_group_chat or is_mentioned:
                         # IMPORTANT: Use original message_text for intent detection, not enhanced_message_text
                         # This prevents group context from interfering with command detection
+                        
+                        # Check if there are media attachments
+                        has_attached_media = bool(
+                            update.message and (
+                                update.message.photo or 
+                                update.message.video or 
+                                update.message.document or 
+                                update.message.audio or 
+                                update.message.voice
+                            )
+                        )
+                        
                         should_route = (
                             await self.ai_command_router.should_route_message(
-                                message_text
+                                message_text, has_attached_media
                             )
                         )
                         if should_route:
                             intent, confidence = (
-                                await self.ai_command_router.detect_intent(message_text)
+                                await self.ai_command_router.detect_intent(message_text, has_attached_media)
                             )
                             self.logger.info(
                                 f"Routing message to command: {intent.value} (confidence: {confidence:.2f})"
