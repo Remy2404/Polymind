@@ -85,13 +85,13 @@ class TelegramBot:
             if self.session is None or self.session.closed:
                 tcp_connector = aiohttp.TCPConnector(
                     limit=150,
-                    limit_per_host=30,
+                    limit_per_host=500,
                     force_close=False,
                     enable_cleanup_closed=True,
                 )
                 self.session = aiohttp.ClientSession(
                     connector=tcp_connector,
-                    timeout=aiohttp.ClientTimeout(total=300, connect=30),
+                    timeout=aiohttp.ClientTimeout(total=300, connect=500),
                 )
                 self.logger.info("Created new aiohttp session for bot")
             return self.session
@@ -311,7 +311,8 @@ class TelegramBot:
                 "callback_query",
                 "inline_query",
             ],
-            "max_connections": 150,
+            # Increase max_connections for better throughput
+            "max_connections": 500,
         }
 
         self.logger.info(f"Setting webhook to: {webhook_url}")
@@ -333,14 +334,19 @@ class TelegramBot:
         else:
             self.logger.info("Application is already running. Skipping start.")
 
-    async def process_update(self, update_data: dict):
+    async def process_update(self, update_data):
         """Process updates with task management."""
         task = None
         try:
-            from telegram import Update
+            # Expect update_data as dict
+            if isinstance(update_data, dict):
+                update_data_dict = update_data
+            else:
+                self.logger.error(f"Unsupported update_data type: {type(update_data)}")
+                return
 
             # Convert dict to Update object
-            update = Update.de_json(update_data, self.application.bot)
+            update = Update.de_json(update_data_dict, self.application.bot)
 
             if update is None:
                 self.logger.warning(f"Failed to parse update: {update_data}")
@@ -352,8 +358,20 @@ class TelegramBot:
             self.logger.debug(f"Successfully processed update {update.update_id}")
 
         except Exception as e:
+            # Safe error logging that doesn't rely on .get() method
+            update_id = "unknown"
+            try:
+                if hasattr(update_data, "update_id"):
+                    update_id = update_data.update_id
+                elif isinstance(update_data, dict):
+                    update_id = update_data.get('update_id', 'unknown')
+            except:
+                pass
+                
             self.logger.error(
-                f"Error processing update {update_data.get('update_id', 'unknown')}: {str(e)}",
+                f"Error processing update {update_id}: {str(e)}",
                 exc_info=True,
             )
+            # Log full traceback for debugging
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             raise

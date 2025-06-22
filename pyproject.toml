@@ -27,6 +27,7 @@ dependencies = [
     "networkx==3.4.2",
     "numpy==2.2.3",
     "opencv-python==4.11.0.86",
+    "orjson>=3.8.0",
     "pdfminer-six==20221105",
     "pillow==11.1.0",
     "psutil==7.0.0",
@@ -61,4 +62,6 @@ dependencies = [
     "tqdm==4.67.1",
     "uvicorn==0.24.0.post1",
     "weasyprint==65.1",
+    "msgspec>=0.19.0",
+    "fastapi-msgspec>=0.1.0",
 ]

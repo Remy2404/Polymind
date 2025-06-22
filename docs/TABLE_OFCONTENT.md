@@ -172,6 +172,7 @@
 - [19.3 Troubleshooting Guide](#193-troubleshooting-guide)
 - [19.4 Development Setup Guide](#194-development-setup-guide)
 - [19.5 Code Structure Reference](#195-code-structure-reference)
+- [19.6 JSON Parsing Optimization](#196-json-parsing-optimization)
 
 ---
 
@@ -198,6 +199,9 @@ Addresses the complexity of creating a unified interface for multiple AI service
 
 ### 2.3.1 Multilingual Voice Recognition Issues
 Focuses on the specific challenges encountered with Khmer voice recognition, including false positive detection in English transcription, the need for language-specific audio preprocessing, and the implementation of confidence-based validation systems.
+
+### 19.6 JSON Parsing Optimization
+Details the implementation of advanced JSON parsing strategies for webhook handlers, including streaming parsers for large payloads, configurable timeout settings, early request validation, and enhanced error tracking. This section provides guidance on monitoring and troubleshooting JSON parsing issues in high-traffic webhook environments.
 
 ### 3.1 Primary Objectives
 - Develop a robust, scalable Telegram bot supporting multiple AI models

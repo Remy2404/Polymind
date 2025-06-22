@@ -1,127 +1,85 @@
-"""
-Webhook handling routes and exceptions for the Telegram Bot API.
-Handles incoming Telegram webhook updates with validation and rate limiting.
-"""
+# webhook_router.py
 
-import json
 import asyncio
+import os
 import time
-import aiohttp
 import urllib.parse
-from fastapi import APIRouter, Request, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import JSONResponse
 import logging
+from fastapi import APIRouter, Request, BackgroundTasks, Depends
+from fastapi_msgspec.responses import MsgSpecJSONResponse
+from fastapi_msgspec.routing import MsgSpecRoute
+from starlette.requests import ClientDisconnect
+import msgspec.json
+from msgspec import Struct
 
-# Store the bot instance globally in this module
+# Router with fast msgspec encoding/decoding
+router = APIRouter(route_class=MsgSpecRoute, default_response_class=MsgSpecJSONResponse)
+logger = logging.getLogger(__name__)
+
+# In-memory rate limiting per IP
+rate_limits: dict[str, tuple[int, float]] = {}
 _BOT_INSTANCE = None
 
 
-# Custom exception for webhook errors
 class WebhookException(Exception):
-    """Custom exception for webhook-specific errors with HTTP status codes."""
-
     def __init__(self, status_code: int, detail: str):
         self.status_code = status_code
         self.detail = detail
-        super().__init__(self.detail)
 
 
-# Create router - remove prefix to allow for properly formatted routes
-router = APIRouter()
-logger = logging.getLogger(__name__)
-
-# Rate limiting storage - simple in-memory implementation
-rate_limits = {}
+# Minimal schema for Telegram updates
+class UpdateMsg(Struct):
+    update_id: int  # still defined but we decode as dict
 
 
-# Helper function for webhook processing
-def _get_update_type(update_data):
-    """Determine the type of Telegram update for better logging."""
-    if "message" in update_data:
-        if "text" in update_data["message"]:
-            return "text_message"
-        elif "photo" in update_data["message"]:
-            return "photo_message"
-        elif "voice" in update_data["message"]:
-            return "voice_message"
-        elif "document" in update_data["message"]:
-            return "document_message"
+def normalize_token(token: str) -> str:
+    try:
+        return urllib.parse.unquote(token)
+    except:
+        return token
+
+
+def get_telegram_bot():
+    global _BOT_INSTANCE
+    if _BOT_INSTANCE is None:
+        raise RuntimeError("Bot instance not initialized")
+    return _BOT_INSTANCE
+
+
+def _get_update_type(u: dict) -> str:
+    if "message" in u:
+        m = u["message"]
+        for t in ("text", "photo", "voice", "document"):
+            if t in m:
+                return f"{t}_message"
         return "other_message"
-    elif "edited_message" in update_data:
-        return "edited_message"
-    elif "callback_query" in update_data:
-        return "callback_query"
-    elif "inline_query" in update_data:
-        return "inline_query"
+    for t in ("edited_message", "callback_query", "inline_query"):
+        if t in u:
+            return t
     return "unknown"
 
 
-async def _process_update_with_retry(bot, update_data, logger):
-    """Process update with retry mechanism for transient errors."""
+async def _process_update_with_retry(bot, update_data, log):
     from src.utils.ignore_message import message_filter
 
-    max_retries = 3
-    base_delay = 0.5  # Start with 500ms delay
-
-    # Check if update should be ignored
-    bot_username = getattr(bot.application.bot, "username", "Gemini_AIAssistBot")
-    if message_filter.should_ignore_update(update_data, bot_username):
-        logger.info(f"Filtering out content in update {update_data.get('update_id')}")
+    max_retries, base_delay = 3, 0.5
+    bot_name = getattr(bot.application.bot, "username", "UnknownBot")
+    if message_filter.should_ignore_update(update_data, bot_name):
+        log.info(f"Ignored update {update_data.get('update_id', 'unknown')}")
         return
 
     for attempt in range(max_retries):
         try:
-            # Process the update
             await bot.process_update(update_data)
-            if attempt > 0:
-                # Log successful retry
-                logger.info(
-                    f"Successfully processed update {update_data.get('update_id')} on attempt {attempt+1}"
-                )
             return
-
-        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
-            # Transient errors, retry with backoff
-            retry_delay = base_delay * (2**attempt)  # Exponential backoff
-
+        except (asyncio.TimeoutError, asyncio.CancelledError) as e:
             if attempt < max_retries - 1:
-                logger.warning(
-                    f"Transient error processing update {update_data.get('update_id')}, "
-                    f"retrying in {retry_delay}s: {str(e)}"
-                )
-                await asyncio.sleep(retry_delay)
+                await asyncio.sleep(base_delay * (2**attempt))
             else:
-                logger.error(
-                    f"Failed to process update {update_data.get('update_id')} "
-                    f"after {max_retries} attempts: {str(e)}"
-                )
-
+                log.error(f"Failed processing update {update_data.get('update_id', 'unknown')}: {e}")
         except Exception as e:
-            # Non-transient errors, don't retry
-            logger.error(
-                f"Error processing update {update_data.get('update_id')}: {str(e)}",
-                exc_info=True,
-            )
+            log.error(f"Unhandled error on {update_data.get('update_id', 'unknown')}: {e}", exc_info=True)
             return
-
-
-def get_telegram_bot():
-    """Dependency to get the TelegramBot instance."""
-    global _BOT_INSTANCE
-    if _BOT_INSTANCE is None:
-        # Fallback error if not properly configured
-        raise NotImplementedError("Bot dependency injection not configured")
-    return _BOT_INSTANCE
-
-
-# Helper function to normalize token
-def normalize_token(token: str) -> str:
-    """Normalize token by decoding URL encoding if present."""
-    try:
-        # Try to decode in case it's URL encoded
-        return urllib.parse.unquote(token)
-    except Exception:
-        return token
 
 
 @router.post("/webhook/{token}")
@@ -131,138 +89,59 @@ async def webhook_handler(
     background_tasks: BackgroundTasks,
     bot=Depends(get_telegram_bot),
 ):
-    """
-    Process incoming webhook updates from Telegram.
-
-    Args:
-        token: The bot token from the URL path
-        request: The FastAPI request
-        background_tasks: Background tasks runner
-        bot: Telegram bot instance (injected)
-
-    Returns:
-        JSON response indicating success or error
-    """
-    # Get request ID from state
-    request_id = getattr(request.state, "request_id", str(id(request)))
-    logger_with_context = logging.LoggerAdapter(logger, {"request_id": request_id})
-
-    # Track timing for monitoring
-    start_time = time.time()
+    rid = getattr(request.state, "request_id", str(id(request)))
+    log = logging.LoggerAdapter(logger, {"request_id": rid})
+    start = time.time()
 
     try:
-        # Log the actual path for debugging
-        logger_with_context.info(f"Webhook received at path: {request.url.path}")
+        if normalize_token(token) != bot.token:
+            raise WebhookException(403, "Invalid token")
 
-        # Normalize tokens for comparison
-        normalized_token = normalize_token(token)
-        bot_token = bot.token
+        if not request.headers.get("content-type", "").startswith("application/json"):
+            raise WebhookException(415, "Content-Type must be application/json")
 
-        # Validate that token matches bot's token
-        if normalized_token != bot_token:
-            logger_with_context.warning(
-                f"Invalid token: received '{normalized_token}', expected '{bot_token}'"
-            )
-            raise WebhookException(status_code=403, detail="Invalid token")
-
-        # Validate request content type
-        content_type = request.headers.get("content-type", "")
-        if not content_type.startswith("application/json"):
-            raise WebhookException(
-                status_code=415,
-                detail="Unsupported Media Type: Content-Type must be application/json",
-            )
-
-        # Apply rate limiting
-        client_ip = request.client.host if request.client else "unknown"
-        current_time = time.time()
-        rate_key = f"rate_{client_ip}"
-
-        # Get current rate data or initialize
-        if rate_key in rate_limits:
-            count, window_start = rate_limits[rate_key]
-            # Reset counter if window expired (1 minute window)
-            if current_time - window_start > 60:
-                count = 0
-                window_start = current_time
-        else:
-            count = 0
-            window_start = current_time
-
-        # Update rate limit counter
-        count += 1
-        rate_limits[rate_key] = (count, window_start)
-
-        # Check rate limit (30 per minute)
-        if count > 30:
-            logger_with_context.warning(f"Rate limit exceeded for IP: {client_ip}")
-            raise WebhookException(status_code=429, detail="Too Many Requests")
-
-        # Extract data with timeout handling
+        client_ip = request.client.host or "unknown"
+        now = time.time()
+        # Configurable rate limit: set WEBHOOK_RATE_LIMIT<=0 to disable
         try:
-            # Set a reasonable timeout for JSON parsing
-            update_data = await asyncio.wait_for(request.json(), timeout=2.0)
-        except asyncio.TimeoutError:
-            raise WebhookException(
-                status_code=408,
-                detail="Request Timeout: JSON parsing took too long",
-            )
-        except json.JSONDecodeError:
-            raise WebhookException(
-                status_code=400, detail="Bad Request: Invalid JSON format"
-            )
+            threshold = int(os.getenv('WEBHOOK_RATE_LIMIT', '500'))
+        except ValueError:
+            threshold = 500
+        if threshold > 0:
+            cnt, window = rate_limits.get(client_ip, (0, now))
+            if now - window > 60:
+                cnt, window = 0, now
+            cnt += 1
+            rate_limits[client_ip] = (cnt, window)
+            if cnt > threshold:
+                raise WebhookException(429, "Too many requests")
 
-        # Basic validation of Telegram update structure
-        if not isinstance(update_data, dict):
-            raise WebhookException(
-                status_code=400, detail="Bad Request: Update data must be an object"
-            )
+        raw = await asyncio.wait_for(request.body(), timeout=1.0)
+        try:
+            # Decode raw update JSON into a dict for full update data
+            body = msgspec.json.decode(raw, type=dict, strict=False)
+        except msgspec.ValidationError as e:
+            raise WebhookException(400, f"Invalid body: {e}")
 
-        if "update_id" not in update_data:
-            raise WebhookException(
-                status_code=400, detail="Bad Request: Missing update_id field"
-            )
+        # Log received update id if present
+        update_id = body.get("update_id", "unknown")
+        log.info(f"Received update {update_id}, raw size = {len(raw)} bytes")
+        background_tasks.add_task(_process_update_with_retry, bot, body, log)
 
-        # Log incoming update with useful context
-        update_id = update_data.get("update_id", "unknown")
-        logger_with_context.info(
-            f"Received webhook update {update_id} - "
-            f"Type: {_get_update_type(update_data)} - "
-            f"Size: {len(json.dumps(update_data))} bytes"
-        )
-
-        # Process update with retry mechanism in background
-        background_tasks.add_task(
-            _process_update_with_retry, bot, update_data, logger_with_context
-        )
-
-        # Track processing time
-        process_time = time.time() - start_time
-
-        # Return immediate response with useful headers
-        return JSONResponse(
-            content={"status": "ok", "received_at": time.time()},
-            status_code=200,
-            headers={
-                "X-Process-Time": str(process_time),
-                "X-Request-ID": request_id,
-                "Connection": "keep-alive",
-            },
-        )
+        elapsed = time.time() - start
+        return {
+            "status": "ok",
+            "received_at": time.time(),
+            "X-Process-Time": f"{elapsed:.4f}",
+            "X-Request-ID": rid,
+        }
 
     except WebhookException as e:
-        # Format webhook-specific exceptions
-        return JSONResponse(
-            status_code=e.status_code,
-            content={"error": e.detail, "request_id": request_id},
+        return MsgSpecJSONResponse(
+            {"error": e.detail, "request_id": rid}, status_code=e.status_code
         )
-
     except Exception as e:
-        # Log unexpected errors
-        logger_with_context.error(f"Webhook unexpected error: {str(e)}", exc_info=True)
-
-        # Return a proper error response
-        return JSONResponse(
-            content={"status": "error", "detail": str(e), "request_id": request_id},
-            status_code=500,
+        log.error(f"Unexpected error: {e}", exc_info=True)
+        return MsgSpecJSONResponse(
+            {"status": "error", "detail": str(e), "request_id": rid}, status_code=500
         )

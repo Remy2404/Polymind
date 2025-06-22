@@ -12,6 +12,7 @@
 - **POS Tagging**: Filtering verbs with `token.pos_ == 'VERB'`
 - **Dependency Parsing**: Analyzing `token.dep_` for subject-object relationships
 - **Named Entity Recognition**: Boosting scores based on `doc.ents`
+- **Sentence Boundary Detection**: Using `sentencizer` pipe to process sentences properly
 
 ### 2. **Advanced Scoring Algorithm**
 ```python
@@ -138,6 +139,23 @@ except OSError:
 - When spaCy unavailable: Enhanced regex patterns
 - Performance degradation: Minimal (still 68%+ accuracy)
 - Production stability: Maintained
+
+## 🔧 Recent Error Fixes (June 2025)
+
+### 1. **POS Attribute Errors Fixed**
+- Added `_has_pos_tagger()` method to check for tagger availability
+- Conditional POS-dependent logic to avoid errors with basic models
+- Fallback patterns for models without POS tagging
+- More robust matcher initialization
+
+### 2. **Sentence Boundary Errors Fixed**
+- Added the `sentencizer` component to the pipeline:
+```python
+if "sentencizer" not in self.nlp.pipe_names:
+    self.nlp.add_pipe("sentencizer")
+```
+- Implemented in both intent detection and knowledge graph modules
+- Ensures proper sentence iteration during entity and relationship extraction
 
 ## Future Enhancements (Optional)
 

@@ -244,10 +244,18 @@ class EnhancedIntentDetector:
             
         try:
             self.nlp = spacy.load("en_core_web_sm")
+            # Ensure the sentencizer is in the pipeline for sentence boundary detection
+            if "sentencizer" not in self.nlp.pipe_names:
+                self.nlp.add_pipe("sentencizer")
+                self.logger.info("Added 'sentencizer' to spaCy pipeline.")
             self.logger.info("✅ spaCy en_core_web_sm model loaded successfully")
         except OSError:
             try:
                 self.nlp = English()
+                # Add sentencizer for basic models
+                if "sentencizer" not in self.nlp.pipe_names:
+                    self.nlp.add_pipe("sentencizer")
+                    self.logger.info("Added 'sentencizer' to basic English model.")
                 # Reduce warning frequency - only log once
                 if not hasattr(self, '_fallback_warned'):
                     self.logger.info("🔄 Using basic English model for intent detection")
@@ -299,30 +307,58 @@ class EnhancedIntentDetector:
             ]
             self.phrase_matcher.add("TECH_TERMS", tech_terms)
             
-            # Add complex patterns using rule matcher
-            # Pattern for "how to" questions
-            how_to_pattern = [
-                {"LOWER": "how"},
-                {"LOWER": "to"},
-                {"POS": "VERB", "OP": "?"},
-                {"IS_ALPHA": True, "OP": "*"}
-            ]
-            self.rule_matcher.add("HOW_TO_PATTERN", [how_to_pattern])
+            # Check if spaCy model has POS tagging capability
+            has_pos_tagger = "tagger" in self.nlp.pipe_names or "morphologizer" in self.nlp.pipe_names
             
-            # Pattern for model switching
-            model_switch_pattern = [
-                {"LOWER": {"IN": ["switch", "change", "use"]}},
-                {"LOWER": {"IN": ["to", "model"]}, "OP": "?"},
-                {"IS_ALPHA": True, "OP": "*"}
-            ]
-            self.rule_matcher.add("MODEL_SWITCH_PATTERN", [model_switch_pattern])
-            
-            self.logger.info("✅ spaCy matchers initialized successfully")
+            if has_pos_tagger:
+                # Add complex patterns using rule matcher with POS attributes
+                # Pattern for "how to" questions
+                how_to_pattern = [
+                    {"LOWER": "how"},
+                    {"LOWER": "to"},
+                    {"POS": "VERB", "OP": "?"},
+                    {"IS_ALPHA": True, "OP": "*"}
+                ]
+                self.rule_matcher.add("HOW_TO_PATTERN", [how_to_pattern])
+                
+                # Pattern for model switching
+                model_switch_pattern = [
+                    {"LOWER": {"IN": ["switch", "change", "use"]}},
+                    {"LOWER": {"IN": ["to", "model"]}, "OP": "?"},
+                    {"IS_ALPHA": True, "OP": "*"}
+                ]
+                self.rule_matcher.add("MODEL_SWITCH_PATTERN", [model_switch_pattern])
+                
+                self.logger.info("✅ spaCy matchers with POS tagging initialized successfully")
+            else:
+                # Add simpler patterns without POS attributes for basic spaCy models
+                # Pattern for "how to" questions
+                how_to_pattern = [
+                    {"LOWER": "how"},
+                    {"LOWER": "to"},
+                    {"IS_ALPHA": True, "OP": "*"}
+                ]
+                self.rule_matcher.add("HOW_TO_PATTERN", [how_to_pattern])
+                
+                # Pattern for model switching
+                model_switch_pattern = [
+                    {"LOWER": {"IN": ["switch", "change", "use"]}},
+                    {"LOWER": {"IN": ["to", "model"]}, "OP": "?"},
+                    {"IS_ALPHA": True, "OP": "*"}                ]
+                self.rule_matcher.add("MODEL_SWITCH_PATTERN", [model_switch_pattern])
+                
+                self.logger.info("✅ spaCy matchers (basic patterns) initialized successfully")
+                self.logger.info("💡 Install full spaCy model for enhanced POS-based patterns: python -m spacy download en_core_web_sm")
             
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize matchers: {e}")
             self.phrase_matcher = None
             self.rule_matcher = None
+
+    def _has_pos_tagger(self) -> bool:
+        """Check if the current spaCy model has POS tagging capability"""
+        return (self.nlp is not None and 
+                ("tagger" in self.nlp.pipe_names or "morphologizer" in self.nlp.pipe_names))
 
     async def detect_intent_with_recommendations(self, message: str, has_attached_media: bool = False) -> IntentResult:
         """
@@ -489,22 +525,27 @@ class EnhancedIntentDetector:
         """Advanced action verb scoring with syntactic analysis"""
         verb_matches = 0
         total_actions = len(actions)
+        has_pos = self._has_pos_tagger()
         
         for token in doc:
             if token.lemma_ in actions:
-                # Higher score for root verbs (main actions)
-                if token.dep_ == 'ROOT' and token.pos_ == 'VERB':
-                    verb_matches += 1.0
-                # Medium score for auxiliary verbs
-                elif token.pos_ in ['VERB', 'AUX']:
-                    verb_matches += 0.7
-                # Lower score for other matches
+                if has_pos:
+                    # Higher score for root verbs (main actions)
+                    if token.dep_ == 'ROOT' and token.pos_ == 'VERB':
+                        verb_matches += 1.0
+                    # Medium score for auxiliary verbs
+                    elif token.pos_ in ['VERB', 'AUX']:
+                        verb_matches += 0.7
+                    # Lower score for other matches
+                    else:
+                        verb_matches += 0.5
+                        
+                    # Bonus for imperative mood (commands)
+                    if hasattr(token, 'morph') and 'Mood=Imp' in str(token.morph):
+                        verb_matches += 0.3
                 else:
-                    verb_matches += 0.5
-                  
-                # Bonus for imperative mood (commands)
-                if hasattr(token, 'morph') and 'Mood=Imp' in str(token.morph):
-                    verb_matches += 0.3
+                    # Fallback scoring without POS tags
+                    verb_matches += 0.6
         
         return min(verb_matches / total_actions, 1.0) if total_actions > 0 else 0.0
 
@@ -533,33 +574,44 @@ class EnhancedIntentDetector:
             if entity['type'] == 'phrase_match' and entity['label'] == 'MODEL_NAMES':
                 score += 0.4  # Model names are highly relevant
             elif entity['type'] == 'phrase_match' and entity['label'] == 'TECH_TERMS':
-                score += 0.2  # Technical terms are moderately relevant
-            elif entity['type'] == 'rule_match':
+                score += 0.2  # Technical terms are moderately relevant            elif entity['type'] == 'rule_match':
                 score += 0.3  # Rule matches are quite relevant
         
         return min(score, 0.5)  # Cap entity score contribution
 
     def _calculate_syntax_score(self, patterns: Dict, doc) -> float:
-        """Calculate score based on syntactic patterns"""
-        score = 0.0
-        
-        # Look for command structures
-        for token in doc:
-            # Imperative verbs at sentence start
-            if (token.i == 0 or (token.i > 0 and doc[token.i-1].is_punct)) and token.pos_ == 'VERB':
-                if token.lemma_ in patterns.get('actions', []):
-                    score += 0.4
+            """Calculate score based on syntactic patterns"""
+            score = 0.0
+            has_pos = self._has_pos_tagger()
             
-            # Question patterns
-            elif token.lemma_ in ['what', 'how', 'why'] and token.dep_ in ['nsubj', 'advmod']:
-                score += 0.3
+            # Look for command structures
+            for token in doc:
+                if has_pos:
+                    # Imperative verbs at sentence start
+                    if (token.i == 0 or (token.i > 0 and doc[token.i-1].is_punct)) and token.pos_ == 'VERB':
+                        if token.lemma_ in patterns.get('actions', []):
+                            score += 0.4
+                    
+                    # Question patterns
+                    elif token.lemma_ in ['what', 'how', 'why'] and token.dep_ in ['nsubj', 'advmod']:
+                        score += 0.3
+                    
+                    # Object relationships (verb -> object patterns)
+                    elif token.dep_ == 'dobj' and token.head.lemma_ in patterns.get('actions', []):
+                        if token.lemma_ in patterns.get('keywords', []):
+                            score += 0.3
+                else:
+                    # Fallback without POS tags - use basic pattern matching
+                    if token.lemma_ in patterns.get('actions', []):
+                        # Simple check for sentence start positions
+                        if token.i == 0 or (token.i > 0 and doc[token.i-1].is_punct):
+                            score += 0.3
+                        
+                    # Basic question pattern detection
+                    if token.lemma_ in ['what', 'how', 'why']:
+                        score += 0.2
             
-            # Object relationships (verb -> object patterns)
-            elif token.dep_ == 'dobj' and token.head.lemma_ in patterns.get('actions', []):
-                if token.lemma_ in patterns.get('keywords', []):
-                    score += 0.3
-        
-        return min(score, 0.4)
+            return min(score, 0.4)
 
     def _calculate_semantic_score(self, patterns: Dict, doc) -> float:
         """Calculate semantic similarity score using word embeddings"""
@@ -638,12 +690,23 @@ class EnhancedIntentDetector:
         num_sentences = len(list(doc.sents))
         avg_sentence_length = num_tokens / num_sentences if num_sentences > 0 else num_tokens
         
-        pos_counts = {
-            "nouns": len([token for token in doc if token.pos_ == 'NOUN']),
-            "verbs": len([token for token in doc if token.pos_ == 'VERB']),
-            "adjectives": len([token for token in doc if token.pos_ == 'ADJ']),
-            "adverbs": len([token for token in doc if token.pos_ == 'ADV']),
-        }
+        has_pos = self._has_pos_tagger()
+        
+        if has_pos:
+            pos_counts = {
+                "nouns": len([token for token in doc if token.pos_ == 'NOUN']),
+                "verbs": len([token for token in doc if token.pos_ == 'VERB']),
+                "adjectives": len([token for token in doc if token.pos_ == 'ADJ']),
+                "adverbs": len([token for token in doc if token.pos_ == 'ADV']),
+            }
+        else:
+            # Fallback: estimate based on word patterns
+            pos_counts = {
+                "nouns": 0,
+                "verbs": 0,
+                "adjectives": 0,
+                "adverbs": 0,
+            }
         
         complexity_score = self._calculate_complexity_score(doc)
         language_hint = self._detect_language_hints(doc)
