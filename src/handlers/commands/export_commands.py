@@ -3,7 +3,6 @@ import io
 import json
 import re
 from datetime import datetime
-from typing import Optional, Dict, Any, List, Union
 from pathlib import Path
 
 # Telegram imports
@@ -15,7 +14,7 @@ from spire.doc import *
 from spire.doc.common import *
 
 # Pydantic for data validation
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 
 class ExportContent(BaseModel):
@@ -28,6 +27,9 @@ class SpireDocumentExporter:
     
     def __init__(self, logger: logging.Logger):
         self.logger = logger
+        self.current_table = None
+        self.table_rows = []
+        self.in_table = False
     
     def create_docx(self, content: str) -> bytes:
         """Create DOCX using Spire.Doc - simplified to export content only"""
@@ -73,8 +75,7 @@ class SpireDocumentExporter:
                 return document_bytes
                 
             finally:
-                # Clean up temporary file
-                if os.path.exists(temp_path):
+                # Clean up temporary file                if os.path.exists(temp_path):
                     os.unlink(temp_path)
             
         except Exception as e:
@@ -85,10 +86,18 @@ class SpireDocumentExporter:
         """Enhanced markdown to DOCX formatting with comprehensive support"""
         lines = content.split('\n')
         
+        # Reset table tracking
+        self.current_table = None
+        self.table_rows = []
+        self.in_table = False
+        
         for line in lines:
             line = line.strip()
             
             if not line:
+                # End current table if we're in one
+                if self.in_table:
+                    self._finalize_current_table(section)
                 # Add empty paragraph for spacing
                 section.AddParagraph()
                 continue
@@ -161,8 +170,7 @@ class SpireDocumentExporter:
                 paragraph.Format.SpaceAfter = 3
                 
             elif re.match(r'^\d+\.\s', line):
-                # Numbered list items (1. 2. 3. etc.)
-                self._add_formatted_text_with_inline(paragraph, line)
+                # Numbered list items (1. 2. 3. etc.)                self._add_formatted_text_with_inline(paragraph, line)
                 paragraph.Format.LeftIndent = 20
                 paragraph.Format.FirstLineIndent = -10
                 paragraph.Format.SpaceAfter = 3
@@ -189,13 +197,23 @@ class SpireDocumentExporter:
                 paragraph.Format.SpaceAfter = 12
                 
             elif "|" in line and line.count("|") >= 2 and re.match(r"^\s*\|.*\|\s*$", line):
-                # Table row detection - using document_ai_generator pattern
-                self._process_table_row(paragraph, line)
+                # Table row detection - collect for proper table creation
+                self._collect_table_row(line)
+                continue  # Don't create a paragraph for table rows
                 
             else:
+                # End current table if we're in one
+                if self.in_table:
+                    self._finalize_current_table(section)
+                    
                 # Handle inline formatting in regular text
+                paragraph = section.AddParagraph()
                 self._add_formatted_text_with_inline(paragraph, line)
                 paragraph.Format.SpaceAfter = 3
+        
+        # Finalize any remaining table at the end
+        if self.in_table:
+            self._finalize_current_table(section)
                 
     def _add_formatted_text_with_inline(self, paragraph, text):
         """Add text with inline formatting support (bold, italic, code, strikethrough, links)"""
@@ -219,7 +237,7 @@ class SpireDocumentExporter:
             earliest_match = None
             earliest_pos = len(remaining_text)
             earliest_format = None
-            earliest_pattern = None
+            pass
             
             # Find the earliest formatting match
             for pattern, format_type in patterns:
@@ -228,7 +246,7 @@ class SpireDocumentExporter:
                     earliest_match = match
                     earliest_pos = match.start()
                     earliest_format = format_type
-                    earliest_pattern = pattern
+                    pass
             
             if earliest_match:
                 # Add text before the formatting
@@ -275,8 +293,8 @@ class SpireDocumentExporter:
                     text_range.CharacterFormat.FontName = "Arial"
                 break
     
-    def _process_table_row(self, paragraph, line):
-        """Process and neatly format a markdown-style table row."""
+    def _collect_table_row(self, line):
+        """Collect table row data for proper table creation"""
         # Detect a valid table row: must start and end with '|' and contain at least two pipes
         if not re.match(r'^\s*\|.*\|\s*$', line):
             return
@@ -289,28 +307,219 @@ class SpireDocumentExporter:
             return
 
         # Capitalize first letter of cells (if lower)
-        cells = [ (c[0].upper() + c[1:] if c and c[0].islower() else c) for c in raw_cells ]
+        cells = [(c[0].upper() + c[1:] if c and c[0].islower() else c) for c in raw_cells]
+          # Start collecting table data
+        if not self.in_table:
+            self.in_table = True
+            self.table_rows = []
+        
+        self.table_rows.append(cells)
+    
+    def _finalize_current_table(self, section):
+        """Create actual DOCX table from collected table rows - improved version"""
+        if not self.in_table or not self.table_rows:
+            return
+        
+        try:
+            # Get the maximum number of columns
+            max_cols = max(len(row) for row in self.table_rows) if self.table_rows else 0
+            if max_cols == 0:
+                return
+            
+            # Create table using Spire.Doc with safer approach
+            table = section.AddTable(True)
+            table.ResetCells(len(self.table_rows), max_cols)
+            
+            # Process each row
+            for row_idx, row_data in enumerate(self.table_rows):
+                if row_idx < len(table.Rows):
+                    table_row = table.Rows[row_idx]
+                    
+                    # Set row height safely
+                    try:
+                        table_row.Height = 25 if row_idx == 0 else 20
+                    except Exception:
+                        pass
+                    
+                    # Apply header formatting to first row
+                    if row_idx == 0:
+                        try:
+                            table_row.IsHeader = True
+                            # Use a more compatible way to set background color
+                            try:
+                                table_row.RowFormat.BackColor = Color.get_LightBlue()
+                            except AttributeError:
+                                # Fallback color setting
+                                try:
+                                    table_row.RowFormat.BackColor = Color.FromArgb(240, 248, 255)
+                                except Exception:
+                                    pass  # Skip background color if not supported
+                        except Exception:
+                            pass
+                    
+                    # Process each cell in the row
+                    for col_idx, cell_text in enumerate(row_data):
+                        if col_idx < len(table_row.Cells):
+                            cell = table_row.Cells[col_idx]
+                            
+                            # Add paragraph to cell - safer approach
+                            try:
+                                cell_paragraph = cell.AddParagraph()
+                                
+                                # Add simple text first
+                                text_range = cell_paragraph.AppendText(str(cell_text))
+                                text_range.CharacterFormat.FontName = "Arial"
+                                text_range.CharacterFormat.FontSize = 10 if row_idx > 0 else 11
+                                
+                                # Header row formatting
+                                if row_idx == 0:
+                                    text_range.CharacterFormat.Bold = True
+                                    try:
+                                        cell_paragraph.Format.HorizontalAlignment = HorizontalAlignment.Center
+                                    except Exception:
+                                        pass
+                                else:
+                                    try:
+                                        cell_paragraph.Format.HorizontalAlignment = HorizontalAlignment.Left
+                                    except Exception:
+                                        pass
+                                
+                                # Cell alignment
+                                try:
+                                    cell.CellFormat.VerticalAlignment = VerticalAlignment.Middle
+                                except Exception:
+                                    pass
+                                    
+                            except Exception as cell_error:
+                                self.logger.warning(f"Error formatting cell [{row_idx}][{col_idx}]: {cell_error}")
+            
+            # Apply table borders with improved error handling
+            self._apply_table_borders(table)
+            
+        except Exception as e:
+            self.logger.error(f"Error creating table: {e}")
+            # Enhanced fallback to formatted text table
+            self._create_text_fallback_table(section)
+        
+        finally:
+            # Reset table state
+            self.in_table = False
+            self.table_rows = []
+            self.current_table = None
 
-        # Build or retrieve existing table in the document
-        # For simplicity, we append each row as text with pipe separators
+    
+    def _create_text_fallback_table(self, section):
+        """Create a well-formatted text table as fallback"""
+        if not self.table_rows:
+            return
+            
+        # Calculate column widths
+        col_widths = []
+        max_cols = max(len(row) for row in self.table_rows)
+        
+        for col_idx in range(max_cols):
+            max_width = 0
+            for row in self.table_rows:
+                if col_idx < len(row):
+                    max_width = max(max_width, len(str(row[col_idx])))
+            col_widths.append(max(max_width, 8))  # Minimum width of 8
+        
+        # Create table with proper spacing
+        for row_idx, row in enumerate(self.table_rows):
+            paragraph = section.AddParagraph()
+            
+            # Create formatted row text
+            formatted_cells = []
+            for col_idx, cell in enumerate(row):
+                if col_idx < len(col_widths):
+                    padded_cell = str(cell).ljust(col_widths[col_idx])
+                    formatted_cells.append(padded_cell)
+            
+            table_text = "| " + " | ".join(formatted_cells) + " |"
+            text_range = paragraph.AppendText(table_text)
+            text_range.CharacterFormat.FontName = "Courier New"
+            text_range.CharacterFormat.FontSize = 10
+            
+            # Header formatting
+            if row_idx == 0:
+                text_range.CharacterFormat.Bold = True
+                
+                # Add separator line after header
+                separator_paragraph = section.AddParagraph()
+                separator_text = "|" + "|".join(["-" * (w + 2) for w in col_widths]) + "|"
+                sep_range = separator_paragraph.AppendText(separator_text)
+                sep_range.CharacterFormat.FontName = "Courier New"
+                sep_range.CharacterFormat.FontSize = 10
+            
+            # Table spacing
+            paragraph.Format.SpaceBefore = 2
+            paragraph.Format.SpaceAfter = 2
+          # Add some spacing after table
+        section.AddParagraph()
+    
+    def _apply_table_borders(self, table):
+        """Apply professional borders to the table - fixed version"""
+        try:
+            # More robust border application for Spire.Doc
+            for row_idx, row in enumerate(table.Rows):
+                for col_idx, cell in enumerate(row.Cells):
+                    try:
+                        # Get cell format safely
+                        cell_format = cell.CellFormat
+                        
+                        # Apply borders using a more compatible approach
+                        try:
+                            # Set border style directly without accessing individual border objects
+                            cell_format.Borders.BorderType = BorderStyle.Single
+                            cell_format.Borders.LineWidth = 0.5
+                            cell_format.Borders.Color = Color.Black  # Ensure default color
+                            # Use default color to avoid API issues
+                        except AttributeError:
+                            # Fallback: try setting borders individually with error handling
+                            try:
+                                borders = cell_format.Borders
+                                # Set each border type if available
+                                for border_type in ['Top', 'Bottom', 'Left', 'Right']:
+                                    if hasattr(borders, border_type):
+                                        border = getattr(borders, border_type)
+                                        if hasattr(border, 'BorderType'):
+                                            border.BorderType = BorderStyle.Single
+                                        if hasattr(border, 'LineWidth'):
+                                            border.LineWidth = 0.5
+                            except Exception:
+                                # Skip border formatting if API is incompatible
+                                pass
+                        except Exception:
+                            # Skip this cell's borders if there's any issue
+                            continue
+                            
+                    except Exception as cell_error:
+                        # Log but continue with other cells
+                        self.logger.debug(f"Could not format cell [{row_idx}][{col_idx}]: {cell_error}")
+                        continue
+                        
+        except Exception as e:
+            self.logger.warning(f"Could not apply table borders: {e}")
+
+    def _process_table_row(self, paragraph, line):
+        """Deprecated method - kept for backward compatibility"""
+        # This method is now replaced by _collect_table_row and _finalize_current_table
+        # Process and neatly format a markdown-style table row as text fallback
+        if not re.match(r'^\s*\|.*\|\s*$', line):
+            return
+
+        raw_cells = [cell.strip() for cell in line.strip().strip('|').split('|')]
+        if all(re.fullmatch(r'^[-:]+$', cell) for cell in raw_cells):
+            return
+
+        cells = [(c[0].upper() + c[1:] if c and c[0].islower() else c) for c in raw_cells]
         formatted = "| " + " | ".join(cells) + " |"
         self._add_formatted_text_with_inline(paragraph, formatted)
 
-        # Apply table-like indentation and spacing
         paragraph.Format.LeftIndent = 10
         paragraph.Format.RightIndent = 10
         paragraph.Format.SpaceBefore = 3
         paragraph.Format.SpaceAfter = 3
-
-        # Try to set light borders
-        try:
-            for side in ('Left', 'Right'):
-                b = getattr(paragraph.Format.Borders, side)
-                b.BorderType = BorderStyle.Single
-                b.Color = Color.FromArgb(0, 200, 200, 200)
-                b.LineWidth = 0.5
-        except Exception:
-            pass
 
     
     def _add_emoji_support(self, text_range):
@@ -346,8 +555,7 @@ class EnhancedExportCommands:
         try:
             from src.services.memory_context.memory_manager import MemoryManager
             from src.database.connection import get_database
-            
-            db, client = get_database()
+            db, _ = get_database()
             return MemoryManager(db=db)
         except Exception as e:
             self.logger.warning(f"Memory manager initialization failed: {e}")
@@ -454,7 +662,6 @@ class EnhancedExportCommands:
             "Please send me the text you want to convert to a document.\n"
             "After sending your text, I'll ask you to choose the format (DOCX).",
             parse_mode="Markdown"        )
-    
     async def _show_format_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Show format selection"""
         keyboard = [[InlineKeyboardButton("📝 DOCX Format", callback_data="export_format_docx")]]
