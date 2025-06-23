@@ -2,6 +2,8 @@ import logging
 import io
 import json
 import re
+import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -75,7 +77,6 @@ class SpireDocumentExporter:
                 return document_bytes
                 
             finally:
-                # Clean up temporary file                if os.path.exists(temp_path):
                     os.unlink(temp_path)
             
         except Exception as e:
@@ -91,7 +92,40 @@ class SpireDocumentExporter:
         self.table_rows = []
         self.in_table = False
         
+        # Strip evaluation watermark and headers from beginning of content
+        watermark_found = False
+        timestamp_pattern = re.compile(r'(You|Bot) \(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\):')
+          # Pre-process to remove full chunks of watermark text
+        filtered_lines = []
+        skip_next = False
+        
         for line in lines:
+            # Skip lines containing evaluation text or timestamps - enhanced detection
+            if any(warning_text in line for warning_text in [
+                "Evaluation Warning:",
+                "The document was created with Spire.Doc",
+                "Spire.Doc for Python",
+                "evaluation warning",
+                "spire.doc for python",
+                "document was created with spire.doc"
+            ]):
+                watermark_found = True
+                continue
+                
+            # Skip message headers with timestamps
+            if timestamp_pattern.match(line.strip()):
+                skip_next = True
+                continue
+                
+            # Skip the content line after a timestamp header
+            if skip_next:
+                skip_next = False
+                continue
+                
+            filtered_lines.append(line)
+        
+        # Process the cleaned lines
+        for line in filtered_lines:
             line = line.strip()
             
             if not line:
@@ -101,23 +135,24 @@ class SpireDocumentExporter:
                 # Add empty paragraph for spacing
                 section.AddParagraph()
                 continue
-                  # Skip unwanted phrases and metadata
-            if any(phrase in line for phrase in [
-                "Export Conversation: Export your chat history",
-                "I'm here to help, but I don't have the ability",
-                "Here's a summary of our conversation",
+              # Skip unwanted phrases and metadata - enhanced filtering
+            if any(phrase in line.lower() for phrase in [
+                "export conversation:", 
+                "i'm here to help, but i don't have",  
+                "here's a summary of our conversation",
                 "• --",
+                "evaluation warning",
+                "spire.doc for python",
+                "document was created with",
+                "conversation history",
+                "generated on",
+                "user id:",
+                "export date:",
+                "the document was created with spire.doc"
+            ]) or any(exact_phrase in line for exact_phrase in [
                 "Evaluation Warning:",
-                "The document was created with Spire.Doc for Python",
-                "Conversation History",
-                "You (2025-",
-                "Bot (2025-",
-                ") Bot (",
-                ") You (",
-                "Generated on",
-                "User ID:",
-                "Export Date:",
-                "Document created using"
+                "The document was created with Spire.Doc",
+                "Spire.Doc for Python"
             ]):
                 continue
             
@@ -769,14 +804,10 @@ class EnhancedExportCommands:
                             ]):
                                 continue
                             
-                            display_role = "You" if role == "user" else "Bot"
-                            if isinstance(timestamp, (int, float)):
-                                timestamp_str = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
-                            else:
-                                timestamp_str = str(timestamp)
-                            
-                            formatted_content += f"**{display_role}** ({timestamp_str}):\n{content}\n\n"
-                            has_content = True
+                            # Add content directly without timestamp headers
+                            if content.strip():
+                                formatted_content += f"{content}\n\n"
+                                has_content = True
                             
                 except Exception as e:
                     self.logger.error(f"Error retrieving from memory manager: {e}")
