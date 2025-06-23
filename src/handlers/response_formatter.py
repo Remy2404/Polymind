@@ -1,5 +1,6 @@
 import logging
 import html
+import json
 import re
 import subprocess
 import tempfile
@@ -34,6 +35,42 @@ class ResponseFormatter:
 
     # --- ENHANCED: Mermaid rendering with better error handling and syntax cleanup ---
     def _render_mermaid_to_image(self, mmd_text: str) -> Any:
+        import os
+        import platform
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            try:
+                self.logger.info(f"Mermaid rendering attempt {attempt + 1}/{max_retries}")
+                return self._render_mermaid_single_attempt(mmd_text)
+                
+            except Exception as e:
+                error_msg = str(e)
+                self.logger.warning(f"Mermaid rendering attempt {attempt + 1} failed: {error_msg}")
+                
+                # Check for specific error patterns that warrant retry
+                retry_errors = [
+                    "Connection closed",
+                    "Protocol error", 
+                    "timeout",
+                    "page has been closed",
+                    "Target closed"
+                ]
+                
+                should_retry = any(retry_term in error_msg for retry_term in retry_errors)
+                
+                if should_retry and attempt < max_retries - 1:
+                    self.logger.info("Retryable error detected, waiting before retry...")
+                    import time
+                    time.sleep(2)  # Wait 2 seconds before retry
+                    continue
+                else:
+                    # Final attempt failed or non-retryable error
+                    raise
+        
+        raise Exception("Mermaid rendering failed after all retry attempts")
+    
+    def _render_mermaid_single_attempt(self, mmd_text: str) -> Any:
         import os
         import platform
         try:
@@ -72,25 +109,88 @@ class ResponseFormatter:
             else:
                 mmdc_cmd = "mmdc"
             
-            # Run Mermaid CLI with error handling
+            # Create enhanced puppeteer config for stability
+            puppeteer_config = {
+                "headless": "new",
+                "args": [
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox", 
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--no-first-run",
+                    "--disable-extensions",
+                    "--disable-background-timer-throttling",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-features=TranslateUI,BlinkGenPropertyTrees",
+                    "--disable-ipc-flooding-protection",
+                    "--disable-default-apps",
+                    "--disable-sync",
+                    "--no-default-browser-check",
+                    "--disable-web-security",
+                    "--allow-running-insecure-content"
+                ],
+                "defaultViewport": {
+                    "width": 1200,
+                    "height": 800
+                },
+                "timeout": 60000  # 60 second timeout
+            }
+            
+            # Add platform-specific configurations
+            if platform.system() == "Windows":
+                # Windows-specific Chrome args for stability
+                puppeteer_config["args"].extend([
+                    "--disable-features=VizDisplayCompositor",
+                    "--disable-software-rasterizer"
+                ])
+            else:
+                # Linux/Docker specific args
+                puppeteer_config["args"].extend([
+                    "--no-zygote",
+                    "--single-process"
+                ])
+            
+            # Create temporary puppeteer config file
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode='w') as config_file:
+                json.dump(puppeteer_config, config_file, indent=2)
+                config_file.flush()
+                config_path = config_file.name
+            
+            self.logger.debug(f"Created Puppeteer config at: {config_path}")
+            
+            # Run Mermaid CLI with puppeteer config
+            cmd_args = [
+                mmdc_cmd, 
+                "-i", src_path, 
+                "-o", png_path, 
+                "--quiet",
+                "--puppeteerConfigFile", config_path
+            ]
+            
             result = subprocess.run(
-                [mmdc_cmd, "-i", src_path, "-o", png_path, "--quiet"],
+                cmd_args,
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=30
+                timeout=90  # Increased timeout to 90 seconds
             )
             
             # Check if PNG was created successfully
             if not os.path.exists(png_path):
                 raise Exception("PNG file was not created")
             
+            # Verify the PNG file is not empty and valid
+            if os.path.getsize(png_path) == 0:
+                raise Exception("Generated PNG file is empty")
+            
             # Return file handle
             img_file = open(png_path, "rb")
             
-            # Clean up temp mermaid file
+            # Clean up temp files
             try:
                 os.unlink(src_path)
+                os.unlink(config_path)
             except:
                 pass
                 
