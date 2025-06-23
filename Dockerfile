@@ -23,6 +23,25 @@ RUN apt-get update && \
     gcc g++ libffi-dev \
     ffmpeg \
     curl \
+    # Chrome/Chromium dependencies for Mermaid CLI
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libxss1 \
+    libasound2 \
+    libatspi2.0-0 \
+    fonts-freefont-ttf \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    fonts-dejavu \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && npm install -g @mermaid-js/mermaid-cli \
@@ -70,6 +89,10 @@ RUN apt-get update && \
     libxss1 \
     libasound2 \
     libatspi2.0-0 \
+    fonts-freefont-ttf \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    fonts-dejavu \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && npm install -g @mermaid-js/mermaid-cli \
