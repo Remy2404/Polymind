@@ -17,11 +17,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 3️⃣ Install system dependencies (including FFmpeg for voice processing)
+# 3️⃣ Install system dependencies (including FFmpeg for voice processing and Node.js for Mermaid)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     gcc g++ libffi-dev \
     ffmpeg \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && npm install -g @mermaid-js/mermaid-cli \
     && rm -rf /var/lib/apt/lists/*
 
 # 4️⃣ Copy dependency files and install dependencies
@@ -46,10 +50,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 🎤 Install runtime dependencies for voice processing
+# 🎤 Install runtime dependencies for voice processing and Mermaid rendering
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ffmpeg \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && npm install -g @mermaid-js/mermaid-cli \
     && rm -rf /var/lib/apt/lists/*
 
 # 7️⃣ Copy virtual env and uv binaries from builder

@@ -53,7 +53,7 @@ dependencies = [
     "scipy==1.15.2",
     "faster-whisper>=0.10.0",
     "soundfile>=0.12.1",
-    "telegramify-markdown==0.1.17",
+    "telegramify-markdown[mermaid]==0.1.17",
     "tenacity==9.0.0",
     "tifffile==2025.2.18",
     "together==1.4.1",
@@ -63,4 +63,6 @@ dependencies = [
     "weasyprint==65.1",
     "msgspec>=0.19.0",
     "fastapi-msgspec>=0.1.0",
+    "docxtpl>=0.20.0",
+    "spire-doc>=13.4.6",
 ]

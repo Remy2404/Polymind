@@ -32,14 +32,108 @@ class ResponseFormatter:
         )
         return text
 
-    # --- NEW FEATURE: Mermaid rendering support ---
+    # --- ENHANCED: Mermaid rendering with better error handling and syntax cleanup ---
     def _render_mermaid_to_image(self, mmd_text: str) -> Any:
-        with tempfile.NamedTemporaryFile(suffix=".mmd", delete=False) as src:
-            src.write(mmd_text.encode())
-            src.flush()
-            png = src.name.replace(".mmd", ".png")
-        subprocess.run(["mmdc", "-i", src.name, "-o", png], check=True)
-        return open(png, "rb")
+        import os
+        import platform
+        try:
+            # Clean up the Mermaid syntax to handle AI-generated issues
+            cleaned_mmd = self._clean_mermaid_syntax(mmd_text)
+            
+            # Create temp files
+            with tempfile.NamedTemporaryFile(suffix=".mmd", delete=False, mode='w') as src_file:
+                src_file.write(cleaned_mmd)
+                src_file.flush()
+                src_path = src_file.name
+            
+            png_path = src_path.replace(".mmd", ".png")
+            
+            # Determine mmdc command based on platform
+            if platform.system() == "Windows":
+                # Try common Windows paths for mmdc
+                possible_paths = [
+                    "mmdc",
+                    "mmdc.cmd",
+                    os.path.join(os.environ.get("APPDATA", ""), "npm", "mmdc.cmd"),
+                    os.path.join("C:", "Users", os.environ.get("USERNAME", ""), "AppData", "Roaming", "npm", "mmdc.cmd")
+                ]
+                mmdc_cmd = None
+                for path in possible_paths:
+                    try:
+                        result = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=5)
+                        if result.returncode == 0:
+                            mmdc_cmd = path
+                            break
+                    except:
+                        continue
+                        
+                if not mmdc_cmd:
+                    raise Exception("mmdc command not found. Please install @mermaid-js/mermaid-cli")
+            else:
+                mmdc_cmd = "mmdc"
+            
+            # Run Mermaid CLI with error handling
+            result = subprocess.run(
+                [mmdc_cmd, "-i", src_path, "-o", png_path, "--quiet"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30
+            )
+            
+            # Check if PNG was created successfully
+            if not os.path.exists(png_path):
+                raise Exception("PNG file was not created")
+            
+            # Return file handle
+            img_file = open(png_path, "rb")
+            
+            # Clean up temp mermaid file
+            try:
+                os.unlink(src_path)
+            except:
+                pass
+                
+            return img_file
+            
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Mermaid CLI error: {e.stderr}")
+            raise Exception(f"Mermaid rendering failed: {e.stderr}")
+        except subprocess.TimeoutExpired:
+            self.logger.error("Mermaid rendering timed out")
+            raise Exception("Mermaid rendering timed out")
+        except Exception as e:
+            self.logger.error(f"Mermaid rendering error: {e}")
+            raise
+
+    def _clean_mermaid_syntax(self, mmd_text: str) -> str:
+        """Clean up Mermaid syntax to handle AI-generated issues"""
+        lines = mmd_text.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            # Remove comments (// style comments are not supported in Mermaid)
+            if '//' in line:
+                line = line.split('//')[0].strip()
+            
+            # Skip empty lines after comment removal
+            if not line.strip():
+                continue
+                
+            # Fix common AI syntax issues
+            line = line.strip()
+            
+            # Remove semicolons at the end of lines (not needed in Mermaid)
+            if line.endswith(';'):
+                line = line[:-1]
+            
+            cleaned_lines.append(line)
+        
+        return '\n'.join(cleaned_lines)
+    
+    def _fix_mermaid_labels(self, line: str) -> str:
+        """This method is kept for potential future use but simplified for now"""
+        return line
 
     async def format_telegram_markdown(self, text: str) -> str:
         text = str(text)
@@ -212,7 +306,7 @@ class ResponseFormatter:
                 
         return '\n'.join(cleaned_lines)
 
-    # --- OVERRIDDEN: Detect mermaid blocks and render as image ---
+    # --- ENHANCED: Detect mermaid blocks anywhere in message and render as image ---
     async def safe_send_message(
         self,
         message,
@@ -220,19 +314,54 @@ class ResponseFormatter:
         reply_to_message_id: Optional[int] = None,
         disable_web_page_preview: bool = False,
     ) -> Optional[Any]:
-        if text and text.strip().startswith("```mermaid"):
-            mmd = re.sub(r"^```mermaid\s*|```$", "", text.strip(), flags=re.DOTALL)
+        # Check for Mermaid blocks anywhere in the text
+        mermaid_pattern = r'```mermaid\s*\n(.*?)\n```'
+        mermaid_matches = re.findall(mermaid_pattern, text, re.DOTALL)
+        
+        # Debug logging
+        self.logger.info(f"Checking text for Mermaid blocks. Found {len(mermaid_matches)} matches")
+        if mermaid_matches:
+            self.logger.info(f"Mermaid content: {mermaid_matches[0][:100]}...")
+        
+        if mermaid_matches:
+            # Extract the first Mermaid diagram
+            mmd_content = mermaid_matches[0].strip()
             try:
-                img = self._render_mermaid_to_image(mmd)
-                return await message.reply_photo(
+                img = self._render_mermaid_to_image(mmd_content)
+                
+                # Remove the Mermaid block from text and send remaining text if any
+                remaining_text = re.sub(mermaid_pattern, '', text, count=1, flags=re.DOTALL).strip()
+                
+                # Send the image first
+                result = await message.reply_photo(
                     photo=img,
                     caption="Mermaid diagram",
                     reply_to_message_id=reply_to_message_id,
-                    disable_web_page_preview=disable_web_page_preview,
                 )
+                
+                # Send remaining text if there's any meaningful content
+                if remaining_text and len(remaining_text) > 10:  # Only if substantial text remains
+                    await self._send_single_message(
+                        message, remaining_text, None, disable_web_page_preview
+                    )
+                
+                return result
+                
             except Exception as e:
                 self.logger.error(f"Mermaid rendering failed: {e}")
-                # fallback below
+                
+                # If Mermaid rendering fails, provide helpful feedback and send the original text
+                error_context = ""
+                if "Parse error" in str(e):
+                    error_context = "\n\n*Note: The Mermaid diagram contains syntax errors. Here's the original code:*"
+                elif "mmdc command not found" in str(e):
+                    error_context = "\n\n*Note: Mermaid CLI is not available. Here's the diagram code:*"
+                
+                # Send the original text with error context
+                fallback_text = f"{text}{error_context}"
+                return await self._send_single_message(
+                    message, fallback_text, reply_to_message_id, disable_web_page_preview
+                )
 
         # Check if message is too long and split it
         if len(text) > 4000:  # Leave some margin below Telegram's 4096 limit

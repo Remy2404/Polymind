@@ -1178,9 +1178,18 @@ class MessageHandlers:
 
             # Get the text
             content = update.message.text
+            
+            # Debug logging
+            self.logger.info(f"📝 Custom text received for export - User ID: {update.effective_user.id}")
+            self.logger.info(f"📝 Content length: {len(content) if content else 0} characters")
+            self.logger.info(f"📝 Content preview: {content[:200] if content else 'None'}...")
 
             # Store for document generation
             context.user_data["doc_export_text"] = content
+            
+            # Verify storage
+            stored_content = context.user_data.get("doc_export_text", "")
+            self.logger.info(f"📝 Verified storage - Length: {len(stored_content)} characters")
 
             # Offer format selection
             format_options = [
@@ -1196,7 +1205,7 @@ class MessageHandlers:
             format_markup = InlineKeyboardMarkup(format_options)
 
             await update.message.reply_text(
-                "Your text has been received. Please select the document format you want to export to:",
+                f"✅ Your text has been received ({len(content)} characters). Please select the document format you want to export to:",
                 reply_markup=format_markup,
             )
 
