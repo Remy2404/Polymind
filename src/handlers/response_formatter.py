@@ -67,7 +67,27 @@ class ResponseFormatter:
                         "npm",
                         "mmdc.cmd",
                     ),
+                    # Additional common npm global paths
+                    os.path.join(os.environ.get("ProgramFiles", ""), "nodejs", "mmdc.cmd"),
+                    os.path.join(os.environ.get("ProgramFiles(x86)", ""), "nodejs", "mmdc.cmd"),
+                    os.path.join(os.environ.get("USERPROFILE", ""), "AppData", "Roaming", "npm", "mmdc.cmd"),
                 ]
+                
+                # Try using npm to find the path
+                try:
+                    npm_result = subprocess.run(
+                        ["npm", "bin", "-g"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if npm_result.returncode == 0:
+                        npm_bin_path = npm_result.stdout.strip()
+                        possible_paths.append(os.path.join(npm_bin_path, "mmdc.cmd"))
+                        possible_paths.append(os.path.join(npm_bin_path, "mmdc"))
+                except:
+                    self.logger.warning("Failed to get npm global bin path")
+                    
                 mmdc_cmd = None
                 for path in possible_paths:
                     try:
@@ -79,22 +99,24 @@ class ResponseFormatter:
                         )
                         if result.returncode == 0:
                             mmdc_cmd = path
+                            self.logger.info(f"Found mmdc at: {path}")
                             break
-                    except:
+                    except Exception as e:
+                        self.logger.debug(f"Failed to run {path}: {str(e)}")
                         continue
 
                 if not mmdc_cmd:
                     raise Exception(
-                        "mmdc command not found. Please install @mermaid-js/mermaid-cli"
+                        "mmdc command not found. Please install @mermaid-js/mermaid-cli globally using: npm install -g @mermaid-js/mermaid-cli"
                     )
             else:
                 mmdc_cmd = "mmdc"
 
-            # Prepare the command. For Docker/Linux, add --no-sandbox to allow running as root.
-            command = [mmdc_cmd, "-i", src_path, "-o", png_path, "--quiet"]
-            if platform.system() != "Windows" and os.getenv("INSIDE_DOCKER", "false").lower() == "true":
-                command.append("--no-sandbox")
-
+            # Prepare the command with puppeteer config
+            puppeteer_config = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
+                                           "puppeteer-config.json")
+            command = [mmdc_cmd, "-i", src_path, "-o", png_path, "--quiet", "-p", puppeteer_config]
+            
             # Run Mermaid CLI with error handling
             result = subprocess.run(
                 command,

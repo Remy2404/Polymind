@@ -40,10 +40,10 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ffmpeg curl ca-certificates libnss3 libatk-bridge2.0-0 libxcomposite1 libxdamage1 \
     libxrandr2 libxss1 libasound2 libxkbcommon0 libdrm2 libgbm1 \
-    libatk1.0-0 libcups2 libnspr4 fonts-dejavu-core fonts-liberation && \
+    libatk1.0-0 libcups2 libnspr4 fonts-dejavu-core fonts-liberation chromium && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
-    npm install -g @mermaid-js/mermaid-cli && \
+    npm install -g @mermaid-js/mermaid-cli puppeteer && \
     npm cache clean --force && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
