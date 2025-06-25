@@ -90,9 +90,14 @@ class ResponseFormatter:
             else:
                 mmdc_cmd = "mmdc"
 
+            # Prepare the command. For Docker/Linux, add --no-sandbox to allow running as root.
+            command = [mmdc_cmd, "-i", src_path, "-o", png_path, "--quiet"]
+            if platform.system() != "Windows":
+                command.append("--no-sandbox")
+
             # Run Mermaid CLI with error handling
             result = subprocess.run(
-                [mmdc_cmd, "-i", src_path, "-o", png_path, "--quiet"],
+                command,
                 capture_output=True,
                 text=True,
                 check=True,
