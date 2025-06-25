@@ -29,6 +29,7 @@ A powerful, multi-modal Telegram bot leveraging cutting-edge AI technologies inc
 - **Multi-Modal AI**: Combined text, image, document, and voice processing in single requests
 - **Conversation Memory**: Persistent context across sessions with model-specific history
 - **Smart Fallback System**: Automatic failover between AI providers for reliability
+- **MCP Server Integration**: Connect AI models to external tools like Exa Search using Model Context Protocol
 
 ### 🎨 **Visual & Media Processing**
 - **Mermaid Diagram Rendering**: Automatic detection and conversion of text-based diagrams to images

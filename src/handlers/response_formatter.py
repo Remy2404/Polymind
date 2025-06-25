@@ -112,18 +112,27 @@ class ResponseFormatter:
             else:
                 mmdc_cmd = "mmdc"
 
-            # Prepare the command with puppeteer config
+            # Prepare the command with puppeteer config and optimization flags
             puppeteer_config = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
                                            "puppeteer-config.json")
-            command = [mmdc_cmd, "-i", src_path, "-o", png_path, "--quiet", "-p", puppeteer_config]
+            # Adding width to make rendering faster, and background transparent for better image quality
+            command = [
+                mmdc_cmd, 
+                "-i", src_path, 
+                "-o", png_path, 
+                "--quiet",
+                "-p", puppeteer_config,
+                "-w", "800", 
+                "-b", "transparent"
+            ]
             
-            # Run Mermaid CLI with error handling
+            # Run Mermaid CLI with error handling - increased timeout
             result = subprocess.run(
                 command,
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=30,
+                timeout=60,
             )
 
             # Check if PNG was created successfully
@@ -145,8 +154,8 @@ class ResponseFormatter:
             self.logger.error(f"Mermaid CLI error: {e.stderr}")
             raise Exception(f"Mermaid rendering failed: {e.stderr}")
         except subprocess.TimeoutExpired:
-            self.logger.error("Mermaid rendering timed out")
-            raise Exception("Mermaid rendering timed out")
+            self.logger.error("Mermaid rendering timed out - the diagram might be too complex")
+            raise Exception("Mermaid rendering timed out - the diagram might be too complex or your system is under heavy load")
         except Exception as e:
             self.logger.error(f"Mermaid rendering error: {e}")
             raise
