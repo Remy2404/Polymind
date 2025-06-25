@@ -1,6 +1,5 @@
 import logging
 import html
-import json
 import re
 import subprocess
 import tempfile
@@ -37,54 +36,21 @@ class ResponseFormatter:
     def _render_mermaid_to_image(self, mmd_text: str) -> Any:
         import os
         import platform
-        max_retries = 3
-        
-        for attempt in range(max_retries):
-            try:
-                self.logger.info(f"Mermaid rendering attempt {attempt + 1}/{max_retries}")
-                return self._render_mermaid_single_attempt(mmd_text)
-                
-            except Exception as e:
-                error_msg = str(e)
-                self.logger.warning(f"Mermaid rendering attempt {attempt + 1} failed: {error_msg}")
-                
-                # Check for specific error patterns that warrant retry
-                retry_errors = [
-                    "Connection closed",
-                    "Protocol error", 
-                    "timeout",
-                    "page has been closed",
-                    "Target closed"
-                ]
-                
-                should_retry = any(retry_term in error_msg for retry_term in retry_errors)
-                
-                if should_retry and attempt < max_retries - 1:
-                    self.logger.info("Retryable error detected, waiting before retry...")
-                    import time
-                    time.sleep(2)  # Wait 2 seconds before retry
-                    continue
-                else:
-                    # Final attempt failed or non-retryable error
-                    raise
-        
-        raise Exception("Mermaid rendering failed after all retry attempts")
-    
-    def _render_mermaid_single_attempt(self, mmd_text: str) -> Any:
-        import os
-        import platform
+
         try:
             # Clean up the Mermaid syntax to handle AI-generated issues
             cleaned_mmd = self._clean_mermaid_syntax(mmd_text)
-            
+
             # Create temp files
-            with tempfile.NamedTemporaryFile(suffix=".mmd", delete=False, mode='w') as src_file:
+            with tempfile.NamedTemporaryFile(
+                suffix=".mmd", delete=False, mode="w"
+            ) as src_file:
                 src_file.write(cleaned_mmd)
                 src_file.flush()
                 src_path = src_file.name
-            
+
             png_path = src_path.replace(".mmd", ".png")
-            
+
             # Determine mmdc command based on platform
             if platform.system() == "Windows":
                 # Try common Windows paths for mmdc
@@ -92,110 +58,62 @@ class ResponseFormatter:
                     "mmdc",
                     "mmdc.cmd",
                     os.path.join(os.environ.get("APPDATA", ""), "npm", "mmdc.cmd"),
-                    os.path.join("C:", "Users", os.environ.get("USERNAME", ""), "AppData", "Roaming", "npm", "mmdc.cmd")
+                    os.path.join(
+                        "C:",
+                        "Users",
+                        os.environ.get("USERNAME", ""),
+                        "AppData",
+                        "Roaming",
+                        "npm",
+                        "mmdc.cmd",
+                    ),
                 ]
                 mmdc_cmd = None
                 for path in possible_paths:
                     try:
-                        result = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=5)
+                        result = subprocess.run(
+                            [path, "--version"],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
                         if result.returncode == 0:
                             mmdc_cmd = path
                             break
                     except:
                         continue
-                        
+
                 if not mmdc_cmd:
-                    raise Exception("mmdc command not found. Please install @mermaid-js/mermaid-cli")
+                    raise Exception(
+                        "mmdc command not found. Please install @mermaid-js/mermaid-cli"
+                    )
             else:
                 mmdc_cmd = "mmdc"
-            
-            # Create enhanced puppeteer config for stability
-            puppeteer_config = {
-                "headless": "new",
-                "args": [
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox", 
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--no-first-run",
-                    "--disable-extensions",
-                    "--disable-background-timer-throttling",
-                    "--disable-backgrounding-occluded-windows",
-                    "--disable-renderer-backgrounding",
-                    "--disable-features=TranslateUI,BlinkGenPropertyTrees",
-                    "--disable-ipc-flooding-protection",
-                    "--disable-default-apps",
-                    "--disable-sync",
-                    "--no-default-browser-check",
-                    "--disable-web-security",
-                    "--allow-running-insecure-content"
-                ],
-                "defaultViewport": {
-                    "width": 1200,
-                    "height": 800
-                },
-                "timeout": 60000  # 60 second timeout
-            }
-            
-            # Add platform-specific configurations
-            if platform.system() == "Windows":
-                # Windows-specific Chrome args for stability
-                puppeteer_config["args"].extend([
-                    "--disable-features=VizDisplayCompositor",
-                    "--disable-software-rasterizer"
-                ])
-            else:
-                # Linux/Docker specific args
-                puppeteer_config["args"].extend([
-                    "--no-zygote",
-                    "--single-process"
-                ])
-            
-            # Create temporary puppeteer config file
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode='w') as config_file:
-                json.dump(puppeteer_config, config_file, indent=2)
-                config_file.flush()
-                config_path = config_file.name
-            
-            self.logger.debug(f"Created Puppeteer config at: {config_path}")
-            
-            # Run Mermaid CLI with puppeteer config
-            cmd_args = [
-                mmdc_cmd, 
-                "-i", src_path, 
-                "-o", png_path, 
-                "--quiet",
-                "--puppeteerConfigFile", config_path
-            ]
-            
+
+            # Run Mermaid CLI with error handling
             result = subprocess.run(
-                cmd_args,
+                [mmdc_cmd, "-i", src_path, "-o", png_path, "--quiet"],
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=90  # Increased timeout to 90 seconds
+                timeout=30,
             )
-            
+
             # Check if PNG was created successfully
             if not os.path.exists(png_path):
                 raise Exception("PNG file was not created")
-            
-            # Verify the PNG file is not empty and valid
-            if os.path.getsize(png_path) == 0:
-                raise Exception("Generated PNG file is empty")
-            
+
             # Return file handle
             img_file = open(png_path, "rb")
-            
-            # Clean up temp files
+
+            # Clean up temp mermaid file
             try:
                 os.unlink(src_path)
-                os.unlink(config_path)
             except:
                 pass
-                
+
             return img_file
-            
+
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Mermaid CLI error: {e.stderr}")
             raise Exception(f"Mermaid rendering failed: {e.stderr}")
@@ -208,29 +126,29 @@ class ResponseFormatter:
 
     def _clean_mermaid_syntax(self, mmd_text: str) -> str:
         """Clean up Mermaid syntax to handle AI-generated issues"""
-        lines = mmd_text.split('\n')
+        lines = mmd_text.split("\n")
         cleaned_lines = []
-        
+
         for line in lines:
             # Remove comments (// style comments are not supported in Mermaid)
-            if '//' in line:
-                line = line.split('//')[0].strip()
-            
+            if "//" in line:
+                line = line.split("//")[0].strip()
+
             # Skip empty lines after comment removal
             if not line.strip():
                 continue
-                
+
             # Fix common AI syntax issues
             line = line.strip()
-            
+
             # Remove semicolons at the end of lines (not needed in Mermaid)
-            if line.endswith(';'):
+            if line.endswith(";"):
                 line = line[:-1]
-            
+
             cleaned_lines.append(line)
-        
-        return '\n'.join(cleaned_lines)
-    
+
+        return "\n".join(cleaned_lines)
+
     def _fix_mermaid_labels(self, line: str) -> str:
         """This method is kept for potential future use but simplified for now"""
         return line
@@ -299,16 +217,16 @@ class ResponseFormatter:
     async def split_long_message(self, text: str, max_length: int = 4096) -> List[str]:
         """Split long messages into chunks that fit within Telegram's limits"""
         text = self._convert_tables(str(text or ""))
-        
+
         if len(text) <= max_length:
             return [text]
-        
+
         chunks = []
-        
+
         # Try to split by paragraphs first (double newlines)
-        paragraphs = text.split('\n\n')
+        paragraphs = text.split("\n\n")
         current_chunk = ""
-        
+
         for paragraph in paragraphs:
             # If a single paragraph is too long, we need to split it further
             if len(paragraph) > max_length:
@@ -316,9 +234,9 @@ class ResponseFormatter:
                 if current_chunk.strip():
                     chunks.append(current_chunk.strip())
                     current_chunk = ""
-                
+
                 # Split the long paragraph by sentences or lines
-                lines = paragraph.split('\n')
+                lines = paragraph.split("\n")
                 for line in lines:
                     if len(line) > max_length:
                         # If a single line is too long, split by characters
@@ -326,13 +244,13 @@ class ResponseFormatter:
                             split_point = max_length
                             # Try to find a good split point (space, comma, etc.)
                             for i in range(max_length - 100, max_length):
-                                if i < len(line) and line[i] in ' ,.;:':
+                                if i < len(line) and line[i] in " ,.;:":
                                     split_point = i + 1
                                     break
-                            
+
                             chunks.append(line[:split_point].strip())
                             line = line[split_point:]
-                        
+
                         if line.strip():
                             current_chunk = line.strip()
                     else:
@@ -357,11 +275,11 @@ class ResponseFormatter:
                         current_chunk += "\n\n" + paragraph
                     else:
                         current_chunk = paragraph
-        
+
         # Add the last chunk if there's any content
         if current_chunk.strip():
             chunks.append(current_chunk.strip())
-        
+
         # Ensure no chunk is empty and all are within limits
         final_chunks = []
         for chunk in chunks:
@@ -370,11 +288,11 @@ class ResponseFormatter:
             elif chunk.strip() and len(chunk) > max_length:
                 # Emergency split if we still have oversized chunks
                 while len(chunk) > max_length:
-                    final_chunks.append(chunk[:max_length-3] + "...")
-                    chunk = "..." + chunk[max_length-3:]
+                    final_chunks.append(chunk[: max_length - 3] + "...")
+                    chunk = "..." + chunk[max_length - 3 :]
                 if chunk.strip():
                     final_chunks.append(chunk)
-        
+
         return final_chunks if final_chunks else [text[:max_length]]
 
     def format_with_model_indicator(
@@ -393,18 +311,18 @@ class ResponseFormatter:
     def _clean_unwanted_dashes(self, text: str) -> str:
         """Remove standalone dashes that appear at the end of lines"""
         # Remove lines that contain only dashes, spaces, or are empty
-        lines = text.split('\n')
+        lines = text.split("\n")
         cleaned_lines = []
-        
+
         for line in lines:
             stripped = line.strip()
             # Skip lines that are just dashes, asterisks, or empty
-            if stripped and not re.match(r'^[-*\s]+$', stripped):
+            if stripped and not re.match(r"^[-*\s]+$", stripped):
                 cleaned_lines.append(line)
             elif not stripped:  # Keep empty lines for formatting
                 cleaned_lines.append(line)
-                
-        return '\n'.join(cleaned_lines)
+
+        return "\n".join(cleaned_lines)
 
     # --- ENHANCED: Detect mermaid blocks anywhere in message and render as image ---
     async def safe_send_message(
@@ -415,52 +333,61 @@ class ResponseFormatter:
         disable_web_page_preview: bool = False,
     ) -> Optional[Any]:
         # Check for Mermaid blocks anywhere in the text
-        mermaid_pattern = r'```mermaid\s*\n(.*?)\n```'
+        mermaid_pattern = r"```mermaid\s*\n(.*?)\n```"
         mermaid_matches = re.findall(mermaid_pattern, text, re.DOTALL)
-        
+
         # Debug logging
-        self.logger.info(f"Checking text for Mermaid blocks. Found {len(mermaid_matches)} matches")
+        self.logger.info(
+            f"Checking text for Mermaid blocks. Found {len(mermaid_matches)} matches"
+        )
         if mermaid_matches:
             self.logger.info(f"Mermaid content: {mermaid_matches[0][:100]}...")
-        
+
         if mermaid_matches:
             # Extract the first Mermaid diagram
             mmd_content = mermaid_matches[0].strip()
             try:
                 img = self._render_mermaid_to_image(mmd_content)
-                
+
                 # Remove the Mermaid block from text and send remaining text if any
-                remaining_text = re.sub(mermaid_pattern, '', text, count=1, flags=re.DOTALL).strip()
-                
+                remaining_text = re.sub(
+                    mermaid_pattern, "", text, count=1, flags=re.DOTALL
+                ).strip()
+
                 # Send the image first
                 result = await message.reply_photo(
                     photo=img,
                     caption="Mermaid diagram",
                     reply_to_message_id=reply_to_message_id,
                 )
-                
+
                 # Send remaining text if there's any meaningful content
-                if remaining_text and len(remaining_text) > 10:  # Only if substantial text remains
+                if (
+                    remaining_text and len(remaining_text) > 10
+                ):  # Only if substantial text remains
                     await self._send_single_message(
                         message, remaining_text, None, disable_web_page_preview
                     )
-                
+
                 return result
-                
+
             except Exception as e:
                 self.logger.error(f"Mermaid rendering failed: {e}")
-                
+
                 # If Mermaid rendering fails, provide helpful feedback and send the original text
                 error_context = ""
                 if "Parse error" in str(e):
                     error_context = "\n\n*Note: The Mermaid diagram contains syntax errors. Here's the original code:*"
                 elif "mmdc command not found" in str(e):
                     error_context = "\n\n*Note: Mermaid CLI is not available. Here's the diagram code:*"
-                
+
                 # Send the original text with error context
                 fallback_text = f"{text}{error_context}"
                 return await self._send_single_message(
-                    message, fallback_text, reply_to_message_id, disable_web_page_preview
+                    message,
+                    fallback_text,
+                    reply_to_message_id,
+                    disable_web_page_preview,
                 )
 
         # Check if message is too long and split it
@@ -493,7 +420,7 @@ class ResponseFormatter:
         disable_web_page_preview: bool = False,
     ) -> Optional[Any]:
         """Send a single message with multiple formatting fallbacks"""
-        
+
         # Try MarkdownV2 first
         try:
             formatted_text = await self.format_telegram_markdown(text)
