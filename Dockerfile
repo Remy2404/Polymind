@@ -53,7 +53,8 @@ COPY --from=builder /usr/local/bin/uvx /usr/local/bin/uvx
 COPY --from=builder /app/.venv /app/.venv
 
 ENV PATH="/app/.venv/bin:$PATH" \
-    PORT=8000
+    PORT=8000 \
+    INSIDE_DOCKER="true"
 
 COPY . .
 

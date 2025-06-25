@@ -92,7 +92,7 @@ class ResponseFormatter:
 
             # Prepare the command. For Docker/Linux, add --no-sandbox to allow running as root.
             command = [mmdc_cmd, "-i", src_path, "-o", png_path, "--quiet"]
-            if platform.system() != "Windows":
+            if platform.system() != "Windows" and os.getenv("INSIDE_DOCKER", "false").lower() == "true":
                 command.append("--no-sandbox")
 
             # Run Mermaid CLI with error handling
