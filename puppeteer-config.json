@@ -5,11 +5,34 @@
     "--disable-dev-shm-usage",
     "--disable-setuid-sandbox",
     "--no-first-run",
-    "--no-zygote"
+    "--no-zygote",
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-features=TranslateUI",
+    "--disable-ipc-flooding-protection",
+    "--memory-pressure-off",
+    "--disable-web-security",
+    "--disable-features=VizDisplayCompositor",
+    "--disable-extensions",
+    "--disable-plugins",
+    "--disable-default-apps",
+    "--disable-sync",
+    "--disable-translate",
+    "--hide-scrollbars",
+    "--mute-audio",
+    "--disable-logging",
+    "--disable-gl-drawing-for-tests",
+    "--disable-accelerated-2d-canvas"
   ],
   "executablePath": null,
   "defaultViewport": {
-    "width": 800,
-    "height": 600
-  }
+    "width": 1200,
+    "height": 800
+  },
+  "timeout": 300000,
+  "headless": true,
+  "ignoreDefaultArgs": ["--disable-extensions"],
+  "devtools": false,
+  "slowMo": 0
 }

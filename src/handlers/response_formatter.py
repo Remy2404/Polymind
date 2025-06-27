@@ -43,7 +43,7 @@ class ResponseFormatter:
 
             # Create temp files
             with tempfile.NamedTemporaryFile(
-                suffix=".mmd", delete=False, mode="w"
+                suffix=".mmd", delete=False, mode="w", encoding='utf-8'
             ) as src_file:
                 src_file.write(cleaned_mmd)
                 src_file.flush()
@@ -115,29 +115,113 @@ class ResponseFormatter:
             # Prepare the command with puppeteer config and optimization flags
             puppeteer_config = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
                                            "puppeteer-config.json")
-            # Adding width to make rendering faster, and background transparent for better image quality
+            
+            # Production-optimized command with performance improvements
             command = [
                 mmdc_cmd, 
                 "-i", src_path, 
                 "-o", png_path, 
                 "--quiet",
                 "-p", puppeteer_config,
-                "-w", "800", 
-                "-b", "transparent"
+                "-w", "1200",  # Increased width for better quality
+                "-H", "800",   # Set height limit to prevent huge images
+                "-b", "transparent",
+                "--scale", "2",  # Better quality for high-DPI displays
+                "--theme", "default"  # Explicitly set theme for consistency
             ]
             
-            # Run Mermaid CLI with error handling - increased timeout
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=60,
-            )
+            # Production-optimized timeout based on diagram complexity
+            # Adaptive timeout based on input size
+            input_size = len(cleaned_mmd)
+            if input_size < 1000:
+                production_timeout = 45  # Simple diagrams: 45s (increased from 30s)
+            elif input_size < 5000:
+                production_timeout = 90  # Medium diagrams: 1.5 minutes (increased from 60s)
+            else:
+                production_timeout = 180  # Complex diagrams: 3 minutes (increased from 120s)
+            
+            # Retry logic for better reliability
+            max_retries = 2
+            for attempt in range(max_retries + 1):
+                try:
+                    self.logger.info(f"Rendering Mermaid diagram (attempt {attempt + 1}/{max_retries + 1}, timeout: {production_timeout}s, size: {input_size} chars)")
+                    
+                    result = subprocess.run(
+                        command,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        timeout=production_timeout,
+                        env={**os.environ, "NODE_OPTIONS": "--max-old-space-size=4096"}  # Increase Node.js memory
+                    )
+                    
+                    # Check if PNG was created successfully
+                    if os.path.exists(png_path) and os.path.getsize(png_path) > 0:
+                        self.logger.info(f"Mermaid diagram rendered successfully on attempt {attempt + 1}")
+                        break
+                    else:
+                        raise Exception("PNG file was not created or is empty")
+                        
+                except subprocess.TimeoutExpired:
+                    if attempt < max_retries:
+                        self.logger.warning(f"Attempt {attempt + 1} timed out, retrying with increased timeout...")
+                        production_timeout = int(production_timeout * 1.5)  # Increase timeout for retry
+                        continue
+                    else:
+                        raise
+                except subprocess.CalledProcessError as e:
+                    if attempt < max_retries:
+                        self.logger.warning(f"Attempt {attempt + 1} failed: {e.stderr}, retrying...")
+                        continue
+                    else:
+                        raise
+                except Exception as e:
+                    if attempt < max_retries:
+                        self.logger.warning(f"Attempt {attempt + 1} failed: {str(e)}, retrying...")
+                        continue
+                    else:
+                        raise
 
-            # Check if PNG was created successfully
-            if not os.path.exists(png_path):
-                raise Exception("PNG file was not created")
+            # If all retries failed and it's a complex diagram, try simplified rendering
+            if input_size > 5000:
+                self.logger.warning("Attempting simplified rendering for complex diagram...")
+                try:
+                    # Simplified command for complex diagrams
+                    simple_command = [
+                        mmdc_cmd, 
+                        "-i", src_path, 
+                        "-o", png_path, 
+                        "--quiet",
+                        "-p", puppeteer_config,
+                        "-w", "800",  # Reduced width
+                        "-H", "600",  # Reduced height
+                        "-b", "white",  # Solid background
+                        "--scale", "1",  # Lower scale
+                        "--theme", "base"  # Simpler theme
+                    ]
+                    
+                    result = subprocess.run(
+                        simple_command,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        timeout=60,  # Shorter timeout for simplified rendering
+                        env={**os.environ, "NODE_OPTIONS": "--max-old-space-size=2048"}
+                    )
+                    
+                    if os.path.exists(png_path) and os.path.getsize(png_path) > 0:
+                        self.logger.info("Simplified rendering succeeded")
+                        # Return file handle
+                        img_file = open(png_path, "rb")
+                        # Clean up temp mermaid file
+                        try:
+                            os.unlink(src_path)
+                        except:
+                            pass
+                        return img_file
+                        
+                except Exception as simple_error:
+                    self.logger.warning(f"Simplified rendering also failed: {simple_error}")
 
             # Return file handle
             img_file = open(png_path, "rb")
@@ -154,18 +238,19 @@ class ResponseFormatter:
             self.logger.error(f"Mermaid CLI error: {e.stderr}")
             raise Exception(f"Mermaid rendering failed: {e.stderr}")
         except subprocess.TimeoutExpired:
-            self.logger.error("Mermaid rendering timed out - the diagram might be too complex")
-            raise Exception("Mermaid rendering timed out - the diagram might be too complex or your system is under heavy load")
+            self.logger.error(f"Mermaid rendering timed out after {production_timeout}s - diagram complexity: {len(cleaned_mmd)} chars")
+            raise Exception(f"Mermaid rendering timed out after {production_timeout}s - the diagram might be too complex or your system is under heavy load")
         except Exception as e:
             self.logger.error(f"Mermaid rendering error: {e}")
             raise
 
     def _clean_mermaid_syntax(self, mmd_text: str) -> str:
-        """Clean up Mermaid syntax to handle AI-generated issues"""
+        """Clean up Mermaid syntax to handle AI-generated issues and improve performance"""
         lines = mmd_text.split("\n")
         cleaned_lines = []
-
-        for line in lines:
+        diagram_type = None
+        
+        for line_num, line in enumerate(lines):
             # Remove comments (// style comments are not supported in Mermaid)
             if "//" in line:
                 line = line.split("//")[0].strip()
@@ -176,14 +261,67 @@ class ResponseFormatter:
 
             # Fix common AI syntax issues
             line = line.strip()
+            
+            # Detect diagram type from first line
+            if line_num == 0 or (not diagram_type and any(x in line.lower() for x in [
+                'graph', 'flowchart', 'sequencediagram', 'classDiagram', 
+                'stateDiagram', 'erDiagram', 'journey', 'gantt', 'pie'
+            ])):
+                diagram_type = line.lower().split()[0] if line.split() else None
 
             # Remove semicolons at the end of lines (not needed in Mermaid)
             if line.endswith(";"):
                 line = line[:-1]
+                
+            # Fix common syntax issues for different diagram types
+            if diagram_type:
+                # For flowcharts and graphs
+                if diagram_type in ['graph', 'flowchart']:
+                    # Fix arrow syntax issues
+                    line = re.sub(r'-->', '→', line)  # Convert --> to →
+                    line = re.sub(r'→', '-->', line)  # Convert back to standard
+                    # Fix node labeling issues
+                    line = re.sub(r'\[(.*?)\]', r'[\1]', line)  # Ensure proper bracket syntax
+                
+                # For sequence diagrams
+                elif diagram_type == 'sequencediagram':
+                    # Fix participant naming
+                    line = re.sub(r'participant\s+([^:]+):', r'participant \1 as', line)
+                
+                # For class diagrams
+                elif diagram_type == 'classdiagram':
+                    # Fix class method syntax
+                    line = re.sub(r'(\+|\-|\#)\s*([^(]+)\(', r'\1\2(', line)
+
+            # Limit line length to prevent rendering issues
+            if len(line) > 200:
+                self.logger.warning(f"Long line detected ({len(line)} chars), truncating for performance")
+                line = line[:200] + "..."
+                
+            # Skip malformed lines that could cause parsing errors
+            if line and not re.match(r'^[a-zA-Z0-9\s\-\>\<\[\]\(\)\{\}\|\+\-\#\:\;\.\,\=\%\"\'\_\→\←\↑\↓]*$', line):
+                self.logger.warning(f"Potentially malformed line skipped: {line[:50]}...")
+                continue
 
             cleaned_lines.append(line)
+            
+            # Limit total number of lines to prevent extremely complex diagrams
+            if len(cleaned_lines) > 100:
+                self.logger.warning("Diagram too complex (>100 lines), truncating for performance")
+                cleaned_lines.append("... (diagram truncated for performance)")
+                break
 
-        return "\n".join(cleaned_lines)
+        result = "\n".join(cleaned_lines)
+        
+        # Final validation - ensure the diagram has a valid structure
+        if not result.strip():
+            raise Exception("Empty diagram after cleaning")
+            
+        # Check for minimum valid content
+        if len(result.strip()) < 10:
+            raise Exception("Diagram too short or invalid")
+            
+        return result
 
     def _fix_mermaid_labels(self, line: str) -> str:
         """This method is kept for potential future use but simplified for now"""
