@@ -1,4 +1,4 @@
-# 🤖 Telegram Gemini Bot
+# 🤖 Polymind Bot
 
 A powerful, multi-modal Telegram bot leveraging cutting-edge AI technologies including Google's Gemini 2.0 Flash, DeepSeek, OpenRouter, and 50+ AI models for comprehensive conversational assistance, media processing, and collaborative features.
 
