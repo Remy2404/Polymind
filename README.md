@@ -114,8 +114,6 @@ Create a comprehensive `.env` file in the project root:
 # 🤖 Core Bot Configuration
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 MONGODB_URI=mongodb://localhost:27017  # or MongoDB Atlas URI
-MONGODB_DB_NAME=gembot
-
 # 🧠 AI Model APIs
 GEMINI_API_KEY=your_gemini_api_key
 OPENROUTER_API_KEY=your_openrouter_api_key  # Access to 50+ models
@@ -123,18 +121,8 @@ DEEPSEEK_API_KEY=your_deepseek_api_key      # Optional, for DeepSeek models
 TOGETHER_API_KEY=your_together_api_key      # For image/video generation
 TEXT_TO_IMAGE_API_KEY=your_huggingface_api_key
 TEXT_TO_VIDEO_API_KEY=your_huggingface_api_key
-
-# 🌐 Server Configuration  
-BOT_MODE=webhook                           # or 'polling'
 WEBHOOK_URL=https://your-domain.com
 PORT=8000
-ENVIRONMENT=production                     # or 'development'
-APP_VERSION=2.0.0
-# 🔧 Advanced Settings
-DEV_MODE=false
-LOG_LEVEL=INFO
-LOGS_DIR=logs
-
 ```
 
 ## 💡 Usage
@@ -244,7 +232,6 @@ Upload any PDF or DOCX file:
 | `/help`           | List all available commands          | `/help` |
 | `/genimg`         | Generate an image from text prompt   | `/genimg sunset over mountains` |
 | `/imagen3`        | Advanced image generation (Imagen3)  | `/imagen3 futuristic city` |
-| `/generate_video` | Create a video from text prompt      | `/generate_video dancing robot` |
 | `/reset`          | Clear conversation history           | `/reset` |
 | `/stats`          | Show usage statistics                | `/stats` |
 | `/preferences`    | Configure user preferences           | `/preferences` |
