@@ -34,3 +34,5 @@ data/memory/conversation_user_806762900.json
 build-and-run.sh
 build-and-run.ps1
 models.json
+docs
+
