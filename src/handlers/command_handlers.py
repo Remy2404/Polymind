@@ -36,6 +36,7 @@ from .commands import (
     DocumentCommands,
     ExportCommands,
     CallbackHandlers,
+    OpenWebAppCommands,
 )
 from src.services.group_chat.integration import GroupChatIntegration
 
@@ -118,6 +119,9 @@ class CommandHandlers:
         )
         self.export_commands = ExportCommands(
             gemini_api, user_data_manager, telegram_logger
+        )
+        self.open_web_app_commands = OpenWebAppCommands(
+            user_data_manager, telegram_logger
         )
 
         # Initialize callback handlers
@@ -508,72 +512,11 @@ class CommandHandlers:
                 "❌ Error cleaning conversation threads. Please try again."
             )
 
-    # Delegate basic commands
-    async def start_command(
+    # Delegate web app commands
+    async def open_web_app_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        return await self.basic_commands.start_command(update, context)
-
-    async def help_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.basic_commands.help_command(update, context)
-
-    async def reset_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.basic_commands.reset_command(update, context)
-
-    # Delegate settings commands
-    async def settings(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.settings_commands.settings(update, context)
-
-    async def handle_stats(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.settings_commands.handle_stats(update, context)
-
-    async def handle_preferences(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.settings_commands.handle_preferences(update, context)
-
-    # Delegate image commands
-    async def generate_image_advanced(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.image_commands.generate_image_advanced(update, context)
-
-    async def generate_together_image(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.image_commands.generate_together_image(update, context)
-
-    # Delegate model commands
-    async def switch_model_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.model_commands.switchmodel_command(update, context)
-
-    async def list_models_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.model_commands.list_models_command(update, context)
-
-    async def current_model_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.model_commands.current_model_command(update, context)
-
-    # Delegate document commands
-    async def generate_ai_document_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.document_commands.generate_ai_document_command(
-            update, context
-        )
+        return await self.open_web_app_commands.open_web_app_command(update, context)
 
     # Delegate export commands
     async def export_to_document(
@@ -923,6 +866,11 @@ class CommandHandlers:
             )
             application.add_handler(
                 CommandHandler("gendoc", self.generate_ai_document_command)
+            )
+
+            # Web App commands
+            application.add_handler(
+                CommandHandler("webapp", self.open_web_app_command)
             )
 
             # Group chat commands

@@ -261,7 +261,7 @@ class AICommandRouter:
         try:
             prompt = self._extract_prompt_for_document(message)
             context.args = prompt.split() if prompt else []
-            await self.command_handlers.generate_ai_document_command(update, context)
+            await self.command_handlers.document_commands.generate_ai_document_command(update, context)
             return True
         except Exception as e:
             self.logger.error(f"Error handling document generation: {str(e)}")

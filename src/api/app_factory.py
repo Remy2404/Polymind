@@ -6,7 +6,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 import src.api.routes.webhook as webhook_module
-from src.api.routes import health, webhook
+import src.api.routes.webapp as webapp_module
+from src.api.routes import health, webhook, webapp
 from src.api.middleware.request_tracking import RequestTrackingMiddleware
 from src.bot.telegram_bot import TelegramBot
 from starlette.middleware.cors import CORSMiddleware
@@ -110,6 +111,9 @@ def create_application():
     # Configure dependency injection for bot instance
     # Set the actual bot instance in the webhook module's global variable
     webhook_module._BOT_INSTANCE = bot
+    
+    # Set bot instance for webapp module
+    webapp_module.set_bot_instance(bot)
 
     # Set up exception handlers for webhook exceptions
     @app.exception_handler(webhook.WebhookException)
@@ -127,6 +131,7 @@ def create_application():
     # Include routers
     app.include_router(health.router)
     app.include_router(webhook.router)
+    app.include_router(webapp.router)
 
     # Store bot instance in app state
     app.state.bot = bot

@@ -259,6 +259,10 @@ class TelegramBot:
         # Share group chat integration with message handlers
         self.message_handlers._group_chat_integration = self.group_chat_integration
 
+    def get_message_handlers(self):
+        """Get the message handlers instance for Web App API access."""
+        return getattr(self, 'message_handlers', None)
+
     async def shutdown(self):
         """Properly clean up resources on shutdown."""
         # Close aiohttp session if it exists

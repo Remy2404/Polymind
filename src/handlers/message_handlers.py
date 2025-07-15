@@ -291,18 +291,22 @@ class MessageHandlers:
                 context.user_data["awaiting_aidoc_topic"] = False
                 # Store the topic
                 context.user_data["aidoc_prompt"] = update.message.text
-                # Show format selection
-                from handlers.command_handlers import CommandHandlers
 
-                command_handler = CommandHandlers(
-                    self.gemini_api,
-                    self.user_data_manager,
-                    self.telegram_logger,
-                    None,  # flux_lora_image_generator not needed here
-                )
-                await command_handler._show_ai_document_format_selection(
-                    update, context
-                )
+                # Use the command_handlers from the class if available
+                if hasattr(self, "command_handlers") and self.command_handlers:
+                    await self.command_handlers.document_commands._show_ai_document_format_selection(
+                        update, context
+                    )
+                else:
+                    # Fallback: create a DocumentCommands instance directly
+                    from src.handlers.commands.document_commands import DocumentCommands
+
+                    doc_commands = DocumentCommands(
+                        self.gemini_api, self.user_data_manager, self.telegram_logger
+                    )
+                    await doc_commands._show_ai_document_format_selection(
+                        update, context
+                    )
                 return
 
             self.logger.info(
@@ -357,18 +361,19 @@ class MessageHandlers:
                     if not is_group_chat or is_mentioned:
                         # IMPORTANT: Use original message_text for intent detection, not enhanced_message_text
                         # This prevents group context from interfering with command detection
-                        
+
                         # Check if there are media attachments
                         has_attached_media = bool(
-                            update.message and (
-                                update.message.photo or 
-                                update.message.video or 
-                                update.message.document or 
-                                update.message.audio or 
-                                update.message.voice
+                            update.message
+                            and (
+                                update.message.photo
+                                or update.message.video
+                                or update.message.document
+                                or update.message.audio
+                                or update.message.voice
                             )
                         )
-                        
+
                         should_route = (
                             await self.ai_command_router.should_route_message(
                                 message_text, has_attached_media
@@ -376,7 +381,9 @@ class MessageHandlers:
                         )
                         if should_route:
                             intent, confidence = (
-                                await self.ai_command_router.detect_intent(message_text, has_attached_media)
+                                await self.ai_command_router.detect_intent(
+                                    message_text, has_attached_media
+                                )
                             )
                             self.logger.info(
                                 f"Routing message to command: {intent.value} (confidence: {confidence:.2f})"
@@ -1178,18 +1185,26 @@ class MessageHandlers:
 
             # Get the text
             content = update.message.text
-            
+
             # Debug logging
-            self.logger.info(f"📝 Custom text received for export - User ID: {update.effective_user.id}")
-            self.logger.info(f"📝 Content length: {len(content) if content else 0} characters")
-            self.logger.info(f"📝 Content preview: {content[:200] if content else 'None'}...")
+            self.logger.info(
+                f"📝 Custom text received for export - User ID: {update.effective_user.id}"
+            )
+            self.logger.info(
+                f"📝 Content length: {len(content) if content else 0} characters"
+            )
+            self.logger.info(
+                f"📝 Content preview: {content[:200] if content else 'None'}..."
+            )
 
             # Store for document generation
             context.user_data["doc_export_text"] = content
-            
+
             # Verify storage
             stored_content = context.user_data.get("doc_export_text", "")
-            self.logger.info(f"📝 Verified storage - Length: {len(stored_content)} characters")
+            self.logger.info(
+                f"📝 Verified storage - Length: {len(stored_content)} characters"
+            )
 
             # Offer format selection
             format_options = [

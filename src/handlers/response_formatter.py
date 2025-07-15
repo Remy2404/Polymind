@@ -3,6 +3,8 @@ import html
 import re
 import subprocess
 import tempfile
+import os
+import platform
 from typing import List, Optional, Union, Any
 from telegramify_markdown import convert, escape_markdown, markdownify, customize
 from telegram.error import BadRequest
@@ -113,8 +115,18 @@ class ResponseFormatter:
                 mmdc_cmd = "mmdc"
 
             # Prepare the command with puppeteer config and optimization flags
-            puppeteer_config = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
+            # Use absolute path for Docker container
+            puppeteer_config = "/app/puppeteer-config.json" if os.environ.get("INSIDE_DOCKER") else os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
                                            "puppeteer-config.json")
+            
+            # Debug logging to verify config path
+            self.logger.info(f"Using puppeteer config: {puppeteer_config}")
+            if os.path.exists(puppeteer_config):
+                self.logger.info("Puppeteer config file found")
+            else:
+                self.logger.warning(f"Puppeteer config file not found at: {puppeteer_config}")
+                # Fallback to relative path
+                puppeteer_config = "puppeteer-config.json"
             
             # Production-optimized command with performance improvements
             command = [
