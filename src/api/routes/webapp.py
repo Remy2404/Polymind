@@ -1,9 +1,8 @@
 # Telegram Mini Web App API Routes
-
-import hashlib
-import hmac
-import json
 import logging
+import hmac
+import hashlib
+import json
 import time
 from datetime import datetime
 from urllib.parse import parse_qsl, unquote
@@ -230,6 +229,7 @@ async def validate_auth(
         # If we have user data, try to get additional context
         if auth_data.user:
             user_id = auth_data.user.id
+            logger.info(f"Validating auth and retrieving data for user {user_id}")
             
             # Get the message handlers from the bot
             message_handlers = bot.get_message_handlers()
@@ -252,8 +252,9 @@ async def validate_auth(
                                     "settings": user_data.get("settings", {}),
                                     "stats": user_data.get("stats", {})
                                 }
+                                logger.info(f"Retrieved user preferences for user {user_id}")
                     except Exception as e:
-                        logger.warning(f"Failed to load user preferences: {e}")
+                        logger.warning(f"Failed to load user preferences for user {user_id}: {e}")
                 
                 # Get conversation statistics
                 if hasattr(message_handlers, 'text_handler') and message_handlers.text_handler:
@@ -269,8 +270,9 @@ async def validate_auth(
                                 "has_history": len(history) > 0,
                                 "last_activity": history[0].get('timestamp') if history else None
                             }
+                            logger.info(f"Retrieved conversation stats for user {user_id}: {len(history)} messages")
                         except Exception as e:
-                            logger.warning(f"Failed to get conversation stats: {e}")
+                            logger.warning(f"Failed to get conversation stats for user {user_id}: {e}")
         
         return user_response
         
@@ -574,15 +576,9 @@ async def get_chat_history(
                 # Handle different timestamp formats
                 if isinstance(msg_timestamp, str):
                     try:
-                        # Try parsing ISO format first
-                        parsed_dt = datetime.fromisoformat(msg_timestamp.replace('Z', '+00:00'))
-                        msg_timestamp = parsed_dt.timestamp()
+                        msg_timestamp = float(msg_timestamp)
                     except ValueError:
-                        try:
-                            # Try parsing as float/int string
-                            msg_timestamp = float(msg_timestamp)
-                        except (ValueError, TypeError):
-                            msg_timestamp = time.time()
+                        msg_timestamp = time.time()
                 elif isinstance(msg_timestamp, datetime):
                     msg_timestamp = msg_timestamp.timestamp()
                 elif not isinstance(msg_timestamp, (int, float)):
@@ -597,25 +593,27 @@ async def get_chat_history(
                         message_id=msg.get('message_id', f"{msg['role']}_{user_id}_{i}"),
                         model_used=model_used
                     ))
-                
-                # Handle legacy format (user_message/assistant_message pairs)
                 elif 'user_message' in msg and msg['user_message']:
+                    # User message
                     formatted_messages.append(ChatHistoryMessage(
                         role="user",
                         content=msg['user_message'],
                         timestamp=msg_timestamp,
-                        message_id=f"user_{user_id}_{i}",
+                        message_id=msg.get('message_id', f"user_{user_id}_{i}"),
                         model_used=model_used
                     ))
-                
+                    # Assistant message (if exists)
                     if 'assistant_message' in msg and msg['assistant_message']:
                         formatted_messages.append(ChatHistoryMessage(
                             role="assistant",
                             content=msg['assistant_message'],
-                            timestamp=msg_timestamp,
-                            message_id=f"assistant_{user_id}_{i}",
+                            timestamp=msg_timestamp + 1,  # Slightly later timestamp
+                            message_id=msg.get('message_id', f"assistant_{user_id}_{i}"),
                             model_used=model_used
                         ))
+        
+        # Sort by timestamp to ensure proper chronological order
+        formatted_messages.sort(key=lambda x: x.timestamp)
         
         return ChatHistoryResponse(
             messages=formatted_messages,
@@ -640,47 +638,40 @@ async def clear_chat_history(
     try:
         if not auth_data.user:
             raise HTTPException(status_code=401, detail="User data required")
-        
+
         user_id = auth_data.user.id
         logger.info(f"Clearing chat history for user {user_id}")
-        
+
         # Get the message handlers from the bot
         message_handlers = bot.get_message_handlers()
         if not message_handlers:
             raise HTTPException(status_code=500, detail="Message handlers not available")
-        
+
         # Clear conversation history
         conversation_manager = None
         if hasattr(message_handlers, 'text_handler') and message_handlers.text_handler:
             if hasattr(message_handlers.text_handler, 'conversation_manager'):
                 conversation_manager = message_handlers.text_handler.conversation_manager
-        
+
         if conversation_manager and hasattr(conversation_manager, 'memory_manager'):
             try:
-                # Clear specific model history or all history
-                conversation_id = f"user_{user_id}"
-                if model:
-                    conversation_id = f"user_{user_id}_model_{model}"
-                
-                # Clear the conversation from memory
-                if hasattr(conversation_manager.memory_manager, 'clear_conversation'):
-                    await conversation_manager.memory_manager.clear_conversation(conversation_id)
-                
+                await conversation_manager.memory_manager.clear_conversation_history(user_id)
+                logger.info(f"Cleared conversation history for user {user_id}")
                 return {
                     "success": True,
-                    "message": f"Chat history cleared for user {user_id}" + (f" (model: {model})" if model else ""),
+                    "message": "Chat history cleared successfully",
                     "timestamp": time.time()
                 }
             except Exception as e:
                 logger.error(f"Failed to clear conversation history: {e}")
                 raise HTTPException(status_code=500, detail="Failed to clear chat history")
-        
+
         return {
             "success": True,
             "message": "No conversation manager available",
             "timestamp": time.time()
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -691,36 +682,42 @@ async def clear_chat_history(
 @router.get("/models")
 async def get_available_models(
     auth_data: WebAppInitData = Depends(get_webapp_auth),
-    bot: TelegramBot = Depends(get_telegram_bot)
+    bot: TelegramBot = Depends(get_telegram_bot),
 ) -> Dict[str, Any]:
     """Get available AI models for the user."""
     try:
         if not auth_data.user:
             raise HTTPException(status_code=401, detail="User data required")
-        
+
         # Get available models from the model configurations
         try:
             from src.services.model_handlers.model_configs import ModelConfigurations
-            
+
             model_configs = ModelConfigurations()
             available_models = []
-            
+
             for model_id, config in model_configs.get_all_models().items():
-                available_models.append({
-                    "id": model_id,
-                    "name": config.display_name or model_id,
-                    "provider": config.provider.value if hasattr(config.provider, 'value') else str(config.provider),
-                    "supports_images": getattr(config, 'supports_images', False),
-                    "max_tokens": getattr(config, 'max_tokens', 4096),
-                    "capabilities": getattr(config, 'capabilities', [])
-                })
-            
+                available_models.append(
+                    {
+                        "id": model_id,
+                        "name": config.display_name or model_id,
+                        "provider": (
+                            config.provider.value
+                            if hasattr(config.provider, "value")
+                            else str(config.provider)
+                        ),
+                        "supports_images": getattr(config, "supports_images", False),
+                        "max_tokens": getattr(config, "max_tokens", 4096),
+                        "capabilities": getattr(config, "capabilities", []),
+                    }
+                )
+
             return {
                 "models": available_models,
                 "default_model": "deepseek-r1-0528",
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
-            
+
         except ImportError as e:
             logger.warning(f"Model configurations not available: {e}")
             # Fallback to basic model list
@@ -732,7 +729,7 @@ async def get_available_models(
                         "provider": "deepseek",
                         "supports_images": False,
                         "max_tokens": 8192,
-                        "capabilities": ["reasoning_capable"]
+                        "capabilities": ["reasoning_capable"],
                     },
                     {
                         "id": "gemini-2.0-flash-exp",
@@ -740,13 +737,13 @@ async def get_available_models(
                         "provider": "google",
                         "supports_images": True,
                         "max_tokens": 8192,
-                        "capabilities": ["multimodal", "fast_response"]
-                    }
+                        "capabilities": ["multimodal", "fast_response"],
+                    },
                 ],
                 "default_model": "deepseek-r1-0528",
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -760,204 +757,126 @@ async def select_model(
     auth_data: WebAppInitData = Depends(get_webapp_auth),
     bot: TelegramBot = Depends(get_telegram_bot)
 ) -> Dict[str, Any]:
-    """Select AI model for the user."""
+    """Select an AI model for the user."""
     try:
         if not auth_data.user:
             raise HTTPException(status_code=401, detail="User data required")
         
+        user_id = auth_data.user.id
         model_id = model_data.get("model_id")
+        
         if not model_id:
             raise HTTPException(status_code=400, detail="model_id is required")
         
-        user_id = auth_data.user.id
-        logger.info(f"Setting model {model_id} for user {user_id}")
-        
-        # Get the message handlers from the bot
-        message_handlers = bot.get_message_handlers()
-        if message_handlers and hasattr(message_handlers, 'user_data_manager'):
-            try:
-                # Save the selected model to user data
-                user_data_manager = message_handlers.user_data_manager
-                current_data = user_data_manager.get_user_data(user_id) or {}
-                current_data["selected_model"] = model_id
-                user_data_manager.update_user_data(user_id, current_data)
-                
-                return {
-                    "success": True,
-                    "selected_model": model_id,
-                    "message": f"Model {model_id} selected successfully",
-                    "timestamp": time.time()
-                }
-            except Exception as e:
-                logger.error(f"Failed to save model selection: {e}")
-                raise HTTPException(status_code=500, detail="Failed to save model selection")
-        
-        return {
-            "success": True,
-            "selected_model": model_id,
-            "message": "Model selection saved (limited functionality)",
-            "timestamp": time.time()
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error in model selection endpoint: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@router.post("/voice/transcribe")
-async def transcribe_voice(
-    audio: UploadFile = File(...),
-    model: Optional[str] = "deepseek-r1-0528",
-    process_with_ai: bool = True,
-    auth_data: WebAppInitData = Depends(get_webapp_auth),
-    bot: TelegramBot = Depends(get_telegram_bot)
-) -> Dict[str, Any]:
-    """Transcribe audio file to text and optionally process with AI using voice processing services."""
-    try:
-        if not auth_data.user:
-            raise HTTPException(status_code=401, detail="User data required")
-        
-        user_id = auth_data.user.id
-        logger.info(f"Processing voice transcription from user {user_id}")
-        
-        # Validate audio file
-        if not audio.content_type or not audio.content_type.startswith('audio/'):
-            raise HTTPException(status_code=400, detail="Invalid audio file format")
+        logger.info(f"Selecting model {model_id} for user {user_id}")
         
         # Get the message handlers from the bot
         message_handlers = bot.get_message_handlers()
         if not message_handlers:
             raise HTTPException(status_code=500, detail="Message handlers not available")
         
-        # Initialize user data if needed
+        # Update user preferences
         if hasattr(message_handlers, 'user_data_manager') and message_handlers.user_data_manager:
-            await message_handlers.user_data_manager.initialize_user(user_id)
-        
-        # Get the voice processor
-        if hasattr(message_handlers, 'voice_processor') and message_handlers.voice_processor:
-            voice_processor = message_handlers.voice_processor
-            
-            # Read audio data
-            audio_data = await audio.read()
-            
             try:
-                # Process the audio using the voice processor
-                transcription_result = await voice_processor.process_voice_data(
-                    audio_data, 
-                    user_id=user_id,
-                    file_extension=audio.filename.split('.')[-1] if audio.filename else 'webm'
+                await message_handlers.user_data_manager.initialize_user(user_id)
+                await message_handlers.user_data_manager.update_user_preference(
+                    user_id, "selected_model", model_id
                 )
-                
-                transcribed_text = transcription_result.get("text", "")
-                
-                # If AI processing is requested and we have transcribed text
-                ai_response = None
-                if process_with_ai and transcribed_text.strip():
-                    # Get conversation manager for memory context
-                    conversation_manager = None
-                    if hasattr(message_handlers, 'text_handler') and message_handlers.text_handler:
-                        if hasattr(message_handlers.text_handler, 'conversation_manager'):
-                            conversation_manager = message_handlers.text_handler.conversation_manager
-                    
-                    # Get conversation history for context
-                    conversation_context = []
-                    if conversation_manager:
-                        try:
-                            history = await conversation_manager.get_conversation_history(
-                                user_id=user_id,
-                                max_messages=10,
-                                model=model
-                            )
-                            
-                            # Convert to API format
-                            for msg in history:
-                                if isinstance(msg, dict):
-                                    if 'user_message' in msg and msg['user_message']:
-                                        conversation_context.append({
-                                            "role": "user", 
-                                            "content": msg['user_message']
-                                        })
-                                    if 'assistant_message' in msg and msg['assistant_message']:
-                                        conversation_context.append({
-                                            "role": "assistant", 
-                                            "content": msg['assistant_message']
-                                        })
-                        except Exception as e:
-                            logger.warning(f"Failed to retrieve conversation history for voice: {e}")
-                            conversation_context = []
-                    
-                    # Process with AI using the same logic as chat endpoint
-                    try:
-                        # Get the appropriate AI API based on selected model
-                        ai_api = None
-                        model_used = model or "deepseek-r1-0528"
-                        
-                        # Route to appropriate API based on model
-                        if model_used.startswith("deepseek"):
-                            ai_api = getattr(message_handlers, 'deepseek_api', None)
-                        elif model_used.startswith("gpt") or model_used.startswith("claude") or "openrouter" in model_used:
-                            ai_api = getattr(message_handlers, 'openrouter_api', None)
-                        elif model_used.startswith("gemini"):
-                            ai_api = getattr(message_handlers, 'gemini_api', None)
-                        else:
-                            # Default to deepseek
-                            ai_api = getattr(message_handlers, 'deepseek_api', None)
-                        
-                        if ai_api:
-                            # Handle different API interfaces
-                            if hasattr(ai_api, 'generate_response'):
-                                # OpenRouter and Gemini APIs
-                                ai_response = await ai_api.generate_response(
-                                    prompt=transcribed_text,
-                                    context=conversation_context,
-                                    model=model_used,
-                                    max_tokens=2048
-                                )
-                            elif hasattr(ai_api, 'generate_chat_response'):
-                                # DeepSeek API
-                                messages = conversation_context + [{"role": "user", "content": transcribed_text}]
-                                ai_response = await ai_api.generate_chat_response(
-                                    messages=messages,
-                                    model=model_used,
-                                    max_tokens=2048
-                                )
-                            
-                            # Save the conversation to memory if AI processing was successful
-                            if ai_response and conversation_manager:
-                                try:
-                                    await conversation_manager.save_message_pair(
-                                        user_id=user_id,
-                                        user_message=transcribed_text,
-                                        assistant_message=ai_response,
-                                        model_id=model_used
-                                    )
-                                    logger.info(f"Saved voice conversation pair for user {user_id}")
-                                except Exception as e:
-                                    logger.error(f"Failed to save voice conversation: {e}")
-                        
-                    except Exception as e:
-                        logger.error(f"Failed to process voice transcription with AI: {e}")
-                        # Continue without AI response
+                logger.info(f"Updated model preference for user {user_id} to {model_id}")
                 
                 return {
-                    "text": transcribed_text,
-                    "confidence": transcription_result.get("confidence"),
-                    "language": transcription_result.get("language"),
-                    "ai_response": ai_response,
-                    "model_used": model if ai_response else None,
+                    "success": True,
+                    "selected_model": model_id,
+                    "message": f"Model switched to {model_id}",
                     "timestamp": time.time()
                 }
-                
             except Exception as e:
-                logger.error(f"Error processing voice transcription: {e}")
-                raise HTTPException(
-                    status_code=500, 
-                    detail="Failed to transcribe audio"
-                )
+                logger.error(f"Failed to update model preference: {e}")
+                raise HTTPException(status_code=500, detail="Failed to update model preference")
         
-        raise HTTPException(status_code=500, detail="Voice processor not available")
+        return {
+            "success": False,
+            "message": "User data manager not available",
+            "timestamp": time.time()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in select model endpoint: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/voice/transcribe")
+async def transcribe_voice(
+    audio: UploadFile = File(...),
+    model: Optional[str] = None,
+    process_with_ai: bool = True,
+    auth_data: WebAppInitData = Depends(get_webapp_auth),
+    bot: TelegramBot = Depends(get_telegram_bot)
+) -> Dict[str, Any]:
+    """Transcribe voice message and optionally process with AI."""
+    try:
+        if not auth_data.user:
+            raise HTTPException(status_code=401, detail="User data required")
+        
+        user_id = auth_data.user.id
+        logger.info(f"Transcribing voice for user {user_id}")
+        
+        # Get the message handlers from the bot
+        message_handlers = bot.get_message_handlers()
+        if not message_handlers:
+            raise HTTPException(status_code=500, detail="Message handlers not available")
+        
+        # Get voice handler
+        voice_handler = getattr(message_handlers, 'voice_handler', None)
+        if not voice_handler:
+            raise HTTPException(status_code=500, detail="Voice handler not available")
+        
+        # Read audio file
+        audio_data = await audio.read()
+        
+        # Transcribe the audio
+        try:
+            transcription_result = await voice_handler.transcribe_audio(audio_data)
+            transcribed_text = transcription_result.get('text', '')
+            
+            if not transcribed_text:
+                raise HTTPException(status_code=400, detail="No text could be transcribed")
+            
+            response_data = {
+                "text": transcribed_text,
+                "confidence": transcription_result.get('confidence'),
+                "language": transcription_result.get('language'),
+                "timestamp": time.time()
+            }
+            
+            # Process with AI if requested
+            if process_with_ai and transcribed_text:
+                try:
+                    # Create a chat message for AI processing
+                    chat_message = ChatMessage(
+                        content=transcribed_text,
+                        model=model or "deepseek-r1-0528"
+                    )
+                    
+                    # Process through chat endpoint logic
+                    ai_response = await chat_message(chat_message, auth_data, bot)
+                    
+                    response_data.update({
+                        "ai_response": ai_response.content,
+                        "model_used": ai_response.model_used
+                    })
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to process transcribed text with AI: {e}")
+                    # Continue without AI response
+            
+            return response_data
+            
+        except Exception as e:
+            logger.error(f"Voice transcription failed: {e}")
+            raise HTTPException(status_code=500, detail="Voice transcription failed")
         
     except HTTPException:
         raise
@@ -968,7 +887,7 @@ async def transcribe_voice(
 
 @router.get("/health")
 async def health_check() -> Dict[str, Any]:
-    """Health check endpoint for the Web App API."""
+    """Health check endpoint for the web app API."""
     return {
         "status": "healthy",
         "timestamp": time.time(),
@@ -980,58 +899,53 @@ async def health_check() -> Dict[str, Any]:
 @router.get("/debug/chat/history/{user_id}")
 async def debug_get_chat_history(
     user_id: int,
-    limit: int = 50,
-    model: Optional[str] = None,
+    limit: int = 10,
     bot: TelegramBot = Depends(get_telegram_bot)
 ) -> Dict[str, Any]:
-    """Debug endpoint to retrieve chat history for a specific user ID."""
+    """Debug endpoint to check conversation history directly by user ID."""
     try:
-        logger.info(f"[DEBUG] Retrieving chat history for user {user_id}")
+        logger.info(f"Debug: Retrieving chat history for user {user_id}")
         
         # Get the message handlers from the bot
         message_handlers = bot.get_message_handlers()
         if not message_handlers:
-            return {"error": "Message handlers not available", "messages": []}
+            return {"error": "Message handlers not available"}
         
-        # Get conversation manager
-        conversation_manager = None
-        if hasattr(message_handlers, 'text_handler') and message_handlers.text_handler:
-            if hasattr(message_handlers.text_handler, 'conversation_manager'):
-                conversation_manager = message_handlers.text_handler.conversation_manager
-        
-        if not conversation_manager:
-            return {"error": "No conversation manager available", "messages": []}
-        
-        # Try user data manager first
+        # Try to get conversation history
         history = []
+        
+        # Try user data manager
         if hasattr(message_handlers, 'user_data_manager') and message_handlers.user_data_manager:
             try:
                 user_context = await message_handlers.user_data_manager.get_user_context(str(user_id))
-                logger.info(f"[DEBUG] Retrieved {len(user_context)} messages from user data manager")
-                history = user_context
+                history.extend(user_context)
+                logger.info(f"Debug: Retrieved {len(user_context)} messages from user data manager")
             except Exception as e:
-                logger.error(f"[DEBUG] User data manager failed: {e}")
+                logger.warning(f"Debug: User data manager failed: {e}")
         
-        # Try model history manager as fallback
-        if not history and hasattr(conversation_manager, 'model_history_manager'):
-            try:
-                history = await conversation_manager.model_history_manager.get_history(
-                    user_id=user_id,
-                    max_messages=limit,
-                    model_id=model
-                )
-                logger.info(f"[DEBUG] Retrieved {len(history)} messages from model history manager")
-            except Exception as e:
-                logger.error(f"[DEBUG] Model history manager failed: {e}")
+        # Try conversation manager
+        if hasattr(message_handlers, 'text_handler') and message_handlers.text_handler:
+            if hasattr(message_handlers.text_handler, 'conversation_manager'):
+                conversation_manager = message_handlers.text_handler.conversation_manager
+                if hasattr(conversation_manager, 'model_history_manager'):
+                    try:
+                        model_history = await conversation_manager.model_history_manager.get_history(
+                            user_id=user_id,
+                            max_messages=limit
+                        )
+                        logger.info(f"Debug: Retrieved {len(model_history)} messages from model history")
+                        if not history:  # Only use if user data manager didn't return anything
+                            history = model_history
+                    except Exception as e:
+                        logger.warning(f"Debug: Model history retrieval failed: {e}")
         
         return {
             "user_id": user_id,
-            "model": model,
-            "total_messages": len(history),
-            "messages": history[:limit] if history else [],
-            "raw_history": history[:3] if history else []  # Show first 3 raw messages for debugging
+            "history_count": len(history),
+            "history": history[:limit],
+            "timestamp": time.time()
         }
         
     except Exception as e:
-        logger.error(f"[DEBUG] Error in debug chat history: {e}")
-        return {"error": str(e), "messages": []}
+        logger.error(f"Debug endpoint error: {e}")
+        return {"error": str(e), "timestamp": time.time()}
