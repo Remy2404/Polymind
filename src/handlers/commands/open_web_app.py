@@ -19,7 +19,10 @@ class OpenWebAppCommands:
         self.logger = logging.getLogger(__name__)
 
         # Only allow HTTPS URLs for security and Telegram requirements
-        self.web_app_url = os.getenv("WEBAPP_URL_PRODUCTION", "")
+        # Load production URL, fallback to development if not set
+        self.web_app_url = os.getenv("WEBAPP_URL_PRODUCTION") or os.getenv(
+            "WEBAPP_URL_DEV", ""
+        )
 
         if self.web_app_url:
             self.logger.info(f"Web App URL: {self.web_app_url}")
@@ -49,20 +52,19 @@ class OpenWebAppCommands:
             keyboard = [
                 [
                     InlineKeyboardButton(
-                        "🚀 Open Web App",
-                        web_app=WebAppInfo(url=web_app_url)
+                        "🚀 Open Web App", web_app=WebAppInfo(url=web_app_url)
                     )
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             await update.message.reply_text(
-                "🌟 **Open Web App**",
-                reply_markup=reply_markup,
-                parse_mode="Markdown"
+                "🌟 **Open Web App**", reply_markup=reply_markup, parse_mode="Markdown"
             )
 
-            self.logger.info(f"Web app opened for user {user_id} with URL: {web_app_url}")
+            self.logger.info(
+                f"Web app opened for user {user_id} with URL: {web_app_url}"
+            )
 
         except Exception as e:
             self.logger.error(f"Error opening web app for user {user_id}: {str(e)}")
