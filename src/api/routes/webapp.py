@@ -226,6 +226,8 @@ async def validate_auth(
     try:
         user_response = {
             "valid": True,
+            # Include user_id to indicate login via Telegram WebApp
+            "user_id": auth_data.user.id if auth_data.user else None,
             "user": auth_data.user.model_dump() if auth_data.user else None,
             "auth_date": auth_data.auth_date,
             "timestamp": time.time()
