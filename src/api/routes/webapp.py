@@ -397,49 +397,85 @@ async def chat_message(
                 if hasattr(ai_api, 'generate_response'):
                     # OpenRouter and Gemini APIs
                     try:
-                        # Pass conversation context as messages for better context understanding
-                        if conversation_context:
-                            messages = conversation_context + [{"role": "user", "content": message.content}]
+                        # Always pass conversation context as messages for better context understanding
+                        messages = conversation_context + [{"role": "user", "content": message.content}]
+                        logger.info(f"Sending {len(messages)} messages to AI API (including {len(conversation_context)} context messages)")
+                        
+                        # Try with messages parameter first (preferred for context)
+                        try:
                             response_text = await ai_api.generate_response(
-                                prompt=message.content,
-                                context=messages,  # Pass as structured messages
+                                messages=messages,
                                 model=model_used,
                                 max_tokens=2048
                             )
-                        else:
+                        except TypeError:
+                            # Fallback to prompt with context parameter
                             response_text = await ai_api.generate_response(
                                 prompt=message.content,
+                                context=messages,
                                 model=model_used,
                                 max_tokens=2048
                             )
                     except TypeError:
-                        # Fallback without model parameter
+                        # Fallback without model parameter but with context
                         try:
-                            if conversation_context:
+                            messages = conversation_context + [{"role": "user", "content": message.content}]
+                            logger.info(f"Fallback: Sending {len(messages)} messages to AI API")
+                            try:
                                 response_text = await ai_api.generate_response(
-                                    prompt=message.content,
-                                    context=conversation_context + [{"role": "user", "content": message.content}],
+                                    messages=messages,
                                     max_tokens=2048
                                 )
-                            else:
+                            except TypeError:
                                 response_text = await ai_api.generate_response(
                                     prompt=message.content,
+                                    context=messages,
                                     max_tokens=2048
                                 )
                         except Exception:
-                            # Last resort fallback
-                            response_text = await ai_api.generate_response(prompt=message.content)
+                            # Last resort fallback - still try to include context in prompt
+                            context_prompt = ""
+                            if conversation_context:
+                                context_lines = []
+                                for ctx_msg in conversation_context[-6:]:  # Last 6 messages for context
+                                    role = ctx_msg.get('role', 'unknown')
+                                    content = ctx_msg.get('content', '')
+                                    if content:
+                                        context_lines.append(f"{role.title()}: {content}")
+                                if context_lines:
+                                    context_prompt = "Previous conversation:\n" + "\n".join(context_lines) + "\n\nCurrent message:\n"
+                            
+                            response_text = await ai_api.generate_response(
+                                prompt=context_prompt + message.content
+                            )
                 elif hasattr(ai_api, 'generate_chat_response'):
-                    # DeepSeek API - doesn't accept model parameter
+                    # DeepSeek API - doesn't accept model parameter but supports messages
                     messages = conversation_context + [{"role": "user", "content": message.content}]
+                    logger.info(f"Sending {len(messages)} messages to DeepSeek API (including {len(conversation_context)} context messages)")
                     try:
                         response_text = await ai_api.generate_chat_response(
                             messages=messages,
                             max_tokens=2048
                         )
                     except TypeError:
-                        # Fallback with minimal parameters
-                        response_text = await ai_api.generate_chat_response(messages=messages)
+                        # Fallback with minimal parameters but try to preserve context
+                        try:
+                            response_text = await ai_api.generate_chat_response(messages=messages)
+                        except TypeError:
+                            # Last resort - include context in a single user message
+                            context_prompt = ""
+                            if conversation_context:
+                                context_lines = []
+                                for ctx_msg in conversation_context[-6:]:  # Last 6 messages for context
+                                    role = ctx_msg.get('role', 'unknown')
+                                    content = ctx_msg.get('content', '')
+                                    if content:
+                                        context_lines.append(f"{role.title()}: {content}")
+                                if context_lines:
+                                    context_prompt = "Previous conversation:\n" + "\n".join(context_lines) + "\n\nCurrent message:\n"
+                            
+                            single_message = [{"role": "user", "content": context_prompt + message.content}]
+                            response_text = await ai_api.generate_chat_response(messages=single_message)
                 else:
                     raise HTTPException(status_code=500, detail="Unsupported AI API interface")
                 
