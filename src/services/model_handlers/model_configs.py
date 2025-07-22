@@ -62,6 +62,66 @@ class ModelConfigurations:
                     "general_purpose",
                 ],
             ),
+            # Venice Uncensored Dolphin Mistral 24B Venice Edition
+            "dolphin-mistral-24b-venice-edition": ModelConfig(
+                model_id="dolphin-mistral-24b-venice-edition",
+                display_name="Venice: Uncensored",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+                indicator_emoji="🦩",
+                system_message="You are Venice Uncensored, a steerable and uncensored AI model.",
+                description="Venice Uncensored Dolphin Mistral 24B Venice Edition is a fine-tuned variant of Mistral-Small-24B-Instruct-2501, designed for advanced and unrestricted use cases.",
+                type="general_purpose",
+                capabilities=["uncensored", "steerable"],
+            ),
+            # Google Gemma 3n 2B
+            "gemma-3n-e2b": ModelConfig(
+                model_id="gemma-3n-e2b",
+                display_name="Gemma 3n 2B",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="google/gemma-3n-e2b-it:free",
+                indicator_emoji="💎",
+                system_message="You are Gemma 3n 2B, a multimodal, instruction-tuned model by Google.",
+                description="Gemma 3n E2B IT is a multimodal, instruction-tuned model designed for efficient operation at 2B parameters, supporting code, math, web, and multimodal data.",
+                type="multimodal",
+                capabilities=["multimodal", "efficient", "multilingual_support"],
+            ),
+            # Tencent Hunyuan A13B Instruct
+            "hunyuan-a13b-instruct": ModelConfig(
+                model_id="hunyuan-a13b-instruct",
+                display_name="Hunyuan A13B Instruct",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="tencent/hunyuan-a13b-instruct:free",
+                indicator_emoji="🐲",
+                system_message="You are Hunyuan A13B, a reasoning-capable model by Tencent.",
+                description="Hunyuan-A13B is a 13B active parameter Mixture-of-Experts (MoE) language model developed by Tencent, supporting reasoning via Chain-of-Thought.",
+                type="reasoning",
+                capabilities=["reasoning_capable", "efficient"],
+            ),
+            # TNG DeepSeek R1T2 Chimera
+            "deepseek-r1t2-chimera": ModelConfig(
+                model_id="deepseek-r1t2-chimera",
+                display_name="DeepSeek R1T2 Chimera",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="tngtech/deepseek-r1t2-chimera:free",
+                indicator_emoji="🧬",
+                system_message="You are DeepSeek R1T2 Chimera, a tri-parent reasoning model.",
+                description="Second-generation Chimera model from TNG Tech, optimized for reasoning and long-context analysis.",
+                type="reasoning",
+                capabilities=["reasoning_capable", "long_context"],
+            ),
+            # Meta Llama 3.2 3B Instruct
+            "llama-3.2-3b-instruct": ModelConfig(
+                model_id="llama-3.2-3b-instruct",
+                display_name="Llama 3.2 3B Instruct",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="meta-llama/llama-3.2-3b-instruct:free",
+                indicator_emoji="🦙",
+                system_message="You are Llama 3.2 3B, a multilingual model by Meta.",
+                description="Llama 3.2 3B is a multilingual model optimized for dialogue, reasoning, and summarization.",
+                type="multilingual",
+                capabilities=["multilingual_support", "reasoning_capable"],
+            ),
             # DeepSeek Models
             "deepseek": ModelConfig(
                 model_id="deepseek",
