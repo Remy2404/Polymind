@@ -71,6 +71,36 @@ class RateLimiter:
             # Reacquire after waiting to ensure we have capacity
             await self.acquire()
 
+    async def get_current_capacity(self) -> float:
+        """Get the current capacity as a percentage (0-100)"""
+        async with self.lock:
+            # Calculate current tokens based on time passed
+            now = time.monotonic()
+            time_passed = now - self.last_check
+            
+            # Calculate new tokens based on time elapsed
+            new_tokens = time_passed * self.rate / 60.0
+            current_tokens = min(self.max_tokens, self.tokens + new_tokens)
+            
+            # Return capacity as percentage
+            return (current_tokens / self.max_tokens) * 100.0
+
+    async def __aenter__(self):
+        """Async context manager entry - acquire rate limit"""
+        await self.wait()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit - no release needed for rate limiter"""
+        # Rate limiters don't need explicit release like semaphores
+        return False
+
+    def release(self):
+        """Compatibility method - rate limiters don't need explicit release"""
+        # This method exists for compatibility but does nothing
+        # Rate limiters work on time-based token buckets, not explicit acquire/release
+        pass
+
 def rate_limit(f=None, *, rate_limiter=None):
     """
     Decorator to apply rate limiting to a function

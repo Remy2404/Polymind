@@ -659,7 +659,9 @@ class TextHandler:
             elif media_type == "video":
                 action = ChatAction.UPLOAD_VIDEO
             elif media_type == "audio":
-                action = ChatAction.RECORD_AUDIO
+                action = ChatAction.RECORD_VOICE
+            elif media_type == "document":
+                action = ChatAction.UPLOAD_DOCUMENT
 
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id, action=action
@@ -773,7 +775,8 @@ class TextHandler:
 
         # Get model timeout - increase for complex questions
         base_timeout = 60.0
-        
+        model_timeout = base_timeout
+
         # Detect if this is a complex question that needs more time
         complex_indicators = [
             "compare", "comparison", "vs", "versus", "difference", "differences",
@@ -789,23 +792,18 @@ class TextHandler:
         if is_complex_question:
             # DeepSeek R1 needs more time for reasoning
             if "deepseek" in preferred_model.lower():
-                model_timeout = 300.0  # 5 minutes for DeepSeek complex questions
+                model_timeout = 300.0 
             else:
-                model_timeout = 120.0  # 2 minutes for other models
+                model_timeout = 120.0  
         elif is_long_form_request:
             if "deepseek" in preferred_model.lower():
-                model_timeout = 240.0  # 4 minutes for DeepSeek long-form
+                model_timeout = 240.0  
             else:
-                model_timeout = 90.0   # 1.5 minutes for other models
-        else:
-            if "deepseek" in preferred_model.lower():
-                model_timeout = 180.0  # 3 minutes for DeepSeek regular questions
-            else:
-                model_timeout = base_timeout  # 60 seconds for other models
+                model_timeout = 90.0
             
         if self.user_model_manager:
             model_config = self.user_model_manager.get_user_model_config(user_id)
-            model_timeout = model_config.timeout_seconds if model_config else 60.0
+            model_timeout = model_config.timeout_seconds if model_config else model_timeout
 
         # Log timeout configuration for debugging
         self.logger.info(

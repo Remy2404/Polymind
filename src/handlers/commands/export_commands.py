@@ -10,8 +10,6 @@ from pathlib import Path
 # Telegram imports
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-
-# Spire.Doc imports - more efficient than docxtpl + docx  
 from spire.doc import *
 from spire.doc.common import *
 
@@ -751,16 +749,6 @@ class EnhancedExportCommands:
                             
                             # Skip system/internal messages and empty content
                             if role == 'system' or not content.strip():
-                                continue
-
-                            # Skip common unwanted phrases
-                            if any(phrase in content.lower() for phrase in [
-                                "export conversation: export your chat history",
-                                "i'm here to help, but i don't have the ability",
-                                "here's a summary of our conversation",
-                                "hello ramee! 👋",
-                                "• --"
-                            ]):
                                 continue
                             
                             # Add content directly without timestamp headers

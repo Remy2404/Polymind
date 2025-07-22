@@ -30,7 +30,6 @@ import io
 # Import all command modules
 from .commands import (
     BasicCommands,
-    SettingsCommands,
     ImageCommands,
     ModelCommands,
     DocumentCommands,
@@ -106,7 +105,6 @@ class CommandHandlers:
 
         # Initialize command modules
         self.basic_commands = BasicCommands(user_data_manager, telegram_logger)
-        self.settings_commands = SettingsCommands(user_data_manager, telegram_logger)
         self.image_commands = ImageCommands(
             flux_lora_image_generator,
             user_data_manager,
@@ -146,26 +144,6 @@ class CommandHandlers:
         return await self.basic_commands.reset_command(update, context)
 
     # Delegate settings commands
-    async def settings(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.settings_commands.settings(update, context)
-
-    async def handle_stats(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.settings_commands.handle_stats(update, context)
-
-    async def handle_preferences(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.settings_commands.handle_preferences(update, context)
-
-    # Delegate image commands
-    async def generate_image_advanced(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        return await self.image_commands.generate_image_advanced(update, context)
 
     async def generate_together_image(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -223,12 +201,6 @@ class CommandHandlers:
         # Handle basic callbacks that don't need special routing
         if data == "help":
             await self.help_command(update, context)
-        elif data == "preferences":
-            await self.handle_preferences(update, context)
-        elif data == "settings":
-            await self.settings(update, context)
-        elif data in ["toggle_markdown", "toggle_code_suggestions"]:
-            await self.settings_commands.handle_toggle_settings(update, context, data)
         elif data.startswith("img_"):
             await self.image_commands.handle_image_settings(update, context, data)
         elif data.startswith("pref_"):
@@ -260,57 +232,6 @@ class CommandHandlers:
         else:
             # Route to central callback handler for more complex routing
             await self.callback_handlers.handle_callback_query(update, context)
-
-    async def group_stats_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Handle /groupstats command for group analytics."""
-        try:
-            chat = update.effective_chat
-            if chat.type not in ["group", "supergroup"]:
-                await update.message.reply_text(
-                    "❌ This command is only available in group chats."
-                )
-                return
-
-            # Get group chat integration
-            group_integration = context.bot_data.get("group_chat_integration")
-            if not group_integration:
-                await update.message.reply_text(
-                    "❌ Group chat features are not available."
-                )
-                return
-
-            try:
-                # Get analytics
-                analytics = await group_integration.group_manager.get_group_analytics(
-                    chat.id
-                )
-                if not analytics:
-                    await update.message.reply_text(
-                        "No analytics available for this group yet. Try interacting more!"
-                    )
-                    return
-
-                # Format stats without markdown to avoid escaping issues
-                formatted_stats = (
-                    await group_integration.ui_manager.format_group_analytics(analytics)
-                )
-
-                # Send without Markdown formatting to avoid escaping issues
-                await update.message.reply_text(formatted_stats)
-
-            except AttributeError as e:
-                self.logger.error(f"Missing attribute in group_stats_command: {e}")
-                await update.message.reply_text(
-                    "❌ Group statistics feature is unavailable. Please contact the bot administrator."
-                )
-
-        except Exception as e:
-            self.logger.error(f"Error in group_stats_command: {e}")
-            await update.message.reply_text(
-                "❌ Error retrieving group statistics. Please try again."
-            )
 
     async def group_settings_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -545,12 +466,6 @@ class CommandHandlers:
         # Handle basic callbacks that don't need special routing
         if data == "help":
             await self.help_command(update, context)
-        elif data == "preferences":
-            await self.handle_preferences(update, context)
-        elif data == "settings":
-            await self.settings(update, context)
-        elif data in ["toggle_markdown", "toggle_code_suggestions"]:
-            await self.settings_commands.handle_toggle_settings(update, context, data)
         elif data.startswith("img_"):
             await self.image_commands.handle_image_settings(update, context, data)
         elif data.startswith("pref_"):
@@ -840,15 +755,7 @@ class CommandHandlers:
             application.add_handler(CommandHandler("start", self.start_command))
             application.add_handler(CommandHandler("help", self.help_command))
             application.add_handler(CommandHandler("reset", self.reset_command))
-            application.add_handler(CommandHandler("settings", self.settings))
-            application.add_handler(CommandHandler("stats", self.handle_stats))
             application.add_handler(CommandHandler("export", self.handle_export))
-            application.add_handler(
-                CommandHandler("preferences", self.handle_preferences)
-            )
-            application.add_handler(
-                CommandHandler("imagen3", self.generate_image_advanced)
-            )
             application.add_handler(
                 CommandHandler("genimg", self.generate_together_image)
             )

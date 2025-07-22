@@ -33,6 +33,9 @@ class BasicCommands:
             "📊 Statistics tracking\n\n"
             "Available commands:\n"
             "/genimg - Generate images with Together AI\n"
+            "/gendoc - Generate documents with Multi-Modal AI\n"
+            "/export - Export conversation history first message convert it to docx files\n"
+            "/reset - Reset conversation history\n"
             "/switchmodel - Switch between AI models\n\n"
             "Feel free to start chatting or use /help to learn more!"
         )
