@@ -1,6 +1,5 @@
 import os
 import logging
-import asyncio
 import time
 import aiohttp
 import traceback
@@ -25,14 +24,9 @@ from src.utils.lang.language_manager import LanguageManager
 from src.services.rate_limiter import RateLimiter
 from src.services.flux_lora_img import flux_lora_image_generator
 from src.utils.docgen.document_processor import DocumentProcessor
-from src.utils.ignore_message import message_filter
 from src.services.group_chat.integration import GroupChatIntegration
 
 logger = logging.getLogger(__name__)
-
-
-# Use the proper GroupChatIntegration implementation from integration.py
-
 
 class TelegramBot:
     """
@@ -54,6 +48,10 @@ class TelegramBot:
         self.token = os.getenv("TELEGRAM_BOT_TOKEN")
         if not self.token:
             raise ValueError("TELEGRAM_BOT_TOKEN not found in .env file")
+
+        # DDoS protection: per-user rate limiting and blocklist
+        self.user_rate_limits = TTLCache(maxsize=10000, ttl=60)  # 60s window
+        self.user_blocklist = set()
 
         # Initialize database connection with retry mechanism
         self._init_db_connection()
@@ -78,6 +76,26 @@ class TelegramBot:
 
         # Create client session for HTTP requests
         self.session = None
+
+    def is_user_blocked(self, user_id):
+        """Check if user is blocked."""
+        return user_id in self.user_blocklist
+
+    def block_user(self, user_id):
+        """Block a user from accessing the bot."""
+        self.user_blocklist.add(user_id)
+        self.logger.warning(f"Blocked user {user_id} due to suspicious activity.")
+
+    def check_user_rate_limit(self, user_id):
+        """Check and update per-user rate limit. Returns True if allowed, False if rate limited."""
+        count = self.user_rate_limits.get(user_id, 0)
+        if count > 30:  # max 30 requests per minute
+            self.logger.warning(f"User {user_id} exceeded rate limit: {count} requests/minute.")
+            return False
+        self.user_rate_limits[user_id] = count + 1
+        return True
+
+    # __post_init__ removed; all initialization now in __init__
 
     async def create_session(self):
         """Create an aiohttp session for HTTP requests."""

@@ -1,0 +1,45 @@
+classDiagram
+    class Provider {
+        <<enumeration>>
+        GEMINI
+        OPENROUTER
+        DEEPSEEK
+    }
+
+    class ModelConfig {
+        model_id
+        display_name
+        provider
+        system_message
+        indicator_emoji
+        openrouter_model_key
+        max_tokens
+        default_temperature
+        supports_images
+        supports_audio
+        supports_video
+        supports_documents
+        description
+        type
+        capabilities
+    }
+
+    class ModelConfigurations {
+        get_all_models()
+        get_models_by_provider(provider)
+        get_free_models()
+        add_openrouter_models(additional_models)
+        get_model_with_fallback(model_id)
+    }
+
+    Provider --> ModelConfig
+    ModelConfig --> ModelConfigurations
+```
+
+This diagram shows the three main components of the model configuration system:
+
+1. The `Provider` enum class that defines supported API providers (GEMINI, OPENROUTER, DEEPSEEK)
+2. The `ModelConfig` dataclass that defines the configuration for an AI model, including its properties and capabilities
+3. The `ModelConfigurations` class that manages all available models, with methods to retrieve models by provider, get free models, add more OpenRouter models, and get model keys with fallback options
+
+The relationships between these components are also shown, indicating how they interact with each other in the system.

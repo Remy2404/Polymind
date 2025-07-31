@@ -1,0 +1,180 @@
+flowchart TD
+    %% Define styles for each subgraph
+    classDef ui fill:#cce5ff,stroke:#333,stroke-width:2px;
+    classDef api fill:#d4edda,stroke:#333,stroke-width:2px;
+    classDef command fill:#ffeeba,stroke:#333,stroke-width:2px;
+    classDef ai fill:#e9d8fd,stroke:#333,stroke-width:2px;
+    classDef media fill:#fff3cd,stroke:#333,stroke-width:2px;
+    classDef memory fill:#f8d7da,stroke:#333,stroke-width:2px;
+    classDef group fill:#d1ecf1,stroke:#333,stroke-width:2px;
+    classDef doc fill:#e2e3e5,stroke:#333,stroke-width:2px;
+    classDef db fill:#d6d8db,stroke:#333,stroke-width:2px;
+    classDef infra fill:#b0b0b0,stroke:#333,stroke-width:2px,color:#fff;
+
+    subgraph "User Interfaces"
+        TG[Telegram Bot]
+        WA[Web App]
+    end
+    class TG,WA ui;
+
+    subgraph "API Layer"
+        FA[FastAPI Server]
+        MW[Middleware]
+        RT[API Routes]
+    end
+    class FA,MW,RT api;
+
+    subgraph "Command System"
+        CH[Command Handlers]
+        BCH[Basic Commands]
+        IMCH[Image Commands]
+        MDCH[Model Commands]
+        DOCH[Document Commands]
+        EXCH[Export Commands]
+        CBH[Callback Handlers]
+        OWAC[Open Web App Commands]
+    end
+    class CH,BCH,IMCH,MDCH,DOCH,EXCH,CBH,OWAC command;
+
+    subgraph "AI Model System"
+        MC[Model Configurations]
+        MH[Model Handlers]
+        ORA[OpenRouter API]
+        GA[Gemini API]
+        DSA[DeepSeek API]
+        SSM[SuperSimpleAPIManager]
+    end
+    class MC,MH,ORA,GA,DSA,SSM ai;
+
+    subgraph "Media & Multimodal"
+        IP[Image Processor]
+        VP[Voice Processor]
+        MCE[Media Context Extractor]
+        MM[Multimodal Processor]
+        TAI[Together AI Image]
+        FLI[Flux Lora Image]
+    end
+    class IP,VP,MCE,MM,TAI,FLI media;
+
+    subgraph "Memory & Context"
+        MMGR[Memory Manager]
+        MHMGR[Model History Manager]
+        CMGR[Conversation Manager]
+        KGR[Knowledge Graph]
+    end
+    class MMGR,MHMGR,CMGR,KGR memory;
+
+    subgraph "Group Collaboration"
+        GCI[Group Chat Integration]
+        GCM[Group Context Manager]
+        GSA[Group Stats & Analytics]
+    end
+    class GCI,GCM,GSA group;
+
+    subgraph "Document & Export"
+        DP[Document Processor]
+        SDE[SpireDoc Exporter]
+        AIDG[AI Document Generator]
+    end
+    class DP,SDE,AIDG doc;
+
+    subgraph "Database & Storage"
+        DB[MongoDB]
+        CACHES[Caches]
+    end
+    class DB,CACHES db;
+
+    subgraph "Infrastructure"
+        DOCKER[Docker]
+        DCOMPOSE[Docker Compose]
+        ENV[.env Config]
+        PROC[Procfile]
+    end
+    class DOCKER,DCOMPOSE,ENV,PROC infra;
+
+    %% Connections
+    TG --> FA
+    WA --> FA
+    FA --> MW
+    MW --> RT
+    RT --> CH
+    CH --> BCH
+    CH --> IMCH
+    CH --> MDCH
+    CH --> DOCH
+    CH --> EXCH
+    CH --> CBH
+    CH --> OWAC
+
+    CH --> MC
+    CH --> MH
+    MH --> ORA
+    MH --> GA
+    MH --> DSA
+    MH --> SSM
+
+    CH --> IP
+    CH --> VP
+    CH --> MCE
+    CH --> MM
+    IMCH --> TAI
+    IMCH --> FLI
+
+    CH --> MMGR
+    CH --> MHMGR
+    CH --> CMGR
+    CH --> KGR
+
+    CH --> GCI
+    GCI --> GCM
+    GCI --> GSA
+
+    CH --> DP
+    DP --> SDE
+    DP --> AIDG
+
+    CH --> DB
+    CH --> CACHES
+    MMGR --> DB
+    KGR --> DB
+
+    FA --> DOCKER
+    FA --> DCOMPOSE
+    FA --> ENV
+    FA --> PROC
+
+    %% Group chat and memory
+    TG --> GCI
+    GCI --> CMGR
+    GCI --> MMGR
+    GCI --> KGR
+
+    %% Export and document
+    DOCH --> DP
+    DP --> SDE
+    DP --> AIDG
+
+    %% Media
+    IMCH --> IP
+    IMCH --> TAI
+    IMCH --> FLI
+
+    %% AI Model selection
+    MDCH --> MC
+    MC --> MH
+    MH --> ORA
+    MH --> GA
+    MH --> DSA
+
+    %% Caching
+    CH --> CACHES
+    MMGR --> CACHES
+
+    %% Database
+    DB --> MMGR
+    DB --> KGR
+
+    %% Infrastructure
+    DOCKER --> DCOMPOSE
+    DOCKER --> ENV
+    DOCKER --> PROC
