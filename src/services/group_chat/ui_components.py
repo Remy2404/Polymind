@@ -187,7 +187,7 @@ class GroupUIManager:
                 message_parts.append(
                     f"📅 Created: {created_date.strftime('%Y-%m-%d %H:%M')}"
                 )
-            except:
+            except (ValueError, TypeError):
                 pass
 
         if last_activity:
@@ -198,7 +198,7 @@ class GroupUIManager:
                 message_parts.append(
                     f"🕒 Last Activity: {activity_date.strftime('%Y-%m-%d %H:%M')}"
                 )
-            except:
+            except (ValueError, TypeError):
                 pass
 
         return "\n".join(message_parts)
@@ -240,8 +240,10 @@ class GroupUIManager:
                         age_str = f" ({age.seconds // 3600}h ago)"
                     else:
                         age_str = f" ({age.seconds // 60}m ago)"
-                except:
+                except Exception:
                     pass
+            
+                    
 
             thread_info = (
                 f"{i}. {topic}\n"
@@ -322,7 +324,7 @@ class GroupUIManager:
                 message_parts.append(
                     f"📅 Context Since: {created_date.strftime('%Y-%m-%d')}"
                 )
-            except:
+            except Exception:
                 pass
 
         if updated_at:

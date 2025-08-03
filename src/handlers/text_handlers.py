@@ -626,12 +626,7 @@ class TextHandler:
                 result, model_indicator
             )
 
-            # Format for Telegram
-            formatted_response = await self.response_formatter.format_telegram_markdown(
-                text_to_send
-            )
-
-            # Send the response using safe_send_message
+            # Format for Telegram and send the response using safe_send_message
             await self.response_formatter.safe_send_message(
                 update.message, text_to_send
             )

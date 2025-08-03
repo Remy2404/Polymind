@@ -263,7 +263,7 @@ class ModelFallbackHandler:
                     await asyncio.sleep(45)
                     try:
                         await progress_msg.edit_text(msg)
-                    except:
+                    except Exception:
                         pass
 
             except asyncio.CancelledError:
@@ -271,7 +271,7 @@ class ModelFallbackHandler:
                 if progress_msg:
                     try:
                         await progress_msg.delete()
-                    except:
+                    except Exception:
                         pass
                 raise
 
@@ -300,7 +300,7 @@ class ModelFallbackHandler:
             if progress_msg:
                 try:
                     await progress_msg.delete()
-                except:
+                except Exception:
                     pass
 
             return response
@@ -317,7 +317,7 @@ class ModelFallbackHandler:
             if progress_msg:
                 try:
                     await progress_msg.delete()
-                except:
+                except Exception:
                     pass
 
             raise e

@@ -361,7 +361,6 @@ class TelegramBot:
 
     async def process_update(self, update_data):
         """Process updates with task management."""
-        task = None
         try:
             # Expect update_data as dict
             if isinstance(update_data, dict):
@@ -390,7 +389,7 @@ class TelegramBot:
                     update_id = update_data.update_id
                 elif isinstance(update_data, dict):
                     update_id = update_data.get("update_id", "unknown")
-            except:
+            except (AttributeError, KeyError, TypeError):
                 pass
 
             self.logger.error(

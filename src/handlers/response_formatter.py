@@ -93,7 +93,7 @@ class ResponseFormatter:
                         npm_bin_path = npm_result.stdout.strip()
                         possible_paths.append(os.path.join(npm_bin_path, "mmdc.cmd"))
                         possible_paths.append(os.path.join(npm_bin_path, "mmdc"))
-                except:
+                except Exception:
                     self.logger.warning("Failed to get npm global bin path")
 
                 mmdc_cmd = None
@@ -279,7 +279,7 @@ class ResponseFormatter:
                         # Clean up temp mermaid file
                         try:
                             os.unlink(src_path)
-                        except:
+                        except Exception:
                             pass
                         return img_file
 
@@ -294,7 +294,7 @@ class ResponseFormatter:
             # Clean up temp mermaid file
             try:
                 os.unlink(src_path)
-            except:
+            except Exception:
                 pass
 
             return img_file

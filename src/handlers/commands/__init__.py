@@ -4,9 +4,8 @@ from .basic_commands import BasicCommands
 from .image_commands import ImageCommands
 from .model_commands import ModelCommands
 from .document_commands import DocumentCommands
-from .export_commands import ExportCommands
+from .export_commands import ExportCommands, EnhancedExportCommands
 from .callback_handlers import CallbackHandlers
-from .export_commands import EnhancedExportCommands
 from .open_web_app import OpenWebAppCommands
 
 __all__ = [
@@ -15,6 +14,7 @@ __all__ = [
     "ModelCommands",
     "DocumentCommands",
     "ExportCommands",
+    "EnhancedExportCommands",
     "CallbackHandlers",
     "OpenWebAppCommands",
 ]

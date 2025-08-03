@@ -96,7 +96,6 @@ class GroupChatIntegration:
         """
         try:
             chat = update.effective_chat
-            user = update.effective_user
 
             if not chat or chat.type not in ["group", "supergroup"]:
                 return None

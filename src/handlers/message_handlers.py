@@ -1251,3 +1251,9 @@ class MessageHandlers:
                     ),
                 ]
             ]
+            format_markup = InlineKeyboardMarkup(format_options)
+
+            await update.message.reply_text(
+                "Please select the document format you want to export to:",
+                reply_markup=format_markup,
+            )

@@ -34,7 +34,7 @@ class UpdateMsg(Struct):
 def normalize_token(token: str) -> str:
     try:
         return urllib.parse.unquote(token)
-    except:
+    except (ValueError, TypeError):
         return token
 
 

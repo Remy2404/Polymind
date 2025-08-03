@@ -151,7 +151,7 @@ async def process_transcribed_text(
         # If AI response was successful, delete the processing message
         try:
             await processing_msg.delete()
-        except:
+        except Exception:
             pass  # Message might already be edited
 
     except Exception as e:

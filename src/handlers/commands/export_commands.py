@@ -5,8 +5,23 @@ import re
 # Telegram imports
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from spire.doc import *
-from spire.doc.common import *
+
+# Spire.Doc imports - specific imports instead of star imports
+try:
+    from spire.doc import Document, Section, FileFormat
+    from spire.doc.common import Color, HorizontalAlignment, VerticalAlignment, BorderStyle, HyperlinkType
+    SPIRE_AVAILABLE = True
+except ImportError:
+    # Fallback if Spire.Doc is not available
+    SPIRE_AVAILABLE = False
+    Document = None
+    Section = None
+    FileFormat = None
+    Color = None
+    HorizontalAlignment = None
+    VerticalAlignment = None
+    BorderStyle = None
+    HyperlinkType = None
 
 # Pydantic for data validation
 from pydantic import BaseModel, Field
@@ -29,6 +44,9 @@ class SpireDocumentExporter:
 
     def create_docx(self, content: str) -> bytes:
         """Create DOCX using Spire.Doc - simplified to export content only"""
+        if not SPIRE_AVAILABLE:
+            raise ImportError("Spire.Doc is not available. Please install it to use DOCX export functionality.")
+        
         try:
             # Create document using Spire.Doc
             document = Document()
@@ -77,7 +95,7 @@ class SpireDocumentExporter:
             self.logger.error(f"Spire.Doc export failed: {e}")
             raise
 
-    def _add_formatted_content(self, section: Section, content: str):
+    def _add_formatted_content(self, section, content: str):
         """Enhanced markdown to DOCX formatting with comprehensive support"""
         lines = content.split("\n")
 

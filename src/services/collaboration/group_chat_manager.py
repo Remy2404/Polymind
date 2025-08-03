@@ -606,7 +606,7 @@ class GroupChatManager:
                     try:
                         dt = datetime.fromtimestamp(timestamp)
                         time_str = dt.strftime("%m/%d %H:%M")
-                    except:
+                    except (ValueError, TypeError, OSError):
                         time_str = "Unknown"
                 else:
                     time_str = "Unknown"
@@ -722,7 +722,7 @@ class GroupChatManager:
         """Get group member count"""
         try:
             return await context.bot.get_chat_member_count(chat.id)
-        except:
+        except Exception:
             return 0
 
     def _is_bot_mentioned(self, message_text: str, context) -> bool:

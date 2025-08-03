@@ -225,7 +225,6 @@ class GroupCollaborationCommands:
             if update.effective_chat.type != "private"
             else None
         )
-        user_id = update.effective_user.id
 
         if not group_id:
             await update.message.reply_text(
@@ -412,7 +411,6 @@ class GroupCollaborationCommands:
             if update.effective_chat.type != "private"
             else None
         )
-        user_id = update.effective_user.id
 
         if not group_id:
             await update.message.reply_text(
@@ -560,7 +558,6 @@ class GroupCollaborationCommands:
 
             relevant_memories = intelligent_context.get("relevant_memory", [])
             suggestions = intelligent_context.get("suggested_actions", [])
-            group_insights = intelligent_context.get("group_insights", {})
 
             if not relevant_memories:
                 await progress_msg.edit_text(
@@ -808,7 +805,7 @@ async def is_group_admin(bot, group_id: str, user_id: int) -> bool:
     try:
         chat_member = await bot.get_chat_member(group_id, user_id)
         return chat_member.status in ["administrator", "creator"]
-    except:
+    except Exception:
         return False
 
 
@@ -822,5 +819,5 @@ async def get_group_info(bot, group_id: str) -> Dict[str, Any]:
             "member_count": await bot.get_chat_member_count(group_id),
             "description": chat.description,
         }
-    except:
+    except Exception:
         return {}

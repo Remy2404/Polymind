@@ -859,8 +859,7 @@ class GroupIntelligenceSystem:
                     "collaboration_strength", 0.0
                 )
 
-            # Knowledge sharing score
-            knowledge_items = len(self.group_knowledge.get(group_id, []))
+            # Knowledge sharing score - count recent knowledge items
             recent_knowledge = len(
                 [
                     k

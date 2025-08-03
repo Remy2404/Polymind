@@ -23,15 +23,9 @@ SPACY_AVAILABLE = False
 # Lightweight model configs - only load if absolutely necessary
 try:
     if not LOW_MEMORY_MODE:
-        from src.services.model_handlers.model_configs import (
-            ModelConfigurations,
-            Provider,
-            ModelConfig,
-        )
-
-        MODEL_CONFIGS_AVAILABLE = True
-    else:
-        MODEL_CONFIGS_AVAILABLE = False
+        # Only import if actually needed
+        pass  # Remove unused imports
+    MODEL_CONFIGS_AVAILABLE = False
 except ImportError:
     MODEL_CONFIGS_AVAILABLE = False
 
