@@ -573,9 +573,6 @@ async def extract_document_text(
     return result.content if result.success else f"Error: {result.error}"
 
 
-
-
-
 # Utility functions for document processing
 async def quick_document_analysis(
     gemini_api: GeminiAPI,

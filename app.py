@@ -8,6 +8,7 @@ import uvicorn
 
 # Aggressive garbage collection for memory optimization
 import gc
+
 gc.set_threshold(50, 5, 5)
 gc.collect()
 

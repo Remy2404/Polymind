@@ -776,9 +776,7 @@ class CommandHandlers:
             )
 
             # Web App commands
-            application.add_handler(
-                CommandHandler("webapp", self.open_web_app_command)
-            )
+            application.add_handler(CommandHandler("webapp", self.open_web_app_command))
 
             # Group chat commands
             application.add_handler(

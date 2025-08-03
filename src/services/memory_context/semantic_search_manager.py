@@ -8,12 +8,14 @@ logger = logging.getLogger(__name__)
 
 class SemanticSearchManager:
     """Manages semantic search and vector operations for memory"""
-    
+
     def __init__(self):
         self.message_vectors = {}
         self.group_message_vectors = {}  # Separate vectors for group messages
-        
-    async def store_message_vector(self, conversation_id: str, content: str, message_index: int):
+
+    async def store_message_vector(
+        self, conversation_id: str, content: str, message_index: int
+    ):
         """Store message vector for semantic search"""
         try:
             if conversation_id not in self.message_vectors:
@@ -33,7 +35,9 @@ class SemanticSearchManager:
         except Exception as e:
             logger.error(f"Error storing message vector: {e}")
 
-    async def store_group_message_vector(self, group_id: str, content: str, message_index: int):
+    async def store_group_message_vector(
+        self, group_id: str, content: str, message_index: int
+    ):
         """Store group message vector for semantic search"""
         try:
             if group_id not in self.group_message_vectors:
@@ -52,7 +56,9 @@ class SemanticSearchManager:
         except Exception as e:
             logger.error(f"Error storing group message vector: {e}")
 
-    async def semantic_search(self, cache_key: str, query: str, is_group: bool = False) -> List[Tuple[int, float]]:
+    async def semantic_search(
+        self, cache_key: str, query: str, is_group: bool = False
+    ) -> List[Tuple[int, float]]:
         """Perform semantic search on messages"""
         try:
             vector_cache = (
@@ -87,11 +93,16 @@ class SemanticSearchManager:
         except Exception as e:
             logger.error(f"Error in semantic search: {e}")
             return []
-            
-    def calculate_message_importance(self, message: Dict[str, Any], relevance_score: float, importance_factors: Dict[str, float]) -> float:
+
+    def calculate_message_importance(
+        self,
+        message: Dict[str, Any],
+        relevance_score: float,
+        importance_factors: Dict[str, float],
+    ) -> float:
         """Calculate combined importance score for a message"""
         import time
-        
+
         current_time = time.time()
         message_time = message.get("timestamp", current_time)
 

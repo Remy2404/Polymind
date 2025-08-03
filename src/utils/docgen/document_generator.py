@@ -1,6 +1,7 @@
 """
 Document Generator for creating professionally formatted PDF and DOCX documents.
 """
+
 import io
 import re
 from typing import Optional
@@ -43,8 +44,10 @@ class DocumentGenerator:
     ) -> bytes:
         """Generate a professionally formatted PDF from text content"""
         if not REPORTLAB_AVAILABLE:
-            raise ImportError("ReportLab is required for PDF generation. Please install it with: pip install reportlab")
-            
+            raise ImportError(
+                "ReportLab is required for PDF generation. Please install it with: pip install reportlab"
+            )
+
         buffer = io.BytesIO()
 
         # Set up the document

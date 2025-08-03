@@ -58,15 +58,15 @@ class TextHandler:
 
         # Initialize core components only
         self.media_analyzer = MediaAnalyzer(gemini_api)
-          # Initialize model fallback handler
+        # Initialize model fallback handler
         self.model_fallback_handler = ModelFallbackHandler(self.response_formatter)
-          # Initialize enhanced intent detector for user intent detection
+        # Initialize enhanced intent detector for user intent detection
         self.intent_detector = EnhancedIntentDetector()
-        
+
         # Optional components (will be set externally if needed)
         self.user_model_manager = None
 
-# Removed delegation methods - use response_formatter directly
+    # Removed delegation methods - use response_formatter directly
 
     async def handle_text_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -142,7 +142,7 @@ class TextHandler:
             thinking_message = await message.reply_text("Processing your request...🧠")
             await self._send_appropriate_chat_action(
                 update, context, has_attached_media, media_type
-            )            # Detect user intent (analyze, generate image, or chat)
+            )  # Detect user intent (analyze, generate image, or chat)
             intent_result = await self.intent_detector.detect_intent(message_text)
             user_intent = (intent_result.intent, intent_result.confidence)
 
@@ -158,7 +158,9 @@ class TextHandler:
             )
 
             # Load user context and personal information to enhance conversation
-            user_context = await self._load_user_context(user_id, update)            # Enhance conversation history with user context if available
+            user_context = await self._load_user_context(
+                user_id, update
+            )  # Enhance conversation history with user context if available
             if user_context and history_context:
                 # Add user context to the beginning of history to maintain continuity
                 user_context_message = {
@@ -198,11 +200,10 @@ class TextHandler:
             self.logger.error(f"Error processing text message: {str(e)}")
             if "thinking_message" in locals() and thinking_message is not None:
                 await thinking_message.delete()
-            
+
             # Use safe message sending with automatic fallback
             await self.response_formatter.safe_send_message(
-                update.message,
-                "Sorry, I encountered an error. Please try again later."
+                update.message, "Sorry, I encountered an error. Please try again later."
             )
 
     async def _handle_edited_message(self, update, context):
@@ -477,11 +478,12 @@ class TextHandler:
                                     def __init__(self, bot, chat_id):
                                         self.bot = bot
                                         self.chat_id = chat_id
+
                                     async def reply_text(self, text, **kwargs):
                                         return await self.bot.send_message(
                                             chat_id=self.chat_id, text=text, **kwargs
                                         )
-                                
+
                                 mock_message = MockMessage(context.bot, chat_id)
                                 await self.response_formatter.safe_send_message(
                                     mock_message, chunk
@@ -644,7 +646,7 @@ class TextHandler:
         else:
             await self.response_formatter.safe_send_message(
                 update.message,
-                "Sorry, I couldn't analyze the content you provided. Please try again."
+                "Sorry, I couldn't analyze the content you provided. Please try again.",
             )
 
     async def _send_appropriate_chat_action(
@@ -779,31 +781,46 @@ class TextHandler:
 
         # Detect if this is a complex question that needs more time
         complex_indicators = [
-            "compare", "comparison", "vs", "versus", "difference", "differences",
-            "analyze", "analysis", "explain", "detailed", "comprehensive",
-            "performance", "benchmark", "pros and cons", "advantages", "disadvantages"
+            "compare",
+            "comparison",
+            "vs",
+            "versus",
+            "difference",
+            "differences",
+            "analyze",
+            "analysis",
+            "explain",
+            "detailed",
+            "comprehensive",
+            "performance",
+            "benchmark",
+            "pros and cons",
+            "advantages",
+            "disadvantages",
         ]
-        
+
         is_complex_question = any(
             indicator in message_text.lower() for indicator in complex_indicators
         )
-        
+
         # Set timeout based on question complexity and model type
         if is_complex_question:
             # DeepSeek R1 needs more time for reasoning
             if "deepseek" in preferred_model.lower():
-                model_timeout = 300.0 
+                model_timeout = 300.0
             else:
-                model_timeout = 120.0  
+                model_timeout = 120.0
         elif is_long_form_request:
             if "deepseek" in preferred_model.lower():
-                model_timeout = 240.0  
+                model_timeout = 240.0
             else:
                 model_timeout = 90.0
-            
+
         if self.user_model_manager:
             model_config = self.user_model_manager.get_user_model_config(user_id)
-            model_timeout = model_config.timeout_seconds if model_config else model_timeout
+            model_timeout = (
+                model_config.timeout_seconds if model_config else model_timeout
+            )
 
         # Log timeout configuration for debugging
         self.logger.info(
@@ -813,19 +830,21 @@ class TextHandler:
 
         try:
             # Use automatic fallback system to generate response
-            response, actual_model_used = await self.model_fallback_handler.attempt_with_fallback(
-                primary_model=preferred_model,
-                model_handler_factory=ModelHandlerFactory,
-                enhanced_prompt=enhanced_prompt_with_guidelines,
-                history_context=history_context,
-                max_tokens=max_tokens,
-                model_timeout=model_timeout,
-                message=message,
-                is_complex_question=is_complex_question,
-                quoted_text=quoted_text,
-                gemini_api=self.gemini_api,
-                openrouter_api=self.openrouter_api,
-                deepseek_api=self.deepseek_api
+            response, actual_model_used = (
+                await self.model_fallback_handler.attempt_with_fallback(
+                    primary_model=preferred_model,
+                    model_handler_factory=ModelHandlerFactory,
+                    enhanced_prompt=enhanced_prompt_with_guidelines,
+                    history_context=history_context,
+                    max_tokens=max_tokens,
+                    model_timeout=model_timeout,
+                    message=message,
+                    is_complex_question=is_complex_question,
+                    quoted_text=quoted_text,
+                    gemini_api=self.gemini_api,
+                    openrouter_api=self.openrouter_api,
+                    deepseek_api=self.deepseek_api,
+                )
             )
 
             # Log response length and first part for debugging
@@ -852,7 +871,7 @@ class TextHandler:
             if response is None:
                 await self.response_formatter.safe_send_message(
                     message,
-                    "Sorry, I couldn't generate a response. Please try rephrasing your message."
+                    "Sorry, I couldn't generate a response. Please try rephrasing your message.",
                 )
                 return
 
@@ -896,7 +915,7 @@ class TextHandler:
         except asyncio.TimeoutError:
             if thinking_message is not None:
                 await thinking_message.delete()
-            
+
             # Provide more specific timeout messages based on model and question type
             if "deepseek" in preferred_model.lower():
                 if is_complex_question:
@@ -910,16 +929,13 @@ class TextHandler:
                     timeout_message = "⏱️ Your long-form request timed out. Try asking for a shorter response or break it into multiple questions."
                 else:
                     timeout_message = "⏱️ Sorry, the request took too long to process. Please try again or rephrase your question."
-            
-            await self.response_formatter.safe_send_message(
-                message,
-                timeout_message
-            )
+
+            await self.response_formatter.safe_send_message(message, timeout_message)
         except Exception as e:
             self.logger.error(f"Error generating response: {e}")
             if thinking_message is not None:
                 await thinking_message.delete()
-            
+
             # Provide context-aware error messages
             if "timeout" in str(e).lower() or isinstance(e, asyncio.TimeoutError):
                 if is_complex_question:
@@ -928,11 +944,8 @@ class TextHandler:
                     error_message = "⏱️ Processing took too long. Please try rephrasing your question or try again in a moment."
             else:
                 error_message = "❌ Sorry, there was an error processing your request. Please try again or rephrase your question."
-            
-            await self.response_formatter.safe_send_message(
-                message,
-                error_message
-            )
+
+            await self.response_formatter.safe_send_message(message, error_message)
 
     async def _send_formatted_response(
         self,
@@ -983,22 +996,24 @@ class TextHandler:
                         def __init__(self, bot, chat_id):
                             self.bot = bot
                             self.chat_id = chat_id
-                        
+
                         async def reply_text(self, text, **kwargs):
                             return await self.bot.send_message(
                                 chat_id=self.chat_id, text=text, **kwargs
                             )
-                    
+
                     mock_message = MockMessage(context.bot, update.effective_chat.id)
                     last_message = await self.response_formatter.safe_send_message(
                         mock_message, text_to_send
                     )
-                
+
                 if last_message:
                     sent_messages.append(last_message)
-                    
+
             except Exception as final_error:
-                self.logger.error(f"Failed to send message chunk {i}: {str(final_error)}")
+                self.logger.error(
+                    f"Failed to send message chunk {i}: {str(final_error)}"
+                )
                 # Continue with next chunk instead of failing completely
                 continue
 
@@ -1074,4 +1089,3 @@ class TextHandler:
         except Exception as e:
             self.logger.error(f"Error loading user context: {e}")
             return ""
-

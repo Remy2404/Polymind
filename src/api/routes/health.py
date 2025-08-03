@@ -12,18 +12,20 @@ from fastapi.responses import JSONResponse
 router = APIRouter()
 __version__ = "1.0.0"  # Application version defined directly in code
 
+
 @router.get("/")
 @router.head("/")
 async def root_get():
     """Root endpoint for health checks."""
     return JSONResponse(
         content={
-            "status": "ok", 
+            "status": "ok",
             "message": "Telegram Bot API is running",
-            "version": __version__
+            "version": __version__,
         },
         status_code=200,
     )
+
 
 @router.post("/")
 async def root_post():
@@ -32,6 +34,7 @@ async def root_post():
         content={"status": "ok", "message": "Telegram Bot API is running"},
         status_code=200,
     )
+
 
 @router.get("/health")
 @router.head("/health")

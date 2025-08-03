@@ -13,13 +13,14 @@ sys.path.insert(0, str(project_root))
 
 from src.handlers.response_formatter import ResponseFormatter
 
+
 async def test_voice_response_formatting():
     """Test voice response formatting"""
-    
+
     print("=== TESTING VOICE RESPONSE FORMATTING ===")
-    
+
     formatter = ResponseFormatter()
-    
+
     # Sample voice response text as it would be generated
     voice_response = """🎤 **Voice Response:**
 
@@ -35,8 +36,8 @@ What would you like to do today, Rami? 💬✨"""
 
     print("Original text:")
     print(voice_response)
-    print("\n" + "="*50 + "\n")
-    
+    print("\n" + "=" * 50 + "\n")
+
     # Test different formatting methods
     print("1. Testing format_telegram_markdown:")
     try:
@@ -45,9 +46,9 @@ What would you like to do today, Rami? 💬✨"""
         print(result1)
     except Exception as e:
         print(f"❌ ERROR: {e}")
-    
-    print("\n" + "-"*30 + "\n")
-    
+
+    print("\n" + "-" * 30 + "\n")
+
     print("2. Testing _convert_markdown_to_html:")
     try:
         result2 = formatter._convert_markdown_to_html(voice_response)
@@ -55,9 +56,9 @@ What would you like to do today, Rami? 💬✨"""
         print(result2)
     except Exception as e:
         print(f"❌ ERROR: {e}")
-    
-    print("\n" + "-"*30 + "\n")
-    
+
+    print("\n" + "-" * 30 + "\n")
+
     print("3. Testing escape_markdown_text:")
     try:
         result3 = await formatter.escape_markdown_text(voice_response)
@@ -65,8 +66,9 @@ What would you like to do today, Rami? 💬✨"""
         print(result3)
     except Exception as e:
         print(f"❌ ERROR: {e}")
-    
+
     print("\n=== Test Complete ===")
+
 
 if __name__ == "__main__":
     asyncio.run(test_voice_response_formatting())

@@ -76,9 +76,14 @@ async def _process_update_with_retry(bot, update_data, log):
             if attempt < max_retries - 1:
                 await asyncio.sleep(base_delay * (2**attempt))
             else:
-                log.error(f"Failed processing update {update_data.get('update_id', 'unknown')}: {e}")
+                log.error(
+                    f"Failed processing update {update_data.get('update_id', 'unknown')}: {e}"
+                )
         except Exception as e:
-            log.error(f"Unhandled error on {update_data.get('update_id', 'unknown')}: {e}", exc_info=True)
+            log.error(
+                f"Unhandled error on {update_data.get('update_id', 'unknown')}: {e}",
+                exc_info=True,
+            )
             return
 
 
@@ -104,7 +109,7 @@ async def webhook_handler(
         now = time.time()
         # Configurable rate limit: set WEBHOOK_RATE_LIMIT<=0 to disable
         try:
-            threshold = int(os.getenv('WEBHOOK_RATE_LIMIT', '500'))
+            threshold = int(os.getenv("WEBHOOK_RATE_LIMIT", "500"))
         except ValueError:
             threshold = 500
         if threshold > 0:

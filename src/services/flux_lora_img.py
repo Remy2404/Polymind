@@ -16,14 +16,15 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class FluxLoraImageGenerator:
     def __init__(
-        self, 
-        model_name: str, 
-        api_key: str, 
+        self,
+        model_name: str,
+        api_key: str,
         api_endpoint: str = "https://api-inference.huggingface.co",
         max_concurrent_requests: int = 5,
-        timeout: int = 300  # in seconds
+        timeout: int = 300,  # in seconds
     ):
         """
         Initializes the FluxLoraImageGenerator.
@@ -43,14 +44,16 @@ class FluxLoraImageGenerator:
         self.cache = {}  # Simple in-memory cache
         self.session = None
         self.timeout = timeout
-        logger.info(f"Initialized FluxLoraImageGenerator with model '{self.model_name}'.")
+        logger.info(
+            f"Initialized FluxLoraImageGenerator with model '{self.model_name}'."
+        )
 
     async def init_session(self):
         """Initialize the aiohttp session."""
         if self.session is None:
             self.session = aiohttp.ClientSession(
                 headers={"Authorization": f"Bearer {self.api_key}"},
-                timeout=aiohttp.ClientTimeout(total=self.timeout)
+                timeout=aiohttp.ClientTimeout(total=self.timeout),
             )
             logger.info("aiohttp ClientSession initialized.")
 
@@ -61,13 +64,13 @@ class FluxLoraImageGenerator:
             logger.info("Closed aiohttp ClientSession.")
 
     async def text_to_image(
-        self, 
-        prompt: str, 
-        num_images: int = 4, 
-        num_inference_steps: int = 30,  
-        width: int = 1024,                
-        height: int = 1024,               
-        guidance_scale: float = 8.5   
+        self,
+        prompt: str,
+        num_images: int = 4,
+        num_inference_steps: int = 30,
+        width: int = 1024,
+        height: int = 1024,
+        guidance_scale: float = 8.5,
     ) -> list[Image.Image]:
         """
         Asynchronously generates images from a text prompt using the Hugging Face Inference API.
@@ -84,19 +87,19 @@ class FluxLoraImageGenerator:
             list[Image.Image]: List of generated PIL Image objects.
         """
         await self.init_session()
-        
+
         if prompt in self.cache:
             logger.info("Fetching images from cache.")
             return self.cache[prompt]
-        
+
         tasks = [
             self._generate_single_image(
-                prompt, 
-                num_inference_steps, 
-                width, 
-                height, 
+                prompt,
+                num_inference_steps,
+                width,
+                height,
                 guidance_scale,
-                seed=int(time.time() * 1000) + i  # Different seed for each image
+                seed=int(time.time() * 1000) + i,  # Different seed for each image
             )
             for i in range(num_images)
         ]
@@ -110,18 +113,18 @@ class FluxLoraImageGenerator:
         return valid_images
 
     async def _generate_single_image(
-        self, 
-        prompt: str, 
-        num_inference_steps: int, 
-        width: int, 
-        height: int, 
+        self,
+        prompt: str,
+        num_inference_steps: int,
+        width: int,
+        height: int,
         guidance_scale: float,
-        seed: int = None
+        seed: int = None,
     ) -> Image.Image:
         # Generate a random seed if none is provided
         if seed is None:
             seed = int(time.time() * 1000) % 1000000 + id(prompt) % 1000
-        
+
         payload = {
             "inputs": prompt,
             "parameters": {
@@ -129,8 +132,8 @@ class FluxLoraImageGenerator:
                 "width": width,
                 "height": height,
                 "guidance_scale": guidance_scale,
-                "seed": seed  # Add seed parameter
-            }
+                "seed": seed,  # Add seed parameter
+            },
         }
 
         retries = 3
@@ -139,28 +142,38 @@ class FluxLoraImageGenerator:
         for attempt in range(1, retries + 1):
             try:
                 async with self.semaphore:
-                    async with self.session.post(self.full_url, json=payload) as response:
+                    async with self.session.post(
+                        self.full_url, json=payload
+                    ) as response:
                         if response.status == 200:
-                            content_type = response.headers.get('Content-Type')
-                            if content_type.startswith('image/'):
+                            content_type = response.headers.get("Content-Type")
+                            if content_type.startswith("image/"):
                                 image_data = await response.read()
                                 image = Image.open(BytesIO(image_data)).convert("RGB")
-                                logger.info(f"Image generated successfully on attempt {attempt}.")
+                                logger.info(
+                                    f"Image generated successfully on attempt {attempt}."
+                                )
                                 return image
                             else:
                                 data = await response.json()
                                 logger.error(f"Unexpected response format: {data}")
                                 return None
                         elif response.status in {500, 502, 503, 504}:
-                            logger.warning(f"Server error {response.status}. Attempt {attempt} of {retries}. Retrying in {backoff} seconds...")
+                            logger.warning(
+                                f"Server error {response.status}. Attempt {attempt} of {retries}. Retrying in {backoff} seconds..."
+                            )
                             await asyncio.sleep(backoff)
                             backoff *= 2
                         else:
                             error_detail = await response.text()
-                            logger.error(f"Failed to generate image: {response.status} {error_detail}")
+                            logger.error(
+                                f"Failed to generate image: {response.status} {error_detail}"
+                            )
                             return None
             except asyncio.TimeoutError:
-                logger.warning(f"Request timed out. Attempt {attempt} of {retries}. Retrying in {backoff} seconds...")
+                logger.warning(
+                    f"Request timed out. Attempt {attempt} of {retries}. Retrying in {backoff} seconds..."
+                )
                 await asyncio.sleep(backoff)
                 backoff *= 2
             except Exception as e:
@@ -184,12 +197,12 @@ class FluxLoraImageGenerator:
             if isinstance(data, list) and len(data) > 0:
                 # Adjust this based on the actual response structure
                 # Example assumes the image is base64 encoded in 'generated_image' key
-                if 'generated_image' in data[0]:
-                    img_base64 = data[0]['generated_image']
+                if "generated_image" in data[0]:
+                    img_base64 = data[0]["generated_image"]
                 else:
                     # Fallback if the image is directly the first element
                     img_base64 = data[0]
-                
+
                 img_bytes = BytesIO(base64.b64decode(img_base64))
                 image = Image.open(img_bytes).convert("RGB")
                 return image
@@ -200,20 +213,26 @@ class FluxLoraImageGenerator:
             logger.error(f"Error processing response: {e}")
             return None
 
+
 # Initialize the FluxLoraImageGenerator instance
 flux_lora_image_generator = FluxLoraImageGenerator(
     model_name="black-forest-labs/FLUX.1-schnell",
     api_key=os.getenv("TEXT_TO_IMAGE_API_KEY"),
     api_endpoint="https://api-inference.huggingface.co",
     max_concurrent_requests=5,
-    timeout=300 
+    timeout=300,
 )
+
+
 def shutdown():
     """Safe shutdown function that doesn't rely on event loop"""
     try:
         logging.info("Marking flux-lora resources for cleanup")
         # Just mark for cleanup - don't attempt async operations
-        if hasattr(flux_lora_image_generator, 'session') and flux_lora_image_generator.session:
+        if (
+            hasattr(flux_lora_image_generator, "session")
+            and flux_lora_image_generator.session
+        ):
             flux_lora_image_generator.session = None
     except Exception as e:
         logging.warning(f"Error during shutdown: {e}")

@@ -28,6 +28,7 @@ from src.services.group_chat.integration import GroupChatIntegration
 
 logger = logging.getLogger(__name__)
 
+
 class TelegramBot:
     """
     TelegramBot class that handles interactions with the Telegram API.
@@ -90,7 +91,9 @@ class TelegramBot:
         """Check and update per-user rate limit. Returns True if allowed, False if rate limited."""
         count = self.user_rate_limits.get(user_id, 0)
         if count > 30:  # max 30 requests per minute
-            self.logger.warning(f"User {user_id} exceeded rate limit: {count} requests/minute.")
+            self.logger.warning(
+                f"User {user_id} exceeded rate limit: {count} requests/minute."
+            )
             return False
         self.user_rate_limits[user_id] = count + 1
         return True
@@ -279,7 +282,7 @@ class TelegramBot:
 
     def get_message_handlers(self):
         """Get the message handlers instance for Web App API access."""
-        return getattr(self, 'message_handlers', None)
+        return getattr(self, "message_handlers", None)
 
     async def shutdown(self):
         """Properly clean up resources on shutdown."""
@@ -386,10 +389,10 @@ class TelegramBot:
                 if hasattr(update_data, "update_id"):
                     update_id = update_data.update_id
                 elif isinstance(update_data, dict):
-                    update_id = update_data.get('update_id', 'unknown')
+                    update_id = update_data.get("update_id", "unknown")
             except:
                 pass
-                
+
             self.logger.error(
                 f"Error processing update {update_id}: {str(e)}",
                 exc_info=True,

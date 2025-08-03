@@ -58,18 +58,18 @@ PROVIDER_GROUPS = {
     "🤖 Gemini Models": {
         "provider": APIProvider.GEMINI,
         "description": "Google's Gemini AI models",
-        "models": []  # Will be populated dynamically
+        "models": [],  # Will be populated dynamically
     },
     "🧠 DeepSeek Models": {
         "provider": APIProvider.DEEPSEEK,
         "description": "DeepSeek reasoning models",
-        "models": []  # Will be populated dynamically
+        "models": [],  # Will be populated dynamically
     },
     "🔄 OpenRouter Models": {
         "provider": APIProvider.OPENROUTER,
         "description": "Multiple AI models via OpenRouter",
-        "models": []  # Will be populated dynamically
-    }
+        "models": [],  # Will be populated dynamically
+    },
 }
 
 
@@ -99,14 +99,17 @@ class SuperSimpleAPIManager:
     def _setup_models(self):
         """🎨 Configure all your models here - Easy to add new ones!"""
         # Import from the centralized configuration
-        from src.services.model_handlers.model_configs import ModelConfigurations, Provider
-        
+        from src.services.model_handlers.model_configs import (
+            ModelConfigurations,
+            Provider,
+        )
+
         # Get all models from the configuration
         model_configs = ModelConfigurations.get_all_models()
-        
+
         # Convert to our format
         self.models: Dict[str, ModelConfig] = {}
-        
+
         for model_id, config in model_configs.items():
             # Map Provider enum to APIProvider enum
             api_provider = None
@@ -116,7 +119,7 @@ class SuperSimpleAPIManager:
                 api_provider = APIProvider.DEEPSEEK
             elif config.provider == Provider.OPENROUTER:
                 api_provider = APIProvider.OPENROUTER
-            
+
             if api_provider:
                 self.models[model_id] = ModelConfig(
                     model_id=model_id,
@@ -144,23 +147,35 @@ class SuperSimpleAPIManager:
             "coding": {"name": "💻 Coding Specialists", "emoji": "💻", "models": {}},
             "vision": {"name": "👁️ Vision Models", "emoji": "👁️", "models": {}},
             "reasoning": {"name": "🧠 Reasoning Models", "emoji": "🧠", "models": {}},
-            "creative": {"name": "🎭 Creative & Specialized", "emoji": "🎭", "models": {}},
-        }        # Categorize models based on their types and providers
+            "creative": {
+                "name": "🎭 Creative & Specialized",
+                "emoji": "🎭",
+                "models": {},
+            },
+        }  # Categorize models based on their types and providers
         for model_id, config in self.models.items():
             model_name = config.display_name.lower()
-            model_type = getattr(config, 'type', 'general_purpose')
-            
+            model_type = getattr(config, "type", "general_purpose")
+
             # Primary categorization by provider for specific providers
             if config.provider == APIProvider.GEMINI:
                 categories["gemini"]["models"][model_id] = config
             elif config.provider == APIProvider.DEEPSEEK:
                 categories["deepseek"]["models"][model_id] = config
             # Use type-based categorization for OpenRouter models
-            elif model_type == "reasoning" or "deepseek" in model_name or "r1" in model_name:
+            elif (
+                model_type == "reasoning"
+                or "deepseek" in model_name
+                or "r1" in model_name
+            ):
                 categories["reasoning"]["models"][model_id] = config
-            elif model_type in ["vision", "multimodal"] or any(x in model_name for x in ["vision", "visual", "vl", "image"]):
+            elif model_type in ["vision", "multimodal"] or any(
+                x in model_name for x in ["vision", "visual", "vl", "image"]
+            ):
                 categories["vision"]["models"][model_id] = config
-            elif model_type in ["coding_specialist", "mathematical_reasoning"] or any(x in model_name for x in ["code", "coder", "programming", "olympic"]):
+            elif model_type in ["coding_specialist", "mathematical_reasoning"] or any(
+                x in model_name for x in ["code", "coder", "programming", "olympic"]
+            ):
                 categories["coding"]["models"][model_id] = config
             elif "llama" in model_name:
                 categories["meta_llama"]["models"][model_id] = config
@@ -178,7 +193,7 @@ class SuperSimpleAPIManager:
                 categories["thudm"]["models"][model_id] = config
             else:
                 categories["creative"]["models"][model_id] = config
-        
+
         # Remove empty categories
         return {k: v for k, v in categories.items() if v["models"]}
 
@@ -192,11 +207,11 @@ class SuperSimpleAPIManager:
         quoted_message: Optional[str] = None,
     ) -> str:
         """🎯 Universal chat method - works with any model!"""
-        
+
         # Get model config
         model_config = self.models.get(model_id)
         if not model_config:
-            return f"❌ Model '{model_id}' not found!"        # Get the appropriate API
+            return f"❌ Model '{model_id}' not found!"  # Get the appropriate API
         api = self.apis.get(model_config.provider)
         if not api:
             return f"❌ API for {model_config.provider.value} not available!"
@@ -208,7 +223,9 @@ class SuperSimpleAPIManager:
         try:
             # Add system message to context if provided
             if model_config.system_message and context:
-                context = [{"role": "system", "content": model_config.system_message}] + context
+                context = [
+                    {"role": "system", "content": model_config.system_message}
+                ] + context
 
             # Determine optimal max_tokens dynamically
             max_tokens = self._determine_optimal_tokens(prompt, model_config)
@@ -217,9 +234,13 @@ class SuperSimpleAPIManager:
             if model_config.provider == APIProvider.GEMINI:
                 return await self._call_gemini(api, prompt, context)
             elif model_config.provider == APIProvider.DEEPSEEK:
-                return await self._call_deepseek(api, prompt, context, model_config, temperature, max_tokens)
+                return await self._call_deepseek(
+                    api, prompt, context, model_config, temperature, max_tokens
+                )
             elif model_config.provider == APIProvider.OPENROUTER:
-                return await self._call_openrouter(api, prompt, context, model_config, temperature, max_tokens)
+                return await self._call_openrouter(
+                    api, prompt, context, model_config, temperature, max_tokens
+                )
             else:
                 return f"❌ Unsupported provider: {model_config.provider.value}"
 
@@ -230,24 +251,47 @@ class SuperSimpleAPIManager:
     def _determine_optimal_tokens(self, prompt: str, model_config: ModelConfig) -> int:
         """Determine optimal max_tokens based on prompt and model capabilities"""
         prompt_length = len(prompt)
-        
+
         # Long form indicators that suggest need for more tokens
         long_form_indicators = [
-            "write a", "generate", "create", "explain in detail", "step by step",
-            "tutorial", "guide", "comprehensive", "list", "examples", "detailed",
-            "analysis", "comparison", "pros and cons", "advantages", "disadvantages",
-            "100", "q&a", "qcm", "questions", "document", "essay", "article"
+            "write a",
+            "generate",
+            "create",
+            "explain in detail",
+            "step by step",
+            "tutorial",
+            "guide",
+            "comprehensive",
+            "list",
+            "examples",
+            "detailed",
+            "analysis",
+            "comparison",
+            "pros and cons",
+            "advantages",
+            "disadvantages",
+            "100",
+            "q&a",
+            "qcm",
+            "questions",
+            "document",
+            "essay",
+            "article",
         ]
-        
-        is_long_form = any(indicator in prompt.lower() for indicator in long_form_indicators)
-        
+
+        is_long_form = any(
+            indicator in prompt.lower() for indicator in long_form_indicators
+        )
+
         # Base token allocation
         if is_long_form or prompt_length > 500:
-            return min(32000, model_config.max_tokens)  # Use full capacity for long requests
+            return min(
+                32000, model_config.max_tokens
+            )  # Use full capacity for long requests
         elif prompt_length > 200:
             return min(16000, model_config.max_tokens)  # Medium requests
         else:
-            return min(8000, model_config.max_tokens)   # Short requests
+            return min(8000, model_config.max_tokens)  # Short requests
 
     async def _call_gemini(
         self, api: GeminiAPI, prompt: str, context: Optional[List]
@@ -268,11 +312,9 @@ class SuperSimpleAPIManager:
         """Call DeepSeek API"""
         # DeepSeek uses messages format
         messages = context or []
-        messages.append({"role": "user", "content": prompt})        
+        messages.append({"role": "user", "content": prompt})
         return await api.generate_response(
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens
+            messages=messages, temperature=temperature, max_tokens=max_tokens
         )
 
     async def _call_openrouter(
@@ -287,14 +329,14 @@ class SuperSimpleAPIManager:
         """Call OpenRouter API"""
         # Use the specific OpenRouter model key
         model_key = model_config.openrouter_key or model_config.model_id
-        
+
         # OpenRouter API expects prompt and context separately
         return await api.generate_response(
             prompt=prompt,
             context=context,
             model=model_key,
             temperature=temperature,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
         )
 
     # 🎯 SIMPLE HELPER METHODS
@@ -319,7 +361,7 @@ class SuperSimpleAPIManager:
     def list_available_models(self) -> str:
         """Get a formatted string of all available models"""
         lines = ["🤖 **Available Models:**\n"]
-        
+
         for provider in APIProvider:
             provider_models = self.get_models_by_provider(provider)
             if provider_models:
@@ -327,7 +369,7 @@ class SuperSimpleAPIManager:
                 for model_id, config in provider_models.items():
                     lines.append(f"• {config.emoji} {config.display_name}")
                 lines.append("")
-        
+
         return "\n".join(lines)
 
     def add_model(self, model_config: ModelConfig) -> None:

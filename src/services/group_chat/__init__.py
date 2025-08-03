@@ -13,8 +13,4 @@ from .group_manager import GroupManager
 from .ui_components import GroupUIManager
 from .integration import GroupChatIntegration
 
-__all__ = [
-    'GroupManager',
-    'GroupUIManager', 
-    'GroupChatIntegration'
-]
+__all__ = ["GroupManager", "GroupUIManager", "GroupChatIntegration"]

@@ -14,6 +14,7 @@ from .group_memory_operations import GroupMemoryOperations
 # MongoDB imports
 import sys
 import os
+
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
@@ -85,7 +86,7 @@ class Conversation:
 
 class MemoryManager:
     """Enhanced memory manager with modular components for better maintainability"""
-    
+
     def __init__(self, db=None, client=None, storage_path=None):
         # Initialize database connection
         if db is None:
@@ -94,7 +95,9 @@ class MemoryManager:
                 if self.db is not None:
                     logger.info("Connected to MongoDB for memory management")
                 else:
-                    logger.warning("MongoDB connection failed, memory manager will not persist data")
+                    logger.warning(
+                        "MongoDB connection failed, memory manager will not persist data"
+                    )
                     self.client = None
             except Exception as e:
                 logger.error(f"Error connecting to MongoDB: {e}")
@@ -186,9 +189,11 @@ class MemoryManager:
 
             # Persist to storage
             await self.persistence_manager.persist_memory(
-                conversation_id if not is_group else group_id, 
-                self._get_memory_data(conversation_id if not is_group else group_id, is_group),
-                is_group
+                conversation_id if not is_group else group_id,
+                self._get_memory_data(
+                    conversation_id if not is_group else group_id, is_group
+                ),
+                is_group,
             )
 
     async def add_assistant_message(
@@ -254,8 +259,10 @@ class MemoryManager:
 
             await self.persistence_manager.persist_memory(
                 conversation_id if not is_group else group_id,
-                self._get_memory_data(conversation_id if not is_group else group_id, is_group),
-                is_group
+                self._get_memory_data(
+                    conversation_id if not is_group else group_id, is_group
+                ),
+                is_group,
             )
 
     async def get_relevant_memory(
@@ -280,20 +287,28 @@ class MemoryManager:
                 return []
 
             # Get semantic similarity scores
-            relevant_messages = await self.semantic_search_manager.semantic_search(cache_key, query, is_group)
+            relevant_messages = await self.semantic_search_manager.semantic_search(
+                cache_key, query, is_group
+            )
 
             # If this is a group and we want to include shared knowledge
             if is_group and include_group_knowledge and group_id:
-                shared_knowledge = await self.group_operations.get_shared_knowledge(group_id, query)
+                shared_knowledge = await self.group_operations.get_shared_knowledge(
+                    group_id, query
+                )
                 relevant_messages.extend(shared_knowledge)
 
             # Sort by combined relevance and importance score
             scored_messages = []
-            for msg_idx, similarity in relevant_messages[:limit * 2]:  # Get more candidates
+            for msg_idx, similarity in relevant_messages[
+                : limit * 2
+            ]:  # Get more candidates
                 if msg_idx < len(message_cache):
                     message = message_cache[msg_idx]
-                    combined_score = self.semantic_search_manager.calculate_message_importance(
-                        message, similarity, self.importance_factors
+                    combined_score = (
+                        self.semantic_search_manager.calculate_message_importance(
+                            message, similarity, self.importance_factors
+                        )
                     )
                     scored_messages.append((message, combined_score))
 
@@ -376,7 +391,9 @@ class MemoryManager:
     # Group-specific methods
     async def get_group_participants(self, group_id: str) -> List[str]:
         """Get list of participants in a group conversation"""
-        return await self.group_operations.get_group_participants(group_id, self.group_memory_cache)
+        return await self.group_operations.get_group_participants(
+            group_id, self.group_memory_cache
+        )
 
     async def get_group_activity_summary(
         self, group_id: str, days: int = 7
@@ -400,11 +417,15 @@ class MemoryManager:
 
     async def update_user_profile_field(self, user_id: int, field: str, value: Any):
         """Update a specific field in user profile"""
-        return await self.user_profile_manager.update_user_profile_field(user_id, field, value)
+        return await self.user_profile_manager.update_user_profile_field(
+            user_id, field, value
+        )
 
     async def extract_and_save_user_info(self, user_id: int, message_content: str):
         """Extract and save user information from message content"""
-        return await self.user_profile_manager.extract_and_save_user_info(user_id, message_content)
+        return await self.user_profile_manager.extract_and_save_user_info(
+            user_id, message_content
+        )
 
     # Storage methods (delegated to PersistenceManager)
     async def load_memory(self, cache_key: str, is_group: bool = False):
@@ -472,7 +493,9 @@ class MemoryManager:
             }
 
             if is_group and cache_key:
-                export_data["shared_knowledge"] = self.group_operations.get_shared_knowledge_for_group(cache_key)
+                export_data["shared_knowledge"] = (
+                    self.group_operations.get_shared_knowledge_for_group(cache_key)
+                )
 
             return export_data
 
@@ -500,18 +523,24 @@ class MemoryManager:
         }
 
         if is_group and cache_key:
-            memory_data["shared_knowledge"] = self.group_operations.get_shared_knowledge_for_group(cache_key)
+            memory_data["shared_knowledge"] = (
+                self.group_operations.get_shared_knowledge_for_group(cache_key)
+            )
 
         return memory_data
 
-    def _populate_cache_from_data(self, cache_key: str, memory_data: Dict[str, Any], is_group: bool):
+    def _populate_cache_from_data(
+        self, cache_key: str, memory_data: Dict[str, Any], is_group: bool
+    ):
         """Populate cache from loaded memory data"""
         if is_group:
             self.group_memory_cache[cache_key] = memory_data.get("messages", [])
             if memory_data.get("summary"):
                 self.group_summaries[cache_key] = memory_data["summary"]
             if memory_data.get("shared_knowledge"):
-                self.group_operations.shared_knowledge[cache_key] = memory_data["shared_knowledge"]
+                self.group_operations.shared_knowledge[cache_key] = memory_data[
+                    "shared_knowledge"
+                ]
         else:
             self.memory_cache[cache_key] = memory_data.get("messages", [])
             if memory_data.get("summary"):
@@ -523,7 +552,7 @@ class MemoryManager:
         """Generate a summary of the conversation"""
         try:
             from collections import defaultdict
-            
+
             message_cache = (
                 self.group_memory_cache.get(cache_key, [])
                 if is_group

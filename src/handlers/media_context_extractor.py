@@ -2,19 +2,20 @@ import logging
 from typing import Dict, Any, List, Optional
 import re
 
+
 class MediaContextExtractor:
     """Extracts context from previously shared media messages."""
-    
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
     def is_referring_to_image(self, message: str) -> bool:
         """
         Detects if a message is referring to a previously shared image.
-        
+
         Args:
             message: User's message text
-            
+
         Returns:
             bool: True if the message appears to refer to a previously shared image
         """
@@ -26,15 +27,15 @@ class MediaContextExtractor:
             r"(?i)what (?:is|was) (?:in|on) (?:the|this|that) (?:image|photo|picture)",
             r"(?i)(?:can you|could you|please) (?:tell me more|explain|describe) (?:about|what's in) (?:the|this|that) (?:image|photo|picture)",
             r"(?i)(?:the|this|that) (?:image|photo|picture) (?:i|we|you) (?:shared|sent|uploaded|talked about)",
-            r"(?i)(?:remember|recall) (?:the|this|that) (?:image|photo|picture)"
+            r"(?i)(?:remember|recall) (?:the|this|that) (?:image|photo|picture)",
         ]
-        
+
         for pattern in image_reference_patterns:
             if re.search(pattern, message):
                 return True
-                
+
         return False
-    
+
     async def get_image_context(self, user_data: Dict[str, Any]) -> str:
         """Generate context from previously processed images."""
         if "image_history" not in user_data or not user_data["image_history"]:
@@ -45,12 +46,12 @@ class MediaContextExtractor:
 
         image_context = "Recently analyzed images that you can refer to:\n"
         for idx, img in enumerate(recent_images):
-            timestamp = img.get('timestamp', '')
+            timestamp = img.get("timestamp", "")
             time_str = f" (shared on {timestamp})" if timestamp else ""
-            
+
             image_context += f"[Image {idx+1}]{time_str}: Caption: {img['caption']}\n"
             # Include more complete description for better context
-            full_desc = img.get('description', '')
+            full_desc = img.get("description", "")
             # Use full description if it's reasonably sized, otherwise truncate
             desc_text = full_desc if len(full_desc) < 300 else f"{full_desc[:250]}..."
             image_context += f"Description: {desc_text}\n\n"

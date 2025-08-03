@@ -8,23 +8,32 @@ import os
 dotenv.load_dotenv()
 
 # Set the API key
-genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Initialize the model
-model = genai.GenerativeModel('gemini-pro-vision')
+model = genai.GenerativeModel("gemini-pro-vision")
 
 # Generate content (image)
 response = model.generate_content(
-    'Generate an image of fuzzy bunnies in a kitchen',
+    "Generate an image of fuzzy bunnies in a kitchen",
     generation_config={
         "temperature": 0.4,
     },
     safety_settings=[
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    ]
+        {
+            "category": "HARM_CATEGORY_HATE_SPEECH",
+            "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+        },
+        {
+            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+        },
+        {
+            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+            "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+        },
+    ],
 )
 
 # Check if the response contains text (since Gemini-Pro-Vision doesn't generate images)

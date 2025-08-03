@@ -187,7 +187,7 @@ class UnifiedModelHandler(ModelHandler):
         if context:
             for msg in context:
                 messages.append(msg)
-        
+
         # Add current prompt
         messages.append({"role": "user", "content": prompt})
 

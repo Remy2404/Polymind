@@ -111,7 +111,7 @@ def create_application():
     # Configure dependency injection for bot instance
     # Set the actual bot instance in the webhook module's global variable
     webhook_module._BOT_INSTANCE = bot
-    
+
     # Set bot instance for webapp module
     webapp_module.set_bot_instance(bot)
 

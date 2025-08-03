@@ -85,7 +85,7 @@ class DeepSeekLLM:
         max_tokens: int = 32000,
         top_p: float = 0.9,
         frequency_penalty: float = 0.0,
-        presence_penalty: float = 0.0
+        presence_penalty: float = 0.0,
     ) -> Optional[str]:
         """Generate text from a prompt using the provided message list."""
         # Generate response using the provided messages list

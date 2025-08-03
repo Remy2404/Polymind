@@ -13,7 +13,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
-# Knowledge graph functionality - optimized for production with minimal dependencies  
+# Knowledge graph functionality - optimized for production with minimal dependencies
 # Uses only regex patterns for fast, lightweight entity and relationship extraction
 
 
@@ -27,7 +27,9 @@ class KnowledgeGraph:
         self.graph = nx.DiGraph()
         self.db = db
         self.storage_path = storage_path
-        self.memory_manager = memory_manager        # Create storage directory if it doesn't exist
+        self.memory_manager = (
+            memory_manager  # Create storage directory if it doesn't exist
+        )
         os.makedirs(storage_path, exist_ok=True)
 
         # Initialize entity extraction patterns
@@ -191,7 +193,7 @@ class KnowledgeGraph:
             await self._save_graph()
             self.logger.info(
                 f"Added entities for document {document_id} to knowledge graph"
-            )            # Return entity summary
+            )  # Return entity summary
             return self._get_entity_summary(entities, relationships)
 
         except Exception as e:

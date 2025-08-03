@@ -9,11 +9,11 @@ logger = logging.getLogger(__name__)
 
 class UserProfileManager:
     """Manages user profile data and information extraction"""
-    
+
     def __init__(self, db: Optional[Database] = None):
         self.db = db
         self.user_profiles_collection = db.user_profiles if db is not None else None
-        
+
     async def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]):
         """Save user profile information to MongoDB"""
         try:

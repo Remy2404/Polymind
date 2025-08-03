@@ -2,6 +2,7 @@
 Persistence Management Module
 Handles all memory persistence operations (MongoDB and file fallback)
 """
+
 import logging
 import json
 import os
@@ -15,16 +16,24 @@ logger = logging.getLogger(__name__)
 
 class PersistenceManager:
     """Manages memory persistence to MongoDB and file storage"""
-    
-    def __init__(self, db: Optional[Database] = None, storage_path: Optional[str] = None):
+
+    def __init__(
+        self, db: Optional[Database] = None, storage_path: Optional[str] = None
+    ):
         self.db = db
         self.storage_path = storage_path
-          # Collections
+        # Collections
         self.conversations_collection = db.conversations if db is not None else None
-        self.group_conversations_collection = db.group_conversations if db is not None else None
-        self.conversation_summaries_collection = db.conversation_summaries if db is not None else None
-        
-    async def persist_memory(self, cache_key: str, memory_data: Dict[str, Any], is_group: bool = False):
+        self.group_conversations_collection = (
+            db.group_conversations if db is not None else None
+        )
+        self.conversation_summaries_collection = (
+            db.conversation_summaries if db is not None else None
+        )
+
+    async def persist_memory(
+        self, cache_key: str, memory_data: Dict[str, Any], is_group: bool = False
+    ):
         """Persist memory to MongoDB storage"""
         try:
             if self.db is None:
@@ -34,15 +43,19 @@ class PersistenceManager:
 
             # Use MongoDB for persistence
             collection = (
-                self.group_conversations_collection if is_group else self.conversations_collection
+                self.group_conversations_collection
+                if is_group
+                else self.conversations_collection
             )
 
             # Add timestamp and metadata
-            memory_data.update({
-                "cache_key": cache_key,
-                "is_group": is_group,
-                "last_updated": time.time(),
-            })
+            memory_data.update(
+                {
+                    "cache_key": cache_key,
+                    "is_group": is_group,
+                    "last_updated": time.time(),
+                }
+            )
 
             # Update or insert conversation data
             collection.update_one(
@@ -58,24 +71,30 @@ class PersistenceManager:
             # Fallback to file storage on error
             await self.persist_memory_file(cache_key, memory_data, is_group)
 
-    async def persist_memory_file(self, cache_key: str, memory_data: Dict[str, Any], is_group: bool = False):
+    async def persist_memory_file(
+        self, cache_key: str, memory_data: Dict[str, Any], is_group: bool = False
+    ):
         """Fallback file-based persistence"""
         try:
             # Only attempt file persistence if storage_path is configured
             if self.storage_path is None:
-                logger.debug(f"No storage path configured, skipping file persistence for {cache_key}")
+                logger.debug(
+                    f"No storage path configured, skipping file persistence for {cache_key}"
+                )
                 return
-                
+
             os.makedirs(self.storage_path, exist_ok=True)
             file_path = os.path.join(
                 self.storage_path, f"{'group_' if is_group else ''}{cache_key}.json"
             )
 
             # Add timestamp
-            memory_data.update({
-                "is_group": is_group,
-                "last_updated": time.time(),
-            })
+            memory_data.update(
+                {
+                    "is_group": is_group,
+                    "last_updated": time.time(),
+                }
+            )
 
             async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
                 await f.write(json.dumps(memory_data, ensure_ascii=False, indent=2))
@@ -85,13 +104,17 @@ class PersistenceManager:
         except Exception as e:
             logger.error(f"Error persisting memory to file: {e}")
 
-    async def load_memory(self, cache_key: str, is_group: bool = False) -> Optional[Dict[str, Any]]:
+    async def load_memory(
+        self, cache_key: str, is_group: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """Load memory from MongoDB or file storage"""
         try:
             if self.db is not None:
                 # Try MongoDB first
                 collection = (
-                    self.group_conversations_collection if is_group else self.conversations_collection
+                    self.group_conversations_collection
+                    if is_group
+                    else self.conversations_collection
                 )
                 memory_data = collection.find_one({"cache_key": cache_key})
 
@@ -109,14 +132,18 @@ class PersistenceManager:
             # Fallback to file storage on error
             return await self.load_memory_file(cache_key, is_group)
 
-    async def load_memory_file(self, cache_key: str, is_group: bool = False) -> Optional[Dict[str, Any]]:
+    async def load_memory_file(
+        self, cache_key: str, is_group: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """Fallback file-based loading"""
         try:
             # Only attempt file loading if storage_path is configured
             if self.storage_path is None:
-                logger.debug(f"No storage path configured, skipping file loading for {cache_key}")
+                logger.debug(
+                    f"No storage path configured, skipping file loading for {cache_key}"
+                )
                 return None
-                
+
             file_path = os.path.join(
                 self.storage_path, f"{'group_' if is_group else ''}{cache_key}.json"
             )
@@ -136,7 +163,7 @@ class PersistenceManager:
         except Exception as e:
             logger.error(f"Error loading memory from file: {e}")
             return None
-            
+
     def ensure_indexes(self):
         """Ensure database indexes are created for better performance"""
         try:

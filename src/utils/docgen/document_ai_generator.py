@@ -13,8 +13,15 @@ from .document_generator import DocumentGenerator
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
+
 class AIDocumentGenerator:
-    def __init__(self, gemini_api: GeminiAPI = None, openrouter_api: OpenRouterAPI = None, deepseek_api: DeepSeekLLM = None, api_manager=None):
+    def __init__(
+        self,
+        gemini_api: GeminiAPI = None,
+        openrouter_api: OpenRouterAPI = None,
+        deepseek_api: DeepSeekLLM = None,
+        api_manager=None,
+    ):
         # Use provided API manager or create a new one
         if api_manager:
             self.api_manager = api_manager
@@ -23,7 +30,7 @@ class AIDocumentGenerator:
             self.api_manager = SuperSimpleAPIManager(
                 gemini_api=gemini_api,
                 openrouter_api=openrouter_api,
-                deepseek_api=deepseek_api
+                deepseek_api=deepseek_api,
             )
         self.document_generator = DocumentGenerator()
         self.logger = logging.getLogger(__name__)
@@ -76,7 +83,7 @@ class AIDocumentGenerator:
                 user_prompt += f"\n\nAdditional context: {additional_context}"
 
             full_prompt = f"{system_prompt}\n\n{user_prompt}"
-            
+
             # Use the unified API manager to generate content with the selected model
             try:
                 self.logger.info(f"Generating document using model: {model}")
@@ -84,8 +91,8 @@ class AIDocumentGenerator:
                     model_id=model,
                     prompt=full_prompt,
                     temperature=0.7,
-                    max_tokens=max_tokens
-                ) 
+                    max_tokens=max_tokens,
+                )
                 self.logger.info(f"API response received from {model}")
             except Exception as api_error:
                 self.logger.error(f"API error with {model}: {str(api_error)}")
@@ -97,7 +104,7 @@ class AIDocumentGenerator:
                             model_id="gemini",
                             prompt=full_prompt,
                             temperature=0.7,
-                            max_tokens=max_tokens
+                            max_tokens=max_tokens,
                         )
                         self.logger.info("Fallback to Gemini successful")
                     except Exception as fallback_error:
@@ -228,7 +235,7 @@ class AIDocumentGenerator:
         for line in lines:
             cleaned_line = line.strip()
             if cleaned_line and not cleaned_line.startswith("```"):
-                cleaned_title = re.sub(r'[*_#\[\]\(\)`]', '', cleaned_line)
+                cleaned_title = re.sub(r"[*_#\[\]\(\)`]", "", cleaned_line)
                 if cleaned_title:
                     return cleaned_title[:100]
         return None
@@ -356,9 +363,15 @@ class AIDocumentGenerator:
                         break
                     next_heading_index += 1
 
-                current_heading_level = len(re.match(r"^(#{1,6})\s+", current_line).group(1))
-                if next_heading_index < len(lines) and re.match(r"^#{1,6}\s+", lines[next_heading_index]):
-                    next_heading_level = len(re.match(r"^(#{1,6})\s+", lines[next_heading_index]).group(1))
+                current_heading_level = len(
+                    re.match(r"^(#{1,6})\s+", current_line).group(1)
+                )
+                if next_heading_index < len(lines) and re.match(
+                    r"^#{1,6}\s+", lines[next_heading_index]
+                ):
+                    next_heading_level = len(
+                        re.match(r"^(#{1,6})\s+", lines[next_heading_index]).group(1)
+                    )
                     if not found_content:
                         if next_heading_index > i + 1:
                             i = next_heading_index - 1
@@ -368,7 +381,9 @@ class AIDocumentGenerator:
             i += 1
 
         result = "\n".join(result_lines)
-        result = re.sub(r"(^#{1,6}\s+.+)\n([^#\s])", r"\1\n\n\2", result, flags=re.MULTILINE)
+        result = re.sub(
+            r"(^#{1,6}\s+.+)\n([^#\s])", r"\1\n\n\2", result, flags=re.MULTILINE
+        )
         result = re.sub(r"\n{3,}", r"\n\n", result)
 
         return result

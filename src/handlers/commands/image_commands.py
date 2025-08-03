@@ -2,8 +2,12 @@
 Image generation command handlers.
 Contains advanced image generation and Together AI image generation commands.
 """
+
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+sys.path.insert(
+    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
@@ -12,7 +16,13 @@ import io
 
 
 class ImageCommands:
-    def __init__(self, flux_lora_image_generator, user_data_manager, telegram_logger, image_handler):
+    def __init__(
+        self,
+        flux_lora_image_generator,
+        user_data_manager,
+        telegram_logger,
+        image_handler,
+    ):
         self.flux_lora_image_generator = flux_lora_image_generator
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger

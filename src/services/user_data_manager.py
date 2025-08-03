@@ -123,21 +123,23 @@ class UserDataManager:
         try:
             # Convert user_id to string for consistency
             user_id = str(user_id)
-            
+
             # Clear user contexts
             self.users_collection.update_one(
                 {"user_id": user_id}, {"$set": {"contexts": []}}
             )
-            
+
             # Clear conversation_history collection
             if self.conversation_history is not None:
                 result = self.conversation_history.delete_many({"user_id": user_id})
-                self.logger.info(f"Deleted {result.deleted_count} messages from conversation_history collection for user {user_id}")
-            
+                self.logger.info(
+                    f"Deleted {result.deleted_count} messages from conversation_history collection for user {user_id}"
+                )
+
             # Clear cache for this user
             if user_id in self.user_data_cache:
                 del self.user_data_cache[user_id]
-                
+
             self.logger.info(f"Cleared history for user: {user_id}")
         except Exception as e:
             self.logger.error(f"Error clearing history for user {user_id}: {str(e)}")
@@ -165,13 +167,15 @@ class UserDataManager:
 
             # Convert user_id to string for consistency
             user_id = str(user_id)
-            
+
             # Add timestamp and message_id if not present
             current_time = datetime.now()
             if "timestamp" not in message:
                 message["timestamp"] = current_time.timestamp()
             if "message_id" not in message:
-                message["message_id"] = f"{message['role']}_{user_id}_{int(current_time.timestamp() * 1000)}"
+                message["message_id"] = (
+                    f"{message['role']}_{user_id}_{int(current_time.timestamp() * 1000)}"
+                )
 
             # Save to conversation_history collection for persistence
             if self.conversation_history is not None:
@@ -182,10 +186,12 @@ class UserDataManager:
                     "timestamp": current_time,
                     "message_id": message["message_id"],
                     "model_used": message.get("model_used", "unknown"),
-                    "created_at": current_time
+                    "created_at": current_time,
                 }
                 self.conversation_history.insert_one(conversation_doc)
-                self.logger.debug(f"Saved message to conversation_history collection for user: {user_id}")
+                self.logger.debug(
+                    f"Saved message to conversation_history collection for user: {user_id}"
+                )
 
             # Also save to user contexts for backwards compatibility
             self.users_collection.update_one(
@@ -213,23 +219,23 @@ class UserDataManager:
             if self.db is None:
                 self.logger.warning("Database connection is None, using cache")
                 return self.user_data_cache.get(str(user_id), {})
-            
+
             # Convert user_id to string for consistency
             user_id = str(user_id)
-            
+
             # Check cache first for performance
             if user_id in self.user_data_cache:
                 return self.user_data_cache[user_id]
-            
+
             user_data = self.users_collection.find_one({"user_id": user_id})
             if not user_data:
                 await self.initialize_user(user_id)
                 user_data = self.users_collection.find_one({"user_id": user_id})
-            
+
             # Update cache
             if user_data:
                 self.user_data_cache[user_id] = user_data
-            
+
             return user_data or {}
         except Exception as e:
             self.logger.error(f"Error retrieving data for user {user_id}: {str(e)}")
@@ -260,36 +266,42 @@ class UserDataManager:
         try:
             # Convert user_id to string for consistency
             user_id = str(user_id)
-            
+
             # First try to get from conversation_history collection (more persistent)
             persistent_history = []
             if self.conversation_history is not None:
                 try:
-                    cursor = self.conversation_history.find(
-                        {"user_id": user_id}
-                    ).sort("timestamp", 1)  # Sort by timestamp ascending
-                    
+                    cursor = self.conversation_history.find({"user_id": user_id}).sort(
+                        "timestamp", 1
+                    )  # Sort by timestamp ascending
+
                     for doc in cursor:
-                        persistent_history.append({
-                            "role": doc.get("role", "unknown"),
-                            "content": doc.get("content", ""),
-                            "timestamp": doc.get("timestamp", time.time()),
-                            "message_id": doc.get("message_id", ""),
-                            "model_used": doc.get("model_used", "unknown")
-                        })
-                    
+                        persistent_history.append(
+                            {
+                                "role": doc.get("role", "unknown"),
+                                "content": doc.get("content", ""),
+                                "timestamp": doc.get("timestamp", time.time()),
+                                "message_id": doc.get("message_id", ""),
+                                "model_used": doc.get("model_used", "unknown"),
+                            }
+                        )
+
                     if persistent_history:
-                        self.logger.info(f"Retrieved {len(persistent_history)} messages from conversation_history collection for user {user_id}")
+                        self.logger.info(
+                            f"Retrieved {len(persistent_history)} messages from conversation_history collection for user {user_id}"
+                        )
                         return persistent_history
-                        
+
                 except Exception as e:
-                    self.logger.warning(f"Failed to retrieve from conversation_history collection: {e}")
-            
+                    self.logger.warning(
+                        f"Failed to retrieve from conversation_history collection: {e}"
+                    )
+
             # Fallback to user contexts if conversation_history is empty or failed
             user_data = await self.get_user_data(user_id)
             if user_data is None:
                 return []
-            
+
             # Get contexts with proper fallback
             context = user_data.get("contexts", [])
             if not isinstance(context, list):
@@ -298,7 +310,7 @@ class UserDataManager:
                 )
                 await self.clear_history(user_id)
                 return []
-            
+
             # Filter out any invalid entries and ensure proper format
             valid_context = []
             for item in context:
@@ -308,13 +320,19 @@ class UserDataManager:
                     # Try to fix legacy format
                     if "user" in item or "assistant" in item:
                         if "user" in item:
-                            valid_context.append({"role": "user", "content": item["user"]})
+                            valid_context.append(
+                                {"role": "user", "content": item["user"]}
+                            )
                         if "assistant" in item:
-                            valid_context.append({"role": "assistant", "content": item["assistant"]})
-            
-            self.logger.info(f"Fallback: Retrieved {len(valid_context)} messages from user contexts for user {user_id}")
+                            valid_context.append(
+                                {"role": "assistant", "content": item["assistant"]}
+                            )
+
+            self.logger.info(
+                f"Fallback: Retrieved {len(valid_context)} messages from user contexts for user {user_id}"
+            )
             return valid_context
-            
+
         except Exception as e:
             self.logger.error(f"Error retrieving context for user {user_id}: {str(e)}")
             return []
@@ -667,58 +685,75 @@ class UserDataManager:
             )
             raise
 
-    async def save_message_pair(self, user_id: str, user_message: str, assistant_message: str, model_id: str = None) -> None:
+    async def save_message_pair(
+        self,
+        user_id: str,
+        user_message: str,
+        assistant_message: str,
+        model_id: str = None,
+    ) -> None:
         """
         Save a user-assistant message pair for web app memory context.
         This method ensures proper conversation flow and memory persistence.
         """
         try:
             user_id = str(user_id)
-            
+
             if self.db is None:
                 # Store in cache for non-database environments
                 if user_id not in self.user_data_cache:
                     self.user_data_cache[user_id] = {"contexts": []}
-                
-                self.user_data_cache[user_id]["contexts"].extend([
-                    {"role": "user", "content": user_message, "timestamp": datetime.now().isoformat()},
-                    {"role": "assistant", "content": assistant_message, "timestamp": datetime.now().isoformat(), "model_id": model_id}
-                ])
+
+                self.user_data_cache[user_id]["contexts"].extend(
+                    [
+                        {
+                            "role": "user",
+                            "content": user_message,
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                        {
+                            "role": "assistant",
+                            "content": assistant_message,
+                            "timestamp": datetime.now().isoformat(),
+                            "model_id": model_id,
+                        },
+                    ]
+                )
                 return
-            
+
             # Add both messages to the conversation history
             timestamp = datetime.now().isoformat()
             messages_to_add = [
+                {"role": "user", "content": user_message, "timestamp": timestamp},
                 {
-                    "role": "user", 
-                    "content": user_message, 
-                    "timestamp": timestamp
-                },
-                {
-                    "role": "assistant", 
-                    "content": assistant_message, 
+                    "role": "assistant",
+                    "content": assistant_message,
                     "timestamp": timestamp,
-                    "model_id": model_id or "unknown"
-                }
+                    "model_id": model_id or "unknown",
+                },
             ]
-            
+
             # Update database
             self.users_collection.update_one(
                 {"user_id": user_id},
                 {
                     "$push": {"contexts": {"$each": messages_to_add}},
-                    "$set": {"last_updated": datetime.now()}
+                    "$set": {"last_updated": datetime.now()},
                 },
-                upsert=True
+                upsert=True,
             )
-            
+
             # Update cache
             if user_id in self.user_data_cache:
-                self.user_data_cache[user_id]["contexts"] = self.user_data_cache[user_id].get("contexts", [])
+                self.user_data_cache[user_id]["contexts"] = self.user_data_cache[
+                    user_id
+                ].get("contexts", [])
                 self.user_data_cache[user_id]["contexts"].extend(messages_to_add)
-            
-            self.logger.debug(f"Saved message pair for user {user_id} with model {model_id}")
-            
+
+            self.logger.debug(
+                f"Saved message pair for user {user_id} with model {model_id}"
+            )
+
         except Exception as e:
             self.logger.error(f"Error saving message pair for user {user_id}: {str(e)}")
 
@@ -728,50 +763,56 @@ class UserDataManager:
         """
         try:
             user_id = str(user_id)
-            
+
             # Validate message format
-            if not isinstance(message, dict) or "role" not in message or "content" not in message:
-                self.logger.error(f"Invalid message format for user {user_id}: {message}")
+            if (
+                not isinstance(message, dict)
+                or "role" not in message
+                or "content" not in message
+            ):
+                self.logger.error(
+                    f"Invalid message format for user {user_id}: {message}"
+                )
                 return
-            
+
             # Add timestamp if not present
             if "timestamp" not in message:
                 message["timestamp"] = datetime.now().isoformat()
-            
+
             if self.db is None:
                 # Store in cache
                 if user_id not in self.user_data_cache:
                     self.user_data_cache[user_id] = {"contexts": []}
                 self.user_data_cache[user_id]["contexts"].append(message)
                 return
-            
+
             # Update database
             self.users_collection.update_one(
                 {"user_id": user_id},
                 {
                     "$push": {"contexts": message},
-                    "$set": {"last_updated": datetime.now()}
+                    "$set": {"last_updated": datetime.now()},
                 },
-                upsert=True
+                upsert=True,
             )
-            
+
             # Update cache
             if user_id in self.user_data_cache:
                 if "contexts" not in self.user_data_cache[user_id]:
                     self.user_data_cache[user_id]["contexts"] = []
                 self.user_data_cache[user_id]["contexts"].append(message)
-            
+
             self.logger.debug(f"Added message to context for user {user_id}")
-            
+
         except Exception as e:
             self.logger.error(f"Error adding message for user {user_id}: {str(e)}")
 
     async def save_message_pair(
-        self, 
-        user_id: str, 
-        user_message: str, 
-        assistant_message: str, 
-        model_id: str = "unknown"
+        self,
+        user_id: str,
+        user_message: str,
+        assistant_message: str,
+        model_id: str = "unknown",
     ) -> None:
         """
         Save a user-assistant conversation pair to the conversation history.
@@ -785,25 +826,23 @@ class UserDataManager:
         try:
             # Convert user_id to string for consistency
             user_id = str(user_id)
-            
+
             # Save user message
-            user_msg = {
-                "role": "user",
-                "content": user_message,
-                "model_used": model_id
-            }
+            user_msg = {"role": "user", "content": user_message, "model_used": model_id}
             self.add_message(user_id, user_msg)
-            
+
             # Save assistant message
             assistant_msg = {
-                "role": "assistant", 
+                "role": "assistant",
                 "content": assistant_message,
-                "model_used": model_id
+                "model_used": model_id,
             }
             self.add_message(user_id, assistant_msg)
-            
-            self.logger.info(f"Saved message pair for user {user_id} with model {model_id}")
-            
+
+            self.logger.info(
+                f"Saved message pair for user {user_id} with model {model_id}"
+            )
+
         except Exception as e:
             self.logger.error(f"Error saving message pair for user {user_id}: {str(e)}")
             raise

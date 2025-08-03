@@ -2,6 +2,7 @@ import asyncio
 import logging
 from datetime import datetime
 
+
 class ReminderManager:
     def __init__(self, bot):
         self.bot = bot
@@ -10,18 +11,14 @@ class ReminderManager:
         self.reminder_check_task = None
 
     async def set_reminder(self, user_id: int, time: datetime, message: str):
-        self.reminders[user_id] = {
-            'time': time,
-            'message': message
-        }
-        
+        self.reminders[user_id] = {"time": time, "message": message}
+
     async def check_reminders(self):
         now = datetime.now()
         for user_id, reminder in self.reminders.items():
-            if reminder['time'] <= now:
+            if reminder["time"] <= now:
                 await self.bot.send_message(
-                    chat_id=user_id,
-                    text=f"⏰ Reminder: {reminder['message']}"
+                    chat_id=user_id, text=f"⏰ Reminder: {reminder['message']}"
                 )
                 del self.reminders[user_id]
 

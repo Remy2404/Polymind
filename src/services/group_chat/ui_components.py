@@ -176,7 +176,8 @@ class GroupUIManager:
                 [
                     f"{self.EMOJIS['memory']} Shared Memory:",
                     f"  • Stored Items: {analytics.get('shared_memory_items', 0)}",
-                    "",                ]
+                    "",
+                ]
             )
 
         # Timeline

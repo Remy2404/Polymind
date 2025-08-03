@@ -504,30 +504,24 @@ class GeminiAPI:
         self, prompt: str, context: Optional[List[Dict]] = None
     ) -> Dict[str, Any]:
         """Generate content method for backward compatibility
-        Returns a dictionary with status and content for compatibility with existing tests"""
+        Returns a dictionary with status and content for compatibility with existing tests
+        """
         try:
             result = await self.process_multimodal_input(
                 text_prompt=prompt, context=context
             )
 
             if result.success:
-                return {
-                    "status": "success",
-                    "content": result.content
-                }
+                return {"status": "success", "content": result.content}
             else:
                 return {
                     "status": "error",
                     "content": f"Error: {result.error}",
-                    "error": result.error
+                    "error": result.error,
                 }
         except Exception as e:
             self.logger.error(f"Error in generate_content: {e}")
-            return {
-                "status": "error",
-                "content": f"Error: {str(e)}",
-                "error": str(e)
-            }
+            return {"status": "error", "content": f"Error: {str(e)}", "error": str(e)}
 
     # Legacy compatibility methods for existing code
     async def generate_response(

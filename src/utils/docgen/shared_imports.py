@@ -1,6 +1,7 @@
 """
 Shared imports and configuration for the docgen package.
 """
+
 import logging
 import os
 import warnings
@@ -19,6 +20,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 WEASYPRINT_AVAILABLE = False
 try:
     from weasyprint import HTML, CSS
+
     WEASYPRINT_AVAILABLE = True
 except ImportError as e:
     logging.warning(
@@ -48,6 +50,7 @@ try:
     from reportlab.lib import colors
     from reportlab.lib.units import inch, cm
     from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
+
     REPORTLAB_AVAILABLE = True
 except ImportError:
     logging.warning(

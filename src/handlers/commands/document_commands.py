@@ -2,8 +2,12 @@
 AI Document generation command handlers.
 Contains AI document generation, format selection, and callback handling.
 """
+
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+sys.path.insert(
+    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
@@ -13,7 +17,9 @@ from src.services.model_handlers.model_configs import ModelConfigurations
 
 
 class DocumentCommands:
-    def __init__(self, gemini_api, user_data_manager, telegram_logger, api_manager=None):
+    def __init__(
+        self, gemini_api, user_data_manager, telegram_logger, api_manager=None
+    ):
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
@@ -23,7 +29,10 @@ class DocumentCommands:
             self.api_manager = api_manager
         else:
             # Fallback: create a simple API manager with just Gemini
-            from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
+            from src.services.model_handlers.simple_api_manager import (
+                SuperSimpleAPIManager,
+            )
+
             self.api_manager = SuperSimpleAPIManager(gemini_api=gemini_api)
 
     async def generate_ai_document_command(
@@ -78,7 +87,9 @@ class DocumentCommands:
         # If prompt was provided, store it and ask for format selection
         prompt = " ".join(context.args)
         context.user_data["aidoc_prompt"] = prompt
-        context.user_data["aidoc_type"] = "article"  # Default type        # Ask for format
+        context.user_data["aidoc_type"] = (
+            "article"  # Default type        # Ask for format
+        )
         await self._show_ai_document_format_selection(update, context)
 
     async def _show_ai_document_format_selection(
@@ -87,42 +98,54 @@ class DocumentCommands:
         """Show document format selection buttons"""
         # Get available models from ModelConfigurations
         all_models = ModelConfigurations.get_all_models()
-        
+
         # Create model selection buttons dynamically
         model_buttons = []
         models_per_row = 2
         current_row = []
-        
+
         # Select top models for document generation (limit to avoid too many buttons)
         preferred_models = [
-            "gemini", "deepseek-r1-zero", "qwen3-32b", "llama4-maverick", 
-            "phi-4-reasoning-plus", "mistral-small-3.1", "deepcoder", "glm-z1-32b"
+            "gemini",
+            "deepseek-r1-zero",
+            "qwen3-32b",
+            "llama4-maverick",
+            "phi-4-reasoning-plus",
+            "mistral-small-3.1",
+            "deepcoder",
+            "glm-z1-32b",
         ]
-        
+
         for model_id in preferred_models:
             if model_id in all_models:
                 model_config = all_models[model_id]
-                button_text = f"{model_config.indicator_emoji} {model_config.display_name}"
-                current_row.append(
-                    InlineKeyboardButton(button_text, callback_data=f"aidoc_model_{model_id}")
+                button_text = (
+                    f"{model_config.indicator_emoji} {model_config.display_name}"
                 )
-                
+                current_row.append(
+                    InlineKeyboardButton(
+                        button_text, callback_data=f"aidoc_model_{model_id}"
+                    )
+                )
+
                 if len(current_row) == models_per_row:
                     model_buttons.append(current_row)
                     current_row = []
-        
+
         # Add remaining button if any
         if current_row:
             model_buttons.append(current_row)
-        
+
         # Add format selection buttons
         format_options = [
             [
                 InlineKeyboardButton("📄 PDF Format", callback_data="aidoc_format_pdf"),
-                InlineKeyboardButton("📝 DOCX Format", callback_data="aidoc_format_docx"),
+                InlineKeyboardButton(
+                    "📝 DOCX Format", callback_data="aidoc_format_docx"
+                ),
             ]
         ]
-        
+
         # Combine model buttons and format buttons
         all_buttons = model_buttons + format_options
         reply_markup = InlineKeyboardMarkup(all_buttons)
@@ -131,7 +154,7 @@ class DocumentCommands:
         model = context.user_data.get("aidoc_model", "gemini")
         doc_type = context.user_data.get("aidoc_type", "article")
         prompt = context.user_data.get("aidoc_prompt", "")
-        
+
         # Get model display name from configurations
         model_config = all_models.get(model)
         model_name = model_config.display_name if model_config else "Gemini 2.0 Flash"
@@ -183,7 +206,7 @@ class DocumentCommands:
         elif data.startswith("aidoc_format_"):
             # Get the selected format
             output_format = data.replace("aidoc_format_", "")
-            context.user_data["aidoc_format"] = output_format            # Generate the document
+            context.user_data["aidoc_format"] = output_format  # Generate the document
             await self._generate_and_send_ai_document(update, context)
 
         elif data.startswith("aidoc_model_"):
@@ -195,7 +218,9 @@ class DocumentCommands:
                 # Get model display name from configurations
                 all_models = ModelConfigurations.get_all_models()
                 model_config = all_models.get(current_model)
-                model_name = model_config.display_name if model_config else "Selected Model"
+                model_name = (
+                    model_config.display_name if model_config else "Selected Model"
+                )
                 await query.answer(f"{model_name} is already selected.")
                 return
 
@@ -248,7 +273,7 @@ class DocumentCommands:
         try:
             # Import AI document generator (ensure path is correct)
             from src.utils.docgen.document_ai_generator import AIDocumentGenerator
-            
+
             # Use the existing API manager instead of creating a new one
             ai_doc_generator = AIDocumentGenerator(api_manager=self.api_manager)
 
@@ -269,11 +294,13 @@ class DocumentCommands:
                     .strip()
                     .replace(" ", "_")
                 )
-                doc_io.name = f"{sanitized_title}_{datetime.now().strftime('%Y%m%d')}.{output_format}"                # Format the caption to escape ALL Markdown special characters
+                doc_io.name = f"{sanitized_title}_{datetime.now().strftime('%Y%m%d')}.{output_format}"  # Format the caption to escape ALL Markdown special characters
                 # Get model display name from configurations
                 all_models = ModelConfigurations.get_all_models()
                 model_config = all_models.get(model)
-                model_display_name = model_config.display_name if model_config else model.capitalize()
+                model_display_name = (
+                    model_config.display_name if model_config else model.capitalize()
+                )
 
                 # Make sure to escape ALL special characters for MarkdownV2
                 special_chars = [

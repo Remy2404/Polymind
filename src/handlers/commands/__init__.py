@@ -10,11 +10,11 @@ from .export_commands import EnhancedExportCommands
 from .open_web_app import OpenWebAppCommands
 
 __all__ = [
-    'BasicCommands',
-    'ImageCommands',
-    'ModelCommands',
-    'DocumentCommands',
-    'ExportCommands',
-    'CallbackHandlers',
-    'OpenWebAppCommands'
+    "BasicCommands",
+    "ImageCommands",
+    "ModelCommands",
+    "DocumentCommands",
+    "ExportCommands",
+    "CallbackHandlers",
+    "OpenWebAppCommands",
 ]
