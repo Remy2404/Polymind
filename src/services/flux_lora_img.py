@@ -7,7 +7,6 @@ import logging
 from dotenv import load_dotenv
 import base64
 import time
-import atexit
 
 # Load environment variables from .env
 load_dotenv()

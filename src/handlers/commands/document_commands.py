@@ -3,7 +3,8 @@ AI Document generation command handlers.
 Contains AI document generation, format selection, and callback handling.
 """
 
-import sys, os
+import sys
+import os
 
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -247,7 +248,7 @@ class DocumentCommands:
             await query.edit_message_text(
                 f"🤖 *Generating your {context.user_data.get('aidoc_type', 'article')}*\n\n"
                 f"I'm creating a {context.user_data.get('aidoc_format', 'pdf').upper()} document about:\n"
-                f"_\"{context.user_data.get('aidoc_prompt', '')}\"_\n\n"
+                f'_"{context.user_data.get("aidoc_prompt", "")}"_\n\n'
                 f"This may take a minute or two. Please wait...",
                 parse_mode="Markdown",
             )

@@ -2,7 +2,6 @@ import sys
 import os
 import asyncio
 import unittest
-from unittest.mock import MagicMock, patch
 import logging
 from io import BytesIO
 from PIL import Image

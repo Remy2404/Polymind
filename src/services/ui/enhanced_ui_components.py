@@ -4,11 +4,10 @@ Provides modern, interactive UI elements with rich functionality
 """
 
 import logging
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from datetime import datetime
-import json
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +178,7 @@ class EnhancedUIComponents:
 
         # Memory Statistics
         memory_stats = insights.get("memory_stats", {})
-        panel += f"📊 **Memory Analytics:**\n"
+        panel += "📊 **Memory Analytics:**\n"
         panel += f"• Total messages: {memory_stats.get('total_messages', 0)}\n"
         panel += (
             f"• Important conversations: {memory_stats.get('important_count', 0)}\n"
@@ -189,7 +188,7 @@ class EnhancedUIComponents:
         # Active Topics
         topics = insights.get("active_topics", [])
         if topics:
-            panel += f"🎯 **Active Topics:**\n"
+            panel += "🎯 **Active Topics:**\n"
             for i, topic in enumerate(topics[:5], 1):
                 panel += f"{i}. {topic}\n"
             panel += "\n"
@@ -197,7 +196,7 @@ class EnhancedUIComponents:
         # Smart Suggestions
         suggestions = insights.get("smart_suggestions", [])
         if suggestions:
-            panel += f"💡 **Smart Suggestions:**\n"
+            panel += "💡 **Smart Suggestions:**\n"
             for suggestion in suggestions[:3]:
                 panel += f"• {suggestion}\n"
             panel += "\n"
@@ -205,7 +204,7 @@ class EnhancedUIComponents:
         # Group Insights (if applicable)
         if insights.get("is_group"):
             group_info = insights.get("group_info", {})
-            panel += f"👥 **Group Insights:**\n"
+            panel += "👥 **Group Insights:**\n"
             panel += f"• Active members: {group_info.get('active_members', 0)}\n"
             panel += f"• Collaboration score: {group_info.get('collaboration_score', 'N/A')}\n"
             panel += (

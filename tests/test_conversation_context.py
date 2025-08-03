@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -65,22 +64,22 @@ async def test_conversation_context():
         test_user_id, max_messages=5, model="deepseek-r1-zero"
     )
 
-    print(f"\n=== CONVERSATION CONTEXT TEST ===")
+    print("\n=== CONVERSATION CONTEXT TEST ===")
     print(f"User ID: {test_user_id}")
     print(f"Retrieved {len(conversation_history)} conversation history messages")
 
     if conversation_history:
-        print(f"\n--- Conversation History ---")
+        print("\n--- Conversation History ---")
         for i, msg in enumerate(conversation_history):
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
-            print(f"{i+1}. [{role.upper()}]: {content[:100]}...")
+            print(f"{i + 1}. [{role.upper()}]: {content[:100]}...")
 
         # Test AI response generation with context
         test_prompt = "What is my name?"
-        print(f"\n--- Testing AI Response ---")
+        print("\n--- Testing AI Response ---")
         print(f"Prompt: {test_prompt}")
-        print(f"Model: deepseek-r1-zero")
+        print("Model: deepseek-r1-zero")
         print(f"Context messages: {len(conversation_history)}")
 
         # Generate response
@@ -102,7 +101,7 @@ async def test_conversation_context():
     else:
         print("\n❌ No conversation history found")
 
-    print(f"\n=== Test Complete ===")
+    print("\n=== Test Complete ===")
 
 
 if __name__ == "__main__":

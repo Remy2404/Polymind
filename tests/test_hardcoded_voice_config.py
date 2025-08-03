@@ -6,7 +6,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.services.media.voice_config import (
     VoiceConfig,
     load_config_from_env,
-    voice_config,
 )
 
 

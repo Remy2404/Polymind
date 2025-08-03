@@ -4,7 +4,6 @@ import re
 import traceback
 
 from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
-from src.services.model_handlers.model_configs import ModelConfigurations
 from src.services.gemini_api import GeminiAPI
 from src.services.openrouter_api import OpenRouterAPI
 from src.services.DeepSeek_R1_Distill_Llama_70B import DeepSeekLLM

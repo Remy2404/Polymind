@@ -1,4 +1,5 @@
-import sys, os
+import sys
+import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import asyncio
@@ -50,4 +51,4 @@ async def test_memory():
 
 if __name__ == "__main__":
     result = asyncio.run(test_memory())
-    print(f'\n🎯 Memory test {"PASSED" if result else "FAILED"}')
+    print(f"\n🎯 Memory test {'PASSED' if result else 'FAILED'}")

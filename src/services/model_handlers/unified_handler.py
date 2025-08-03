@@ -132,7 +132,7 @@ class UnifiedModelHandler(ModelHandler):
             self.logger.error(
                 f"Error generating response with {self.model_id}: {str(e)}"
             )
-            return f"❌ Error: Unable to generate response. Please try again."
+            return "❌ Error: Unable to generate response. Please try again."
 
     async def _handle_gemini_request(
         self,

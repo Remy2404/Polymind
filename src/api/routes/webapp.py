@@ -4,16 +4,10 @@ import hmac
 import hashlib
 import json
 import time
-import logging
 from datetime import datetime
 from urllib.parse import parse_qsl, unquote
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, Header, File, UploadFile
-import hmac
-import hashlib
-import time
-import json
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from src.bot.telegram_bot import TelegramBot
 

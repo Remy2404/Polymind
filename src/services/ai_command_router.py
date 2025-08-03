@@ -8,8 +8,7 @@ Designed specifically for resource-constrained environments:
 
 import logging
 import re
-import os
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, Any, Tuple, List
 from enum import Enum
 from dataclasses import dataclass
 

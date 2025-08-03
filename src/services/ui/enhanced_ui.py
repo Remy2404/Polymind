@@ -3,10 +3,9 @@ Enhanced UI/UX Components for Telegram Bot
 Provides rich interactive elements and modern formatting
 """
 
-import json
 import asyncio
-from typing import Dict, List, Optional, Any, Union
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from typing import Dict, List, Any
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
 import logging
@@ -47,7 +46,7 @@ class EnhancedUI:
             nav_row = [
                 InlineKeyboardButton("⬅️ Prev", callback_data="nav_prev"),
                 InlineKeyboardButton(
-                    f"1/{(len(options)-1)//3 + 1}", callback_data="nav_info"
+                    f"1/{(len(options) - 1) // 3 + 1}", callback_data="nav_info"
                 ),
                 InlineKeyboardButton("Next ➡️", callback_data="nav_next"),
             ]

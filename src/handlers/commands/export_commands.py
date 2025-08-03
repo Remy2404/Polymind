@@ -1,11 +1,6 @@
 import logging
 import io
-import json
 import re
-import os
-import tempfile
-from datetime import datetime
-from pathlib import Path
 
 # Telegram imports
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -632,8 +627,7 @@ class EnhancedExportCommands:
             ]
 
             await update.message.reply_text(
-                "📄 **Document Export Options**\n\n"
-                "Choose what you'd like to export:",
+                "📄 **Document Export Options**\n\nChoose what you'd like to export:",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown",
             )

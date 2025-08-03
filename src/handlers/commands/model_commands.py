@@ -6,9 +6,9 @@ Provides categorized model lists and easy switching between AI models.
 import os
 import sys
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, CallbackQueryHandler, CommandHandler
+from telegram.ext import ContextTypes
 
 # Import model configurations
 sys.path.insert(
@@ -17,7 +17,6 @@ sys.path.insert(
 
 from src.services.model_handlers.simple_api_manager import (
     SuperSimpleAPIManager,
-    APIProvider,
 )
 from src.services.user_data_manager import UserDataManager
 
@@ -225,7 +224,7 @@ class ModelCommands:
             if current_config.openrouter_key:
                 message += f"**OpenRouter Key:** `{current_config.openrouter_key}`\n"
 
-            message += f"\n✅ This model is currently active and ready to use!"
+            message += "\n✅ This model is currently active and ready to use!"
         else:
             message = f"❌ Current model '{current_model}' not found in configuration."
 
@@ -276,7 +275,7 @@ class ModelCommands:
         if model_config.openrouter_key:
             message += f"\n🔗 **OpenRouter Model:** `{model_config.openrouter_key}`\n"
 
-        message += f"\n🚀 **Ready to chat!** Send me any message to test the new model."
+        message += "\n🚀 **Ready to chat!** Send me any message to test the new model."
 
         # Add options to switch again or go back
         keyboard = [
@@ -382,7 +381,7 @@ class ModelCommands:
             if current_config.openrouter_key:
                 message += f"**OpenRouter Key:** `{current_config.openrouter_key}`\n"
 
-            message += f"\n✅ This model is ready to use! Send any message to chat."
+            message += "\n✅ This model is ready to use! Send any message to chat."
         else:
             message = f"❌ Current model '{current_model}' not found in configuration."
 
@@ -407,10 +406,8 @@ class ModelCommands:
                     model_line += f" (`{config.openrouter_key}`)"
                 message_parts.append(model_line)
 
-        message_parts.append(
-            f"\n💡 Use `/switchmodel` for interactive model selection."
-        )
-        message_parts.append(f"💡 Use `/currentmodel` to see your active model.")
+        message_parts.append("\n💡 Use `/switchmodel` for interactive model selection.")
+        message_parts.append("💡 Use `/currentmodel` to see your active model.")
 
         await update.message.reply_text("\n".join(message_parts), parse_mode="Markdown")
 

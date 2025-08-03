@@ -5,7 +5,6 @@ Provides basic application status information and health checks.
 
 import time
 import psutil
-import os
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 

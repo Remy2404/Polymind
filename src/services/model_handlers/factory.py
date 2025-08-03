@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Dict
 from services.model_handlers import ModelHandler
 from services.model_handlers.unified_handler import UnifiedModelHandler
 from services.model_handlers.model_configs import (
@@ -31,7 +31,6 @@ class ModelHandlerFactory:
         deepseek_api: DeepSeekLLM = None,
         openrouter_api: OpenRouterAPI = None,
     ) -> ModelHandler:
-
         if model_name not in cls._handlers:
             # Get model configuration
             model_config = cls._model_configs.get(model_name)

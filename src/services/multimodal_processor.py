@@ -6,8 +6,8 @@ Updated for new Gemini 2.0 Flash API
 
 import io
 import logging
-from typing import List, Dict, Any, Optional, Union
-from telegram import Update, Message, PhotoSize, Document, Audio, Video, Voice
+from typing import List, Dict, Any, Optional
+from telegram import Message, PhotoSize, Document, Audio, Video, Voice
 
 from src.services.gemini_api import (
     GeminiAPI,
@@ -16,7 +16,6 @@ from src.services.gemini_api import (
     ProcessingResult,
     create_image_input,
     create_document_input,
-    create_text_input,
 )
 
 

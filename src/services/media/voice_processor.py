@@ -1,15 +1,11 @@
-import io
 import os
 import logging
 import asyncio
 import tempfile
-from typing import Tuple, Optional, Union, Dict, Any, List
+from typing import Tuple, Optional, Dict, Any, List
 from enum import Enum
 from pydub import AudioSegment
 import uuid
-import json
-import soundfile as sf
-import numpy as np
 
 # Import Faster-Whisper (only engine we'll use)
 try:
@@ -213,7 +209,7 @@ class VoiceProcessor:
             # Ensure the engine is available
             if not self.available_engines.get(engine.value, False):
                 raise RuntimeError(
-                    f"Faster-Whisper engine not available. Please install it with: pip install faster-whisper"
+                    "Faster-Whisper engine not available. Please install it with: pip install faster-whisper"
                 )
 
             self.logger.info(f"Using speech engine: {engine.value}")
@@ -252,7 +248,7 @@ class VoiceProcessor:
 
         def _do_transcribe():
             try:
-                self.logger.info(f"🔍 STANDARD TRANSCRIPTION:")
+                self.logger.info("🔍 STANDARD TRANSCRIPTION:")
                 self.logger.info(f"  → Input language: {language}")
                 self.logger.info(f"  → Processed lang_code: {lang_code}")
                 self.logger.info(f"  → Audio file: {audio_file_path}")
@@ -277,7 +273,7 @@ class VoiceProcessor:
                 self.logger.info(f"  → Text: {text[:100]}...")
 
                 # Final logging
-                self.logger.info(f"🎯 FINAL STANDARD TRANSCRIPTION RESULT:")
+                self.logger.info("🎯 FINAL STANDARD TRANSCRIPTION RESULT:")
                 self.logger.info(f"  → Final language: {info.language}")
                 self.logger.info(
                     f"  → Final confidence: {info.language_probability:.3f}"

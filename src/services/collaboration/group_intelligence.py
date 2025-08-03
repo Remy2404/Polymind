@@ -4,13 +4,10 @@ Provides sophisticated group collaboration, shared memory, and team coordination
 """
 
 import logging
-import asyncio
-import json
-from typing import Dict, List, Any, Optional, Set, Tuple
+from typing import Dict, List, Any, Optional, Set
 from datetime import datetime, timedelta
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from collections import defaultdict
-import hashlib
 import time
 
 logger = logging.getLogger(__name__)
@@ -431,9 +428,9 @@ class GroupIntelligenceSystem:
             }
 
             # Generate recommendations
-            insights["recommendations"] = (
-                await self._generate_collaboration_recommendations(group_id, insights)
-            )
+            insights[
+                "recommendations"
+            ] = await self._generate_collaboration_recommendations(group_id, insights)
 
             return insights
 

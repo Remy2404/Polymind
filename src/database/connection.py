@@ -161,7 +161,7 @@ def get_database(
         except (ConnectionFailure, ServerSelectionTimeoutError) as e:
             if attempt < max_retries - 1:
                 logger.warning(
-                    f"Database connection attempt {attempt+1} failed: {str(e)}. Retrying in {current_retry_interval:.1f}s..."
+                    f"Database connection attempt {attempt + 1} failed: {str(e)}. Retrying in {current_retry_interval:.1f}s..."
                 )
                 time.sleep(current_retry_interval)
                 current_retry_interval *= 2  # Exponential backoff

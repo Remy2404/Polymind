@@ -1,6 +1,6 @@
 import unittest
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 from datetime import datetime, timedelta
 
 # Import the classes we're testing
@@ -542,7 +542,6 @@ class TestGroupChatFeatures(unittest.TestCase):
 
 async def run_tests():
     """Run all tests asynchronously."""
-    import sys
 
     # Create test suite
     test_classes = [
@@ -592,17 +591,17 @@ async def run_tests():
 
     # Print summary
     print("\n" + "=" * 50)
-    print(f"📊 Test Summary:")
+    print("📊 Test Summary:")
     print(f"   Total Tests: {total_tests}")
     print(f"   Passed: {passed_tests}")
     print(f"   Failed: {len(failed_tests)}")
 
     if failed_tests:
-        print(f"\n❌ Failed Tests:")
+        print("\n❌ Failed Tests:")
         for class_name, method_name, error in failed_tests:
             print(f"   {class_name}.{method_name}: {error}")
     else:
-        print(f"\n🎉 All tests passed!")
+        print("\n🎉 All tests passed!")
 
     return len(failed_tests) == 0
 

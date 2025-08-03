@@ -48,15 +48,15 @@ async def test_formatting():
             # Test the format_telegram_markdown function (this is the fix!)
             formatted = await formatter.format_telegram_markdown(test_case["text"])
 
-            print(f"   ✅ Telegram formatting successful")
+            print("   ✅ Telegram formatting successful")
             print(f"   📤 Output: {formatted[:80]}...")
 
             # Check if formatting was applied
             has_formatting = any(char in formatted for char in ["*", "_", "`"])
             if has_formatting:
-                print(f"   🎨 Markdown preserved in output")
+                print("   🎨 Markdown preserved in output")
             else:
-                print(f"   ⚠️  No markdown detected - converted to plain text")
+                print("   ⚠️  No markdown detected - converted to plain text")
 
         except Exception as e:
             print(f"   ❌ Error: {str(e)}")

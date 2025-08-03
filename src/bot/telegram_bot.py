@@ -135,7 +135,7 @@ class TelegramBot:
             except Exception as e:
                 if attempt < max_retries - 1:
                     self.logger.warning(
-                        f"Database connection attempt {attempt+1} failed, retrying..."
+                        f"Database connection attempt {attempt + 1} failed, retrying..."
                     )
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff

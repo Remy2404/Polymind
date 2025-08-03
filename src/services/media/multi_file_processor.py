@@ -11,7 +11,6 @@ import asyncio
 from services.gemini_api import GeminiAPI
 import mimetypes
 import re
-from utils.docgen.document_processor import DocumentProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -515,7 +514,7 @@ class MultiFileProcessor:
         """Process other file types"""
         filename = other_file.get("filename", "file")
         return {
-            filename: f"This file type is not directly supported for detailed analysis. I can try to analyze as text if you'd like."
+            filename: "This file type is not directly supported for detailed analysis. I can try to analyze as text if you'd like."
         }
 
     async def _compare_files(self, files: List[Dict], prompt: str) -> Dict[str, str]:

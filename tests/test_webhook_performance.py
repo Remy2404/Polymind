@@ -9,7 +9,6 @@ import asyncio
 import aiohttp
 import time
 import statistics
-import json
 from typing import List, Dict, Any
 from dataclasses import dataclass
 
@@ -313,7 +312,7 @@ async def main():
     args = parser.parse_args()
 
     async with WebhookPerformanceTester(args.url, args.token) as tester:
-        print(f"🚀 Starting performance test...")
+        print("🚀 Starting performance test...")
         print(f"   URL: {args.url}/webhook/{args.token}")
 
         if args.load_test:

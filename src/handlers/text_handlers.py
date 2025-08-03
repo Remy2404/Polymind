@@ -108,7 +108,7 @@ class TextHandler:
             # Use enhanced message for group processing
             if update.effective_chat.type in ["group", "supergroup"]:
                 message_text = enhanced_message_text
-                self.logger.info(f"Using enhanced group message for processing")
+                self.logger.info("Using enhanced group message for processing")
 
         # Extract quoted message context if this is a reply
         quoted_text, quoted_message_id = self.context_handler.extract_reply_context(
@@ -134,9 +134,11 @@ class TextHandler:
                     message_text = message_text.replace(bot_username, "").strip()
 
             # Extract any attached media files
-            has_attached_media, media_files, media_type = (
-                await self._extract_media_files(update, context)
-            )
+            (
+                has_attached_media,
+                media_files,
+                media_type,
+            ) = await self._extract_media_files(update, context)
 
             # Send initial "thinking" message and appropriate chat action
             thinking_message = await message.reply_text("Processing your request...🧠")
@@ -582,7 +584,7 @@ class TextHandler:
                         )
 
                     # Save to conversation history
-                    media_description = f"[Multiple files analysis request]"
+                    media_description = "[Multiple files analysis request]"
                     await self.conversation_manager.save_media_interaction(
                         user_id,
                         "multi_files",
@@ -830,21 +832,22 @@ class TextHandler:
 
         try:
             # Use automatic fallback system to generate response
-            response, actual_model_used = (
-                await self.model_fallback_handler.attempt_with_fallback(
-                    primary_model=preferred_model,
-                    model_handler_factory=ModelHandlerFactory,
-                    enhanced_prompt=enhanced_prompt_with_guidelines,
-                    history_context=history_context,
-                    max_tokens=max_tokens,
-                    model_timeout=model_timeout,
-                    message=message,
-                    is_complex_question=is_complex_question,
-                    quoted_text=quoted_text,
-                    gemini_api=self.gemini_api,
-                    openrouter_api=self.openrouter_api,
-                    deepseek_api=self.deepseek_api,
-                )
+            (
+                response,
+                actual_model_used,
+            ) = await self.model_fallback_handler.attempt_with_fallback(
+                primary_model=preferred_model,
+                model_handler_factory=ModelHandlerFactory,
+                enhanced_prompt=enhanced_prompt_with_guidelines,
+                history_context=history_context,
+                max_tokens=max_tokens,
+                model_timeout=model_timeout,
+                message=message,
+                is_complex_question=is_complex_question,
+                quoted_text=quoted_text,
+                gemini_api=self.gemini_api,
+                openrouter_api=self.openrouter_api,
+                deepseek_api=self.deepseek_api,
             )
 
             # Log response length and first part for debugging
@@ -919,9 +922,9 @@ class TextHandler:
             # Provide more specific timeout messages based on model and question type
             if "deepseek" in preferred_model.lower():
                 if is_complex_question:
-                    timeout_message = f"⏱️ DeepSeek R1 is thoroughly analyzing your complex question but needs more time. This usually means a very detailed response is being prepared. Please try again or break the question into smaller parts."
+                    timeout_message = "⏱️ DeepSeek R1 is thoroughly analyzing your complex question but needs more time. This usually means a very detailed response is being prepared. Please try again or break the question into smaller parts."
                 else:
-                    timeout_message = f"⏱️ DeepSeek R1 timed out. The model may be experiencing high load. Please try again in a moment."
+                    timeout_message = "⏱️ DeepSeek R1 timed out. The model may be experiencing high load. Please try again in a moment."
             else:
                 if is_complex_question:
                     timeout_message = "⏱️ Your complex question required more processing time than available. For detailed comparisons and analyses, try breaking it into smaller parts or asking again."

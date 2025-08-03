@@ -5,7 +5,6 @@ Shared imports and configuration for the docgen package.
 import logging
 import os
 import warnings
-from datetime import datetime
 from dotenv import load_dotenv
 
 # Suppress WeasyPrint GTK warnings on Windows

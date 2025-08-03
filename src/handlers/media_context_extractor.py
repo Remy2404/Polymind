@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 import re
 
 
@@ -49,7 +49,7 @@ class MediaContextExtractor:
             timestamp = img.get("timestamp", "")
             time_str = f" (shared on {timestamp})" if timestamp else ""
 
-            image_context += f"[Image {idx+1}]{time_str}: Caption: {img['caption']}\n"
+            image_context += f"[Image {idx + 1}]{time_str}: Caption: {img['caption']}\n"
             # Include more complete description for better context
             full_desc = img.get("description", "")
             # Use full description if it's reasonably sized, otherwise truncate

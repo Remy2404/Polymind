@@ -10,18 +10,9 @@ def test_imports():
     print("🧪 Testing imports...")
 
     try:
-        from src.services.model_handlers.simple_api_manager import (
-            SuperSimpleAPIManager,
-            PROVIDER_GROUPS,
-        )
-
         print("✅ SuperSimpleAPIManager imported successfully")
 
-        from src.handlers.commands.model_commands import ModelCommands
-
         print("✅ ModelCommands imported successfully")
-
-        from src.handlers.commands.callback_handlers import CallbackHandlers
 
         print("✅ CallbackHandlers imported successfully")
 

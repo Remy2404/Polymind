@@ -2,6 +2,7 @@
 """
 Test script to verify formatting improvements, especially dash cleanup
 """
+
 import sys
 import os
 
@@ -82,7 +83,7 @@ End of response.
     formatted2 = await formatter.format_response(
         test_response2, "test-user", "llama-3.3-8b"
     )
-    print(f"\n📋 Second test result:")
+    print("\n📋 Second test result:")
     print(formatted2)
 
 

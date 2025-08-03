@@ -62,7 +62,6 @@ class TestVoiceProcessor:
                 patch("pydub.AudioSegment.from_file") as mock_from_file,
                 patch("pydub.AudioSegment.export") as mock_export,
             ):
-
                 mock_audio = Mock()
                 mock_audio.high_pass_filter.return_value = mock_audio
                 mock_audio.normalize.return_value = mock_audio
@@ -133,7 +132,6 @@ class TestVoiceProcessor:
                         {"confidence": 0.8, "engine": "google"},
                     ),
                 ):
-
                     text, lang, metadata = await processor.transcribe(
                         temp_path, language="en-US"
                     )
@@ -315,7 +313,6 @@ class TestVoiceProcessorIntegration:
         # Mock a complete pipeline
         with patch.object(processor, "download_and_convert") as mock_download:
             with patch.object(processor, "transcribe") as mock_transcribe:
-
                 # Mock file paths
                 mock_download.return_value = ("temp.ogg", "temp.wav")
                 mock_transcribe.return_value = (

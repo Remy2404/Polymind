@@ -3,10 +3,9 @@ Test suite for the simplified voice processor (Faster-Whisper only)
 """
 
 import pytest
-import asyncio
 import tempfile
 import os
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import patch
 from src.services.media.voice_processor import (
     VoiceProcessor,
     SpeechEngine,

@@ -2,10 +2,9 @@
 Media analyzer module for processing different types of media in Telegram messages.
 """
 
-import io
 import os
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict
 from services.gemini_api import GeminiAPI
 
 logger = logging.getLogger(__name__)

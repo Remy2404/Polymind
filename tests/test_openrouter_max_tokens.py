@@ -38,7 +38,7 @@ async def test_openrouter_max_tokens():
         )
 
         if response:
-            logger.info(f"✅ Success! Received response with default max_tokens=4096")
+            logger.info("✅ Success! Received response with default max_tokens=4096")
             logger.info(f"Response length: {len(response)} characters")
             logger.info(f"Response preview: {response[:200]}...")
         else:
@@ -51,7 +51,7 @@ async def test_openrouter_max_tokens():
         )
 
         if response2:
-            logger.info(f"✅ Success! Received response with max_tokens=2048")
+            logger.info("✅ Success! Received response with max_tokens=2048")
             logger.info(f"Response length: {len(response2)} characters")
         else:
             logger.error("❌ Failed to get response with explicit max_tokens")

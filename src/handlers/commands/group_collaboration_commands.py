@@ -4,12 +4,10 @@ Provides team chat integration with shared memory and collaborative features
 """
 
 import logging
-import asyncio
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
-import time
 
 logger = logging.getLogger(__name__)
 
@@ -80,14 +78,14 @@ class GroupCollaborationCommands:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        session_text = f"🚀 **Group Collaboration Session Started!**\n\n"
+        session_text = "🚀 **Group Collaboration Session Started!**\n\n"
         session_text += f"**Session ID:** `{session_data['session_id']}`\n"
         session_text += f"**Initiator:** {update.effective_user.first_name}\n"
 
         if topic:
             session_text += f"**Topic:** {topic}\n"
 
-        session_text += f"\n💡 **Features Available:**\n"
+        session_text += "\n💡 **Features Available:**\n"
         session_text += "• 🧠 Shared memory across all participants\n"
         session_text += "• 📝 Collaborative notes and action items\n"
         session_text += "• 🔍 Intelligent context sharing\n"
@@ -145,10 +143,10 @@ class GroupCollaborationCommands:
             )
 
             # Format comprehensive summary
-            summary_text = f"📊 **Group Conversation Summary**\n\n"
+            summary_text = "📊 **Group Conversation Summary**\n\n"
 
             # Basic metrics
-            summary_text += f"📈 **Activity (Last 7 Days):**\n"
+            summary_text += "📈 **Activity (Last 7 Days):**\n"
             summary_text += f"• Messages: {activity_summary.get('total_messages', 0)}\n"
             summary_text += (
                 f"• Active participants: {activity_summary.get('active_users', 0)}\n"
@@ -161,7 +159,7 @@ class GroupCollaborationCommands:
 
             # Message types breakdown
             if activity_summary.get("message_types"):
-                summary_text += f"\n📋 **Content Types:**\n"
+                summary_text += "\n📋 **Content Types:**\n"
                 for msg_type, count in activity_summary["message_types"].items():
                     type_emoji = {
                         "text": "💬",
@@ -176,13 +174,13 @@ class GroupCollaborationCommands:
 
             # Collaborative notes
             if group_context.get("collaborative_notes"):
-                summary_text += f"\n📝 **Recent Collaborative Notes:**\n"
+                summary_text += "\n📝 **Recent Collaborative Notes:**\n"
                 for note in group_context["collaborative_notes"][-3:]:
                     summary_text += f"• {note.get('content', '')[:100]}...\n"
 
             # Active topics
             if group_context.get("active_topics"):
-                summary_text += f"\n🎯 **Active Topics:**\n"
+                summary_text += "\n🎯 **Active Topics:**\n"
                 for topic in group_context["active_topics"][-5:]:
                     summary_text += f"• {topic}\n"
 
@@ -263,7 +261,7 @@ class GroupCollaborationCommands:
                 return
 
             # Format memory results
-            memory_text = f"🧠 **Group Shared Memory**\n\n"
+            memory_text = "🧠 **Group Shared Memory**\n\n"
             memory_text += f"🔍 **Search:** {query}\n"
             memory_text += f"📊 **Found {len(relevant_memories)} relevant items**\n\n"
 
@@ -362,7 +360,7 @@ class GroupCollaborationCommands:
             )
 
             # Create confirmation message
-            confirmation_text = f"✅ **Note Added to Group Memory!**\n\n"
+            confirmation_text = "✅ **Note Added to Group Memory!**\n\n"
             confirmation_text += f"📝 **Note:** {note_content}\n"
             confirmation_text += (
                 f"👤 **Added by:** {update.effective_user.first_name}\n"
@@ -435,7 +433,7 @@ class GroupCollaborationCommands:
                 group_id, days=30
             )
 
-            participants_text = f"👥 **Group Participants & Stats**\n\n"
+            participants_text = "👥 **Group Participants & Stats**\n\n"
             participants_text += f"📊 **Total Participants:** {len(participants)}\n"
             participants_text += f"📈 **Active in Last 30 Days:** {activity_summary.get('active_users', 0)}\n\n"
 
@@ -470,7 +468,7 @@ class GroupCollaborationCommands:
                 )
 
             # Add collaboration insights
-            participants_text += f"\n🤝 **Collaboration Insights:**\n"
+            participants_text += "\n🤝 **Collaboration Insights:**\n"
 
             if activity_summary.get("total_messages", 0) > 100:
                 participants_text += (
@@ -485,7 +483,7 @@ class GroupCollaborationCommands:
 
             if len(participants) > 1:
                 participants_text += (
-                    f"• Multi-participant discussions enhance AI context\n"
+                    "• Multi-participant discussions enhance AI context\n"
                 )
 
             # Action buttons
@@ -572,7 +570,7 @@ class GroupCollaborationCommands:
                 return
 
             # Format search results
-            results_text = f"🔍 **Group Search Results**\n\n"
+            results_text = "🔍 **Group Search Results**\n\n"
             results_text += f"**Query:** {search_query}\n"
             results_text += (
                 f"**Found:** {len(relevant_memories)} relevant conversations\n\n"
@@ -678,7 +676,7 @@ class GroupCollaborationCommands:
         prompt_text = (
             "📝 **Add Collaborative Note**\n\n"
             "Please reply to this message with your note, or use:\n"
-            f"`/addnote Your note content here`\n\n"
+            "`/addnote Your note content here`\n\n"
             "Your note will be shared with all group members!"
         )
 
@@ -694,7 +692,7 @@ class GroupCollaborationCommands:
     async def _show_group_summary_menu(self, query, group_id: str):
         """Show group summary options"""
         menu_text = (
-            "📊 **Group Summary Options**\n\n" "Choose what type of summary you'd like:"
+            "📊 **Group Summary Options**\n\nChoose what type of summary you'd like:"
         )
 
         keyboard = [
@@ -725,7 +723,7 @@ class GroupCollaborationCommands:
     async def _show_memory_interface(self, query, group_id: str):
         """Show memory interface options"""
         interface_text = (
-            "🧠 **Group Memory Interface**\n\n" "Explore shared group knowledge:"
+            "🧠 **Group Memory Interface**\n\nExplore shared group knowledge:"
         )
 
         keyboard = [
@@ -763,7 +761,7 @@ class GroupCollaborationCommands:
                 )
             )
 
-            details_text = f"👥 **Group Participants Details**\n\n"
+            details_text = "👥 **Group Participants Details**\n\n"
             details_text += f"**Total Members:** {len(participants)}\n\n"
 
             # Get recent activity for each participant

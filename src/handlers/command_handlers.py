@@ -1,4 +1,5 @@
-import sys, os
+import sys
+import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from telegram import (
@@ -18,14 +19,13 @@ import logging
 from services.flux_lora_img import (
     FluxLoraImageGenerator as flux_lora_image_generator,
 )
-import time, asyncio
+import time
+import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from cachetools import TTLCache
 from typing import Optional
-from telegram.constants import ChatAction
 from PIL import Image
-import io
 
 # Import all command modules
 from .commands import (
@@ -37,7 +37,6 @@ from .commands import (
     CallbackHandlers,
     OpenWebAppCommands,
 )
-from src.services.group_chat.integration import GroupChatIntegration
 
 
 @dataclass

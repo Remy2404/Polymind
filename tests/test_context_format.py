@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -37,7 +36,7 @@ async def test_openrouter_context_format():
 
     print(f"Context messages: {len(sample_context)}")
     for i, msg in enumerate(sample_context):
-        print(f"{i+1}. [{msg['role'].upper()}]: {msg['content']}")
+        print(f"{i + 1}. [{msg['role'].upper()}]: {msg['content']}")
 
     print(f"\nNew prompt: {test_prompt}")
 

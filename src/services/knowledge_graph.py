@@ -1,17 +1,16 @@
 import logging
 import networkx as nx
-from typing import Dict, List, Any, Optional, Set, Tuple
+from typing import Dict, List, Any, Optional
 import json
 import asyncio
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 import aiofiles
 import os
 import uuid
 from collections import defaultdict
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 
 # Knowledge graph functionality - optimized for production with minimal dependencies
 # Uses only regex patterns for fast, lightweight entity and relationship extraction
@@ -160,9 +159,9 @@ class KnowledgeGraph:
 
                         self.graph.nodes[entity_id]["documents"] = docs
                         self.graph.nodes[entity_id]["contexts"] = contexts
-                        self.graph.nodes[entity_id][
-                            "last_seen"
-                        ] = datetime.now().isoformat()
+                        self.graph.nodes[entity_id]["last_seen"] = (
+                            datetime.now().isoformat()
+                        )
 
                     # Connect document to entity
                     self.graph.add_edge(
@@ -757,9 +756,9 @@ class KnowledgeGraph:
                             last_updated=datetime.now().isoformat(),
                         )
                     else:
-                        self.graph.nodes[conversation_context_id][
-                            "last_updated"
-                        ] = datetime.now().isoformat()
+                        self.graph.nodes[conversation_context_id]["last_updated"] = (
+                            datetime.now().isoformat()
+                        )
 
                     # Connect message to conversation context
                     self.graph.add_edge(

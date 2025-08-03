@@ -1,6 +1,6 @@
 import logging
-from typing import Tuple, Optional, Dict, Any
-from telegram import Update, Message
+from typing import Tuple, Optional
+from telegram import Message
 
 
 class MessageContextHandler:

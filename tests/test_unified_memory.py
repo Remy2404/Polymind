@@ -73,7 +73,7 @@ async def test_unified_memory_context():
 
         for i, message in enumerate(history):
             logger.info(
-                f"  Message {i+1}: {message.get('role', 'unknown')} - {message.get('content', '')[:50]}..."
+                f"  Message {i + 1}: {message.get('role', 'unknown')} - {message.get('content', '')[:50]}..."
             )
 
             if text_message in message.get("content", ""):

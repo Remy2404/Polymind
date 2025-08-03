@@ -65,4 +65,5 @@ dependencies = [
     "fastapi-msgspec>=0.1.0",
     "docxtpl>=0.20.0",
     "spire-doc>=13.4.6",
+    "ruff>=0.12.7",
 ]

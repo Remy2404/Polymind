@@ -6,7 +6,6 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from src.services.media.voice_processor import create_voice_processor, SpeechEngine
-from src.services.media.voice_config import VoiceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +71,12 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
             language_hint = context.user_data.get("language", "en-US")
 
             # Get best transcription with fallback
-            text, detected_lang, metadata = (
-                await voice_processor.get_best_transcription(
-                    wav_path, language=language_hint, confidence_threshold=0.6
-                )
+            (
+                text,
+                detected_lang,
+                metadata,
+            ) = await voice_processor.get_best_transcription(
+                wav_path, language=language_hint, confidence_threshold=0.6
             )
 
             # Update processing message
@@ -203,7 +204,7 @@ async def handle_voice_settings_command(
 
         stats = voice_stats.get_stats()
         if stats["total_processed"] > 0:
-            settings_msg += f"**Statistics:**\\n"
+            settings_msg += "**Statistics:**\\n"
             settings_msg += f"• Total Processed: {stats['total_processed']}\\n"
 
             if stats["success_rate"]:

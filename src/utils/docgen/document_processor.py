@@ -157,7 +157,7 @@ class DocumentProcessor:
             # Enhanced prompt for multiple documents
             enhanced_prompt = f"""
             Analyze these {len(media_inputs)} documents:
-            Files: {', '.join(file_names)}
+            Files: {", ".join(file_names)}
             
             Provide:
             1. **Individual Summaries**: Brief summary of each document

@@ -9,8 +9,7 @@ import asyncio
 import base64
 import io
 import os
-import time
-from typing import Optional, List, Dict, Any, Union, BinaryIO
+from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass
 from enum import Enum
 
@@ -18,9 +17,8 @@ import google.generativeai as genai
 from google.api_core.exceptions import (
     ResourceExhausted,
     ServiceUnavailable,
-    GoogleAPIError,
 )
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 
 from src.services.rate_limiter import RateLimiter
 from dotenv import load_dotenv

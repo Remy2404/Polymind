@@ -8,7 +8,6 @@ import logging
 from fastapi import APIRouter, Request, BackgroundTasks, Depends
 from fastapi_msgspec.responses import MsgSpecJSONResponse
 from fastapi_msgspec.routing import MsgSpecRoute
-from starlette.requests import ClientDisconnect
 import msgspec.json
 from msgspec import Struct
 

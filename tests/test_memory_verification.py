@@ -2,6 +2,7 @@
 """
 Simple test to check memory context behavior in logs
 """
+
 import asyncio
 import logging
 import sys
@@ -28,7 +29,7 @@ async def test_memory_context_simple():
         # Expected conversation ID format (should be the same for both voice and text)
         expected_conversation_id = f"user_{test_user_id}_model_{test_model}"
 
-        logger.info(f"📊 Memory Context Analysis:")
+        logger.info("📊 Memory Context Analysis:")
         logger.info(f"  User ID: {test_user_id}")
         logger.info(f"  Model: {test_model}")
         logger.info(f"  Expected unified conversation ID: {expected_conversation_id}")

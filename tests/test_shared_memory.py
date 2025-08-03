@@ -23,9 +23,6 @@ async def test_shared_memory_context():
         from src.handlers.message_handlers import MessageHandlers
         from src.handlers.text_handlers import TextHandler
         from src.services.rate_limiter import RateLimiter
-        from src.services.gemini_api import GeminiAPI
-        from src.services.user_data_manager import UserDataManager
-        from src.utils.log.telegramlog import TelegramLogger
 
         # Mock some dependencies
         logger.info("Creating mock dependencies...")

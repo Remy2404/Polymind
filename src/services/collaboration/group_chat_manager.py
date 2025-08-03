@@ -4,15 +4,12 @@ Enables seamless team collaboration with shared memory, intelligent context, and
 """
 
 import logging
-import asyncio
-import json
-from typing import Dict, List, Any, Optional, Set, Union
-from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import ContextTypes
 from telegram.constants import ChatType
 import time
-import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +294,7 @@ class GroupChatManager:
             summary_text = "📊 **Group Conversation Summary**\n\n"
 
             # Activity metrics
-            summary_text += f"📈 **Activity Metrics:**\n"
+            summary_text += "📈 **Activity Metrics:**\n"
             summary_text += (
                 f"• Total messages: {activity_summary.get('total_messages', 0)}\n"
             )
@@ -308,7 +305,7 @@ class GroupChatManager:
 
             # Key topics
             if self.knowledge_base.get(group_id):
-                summary_text += f"🎯 **Key Topics Discussed:**\n"
+                summary_text += "🎯 **Key Topics Discussed:**\n"
                 for topic in list(self.knowledge_base[group_id].keys())[:5]:
                     summary_text += f"• {topic}\n"
                 summary_text += "\n"
@@ -318,7 +315,7 @@ class GroupChatManager:
                 msg for msg in recent_memory if msg.get("importance", 0) > 0.7
             ]
             if important_messages:
-                summary_text += f"⭐ **Recent Highlights:**\n"
+                summary_text += "⭐ **Recent Highlights:**\n"
                 for msg in important_messages[:3]:
                     content = msg.get("content", "")[:100]
                     summary_text += f"• {content}...\n"
@@ -329,7 +326,7 @@ class GroupChatManager:
                 collab_context = self.conversation_manager.collaborative_contexts[
                     group_id
                 ]
-                summary_text += f"🤝 **Collaboration Status:**\n"
+                summary_text += "🤝 **Collaboration Status:**\n"
                 summary_text += (
                     f"• Active notes: {len(collab_context.get('notes', []))}\n"
                 )
@@ -431,7 +428,7 @@ class GroupChatManager:
         )
 
         # Notify group
-        note_message = f"📝 **Collaborative Note Added**\n\n"
+        note_message = "📝 **Collaborative Note Added**\n\n"
         note_message += f"👤 By: User {user_id}\n"
         note_message += f"📄 Content: {note_content}\n"
         note_message += f"🕐 Time: {datetime.now().strftime('%H:%M')}"
@@ -485,7 +482,7 @@ class GroupChatManager:
         self.active_discussions[discussion_id] = discussion_info
 
         # Create discussion announcement
-        discussion_message = f"🗣️ **New Discussion Started**\n\n"
+        discussion_message = "🗣️ **New Discussion Started**\n\n"
         discussion_message += f"📋 **Topic:** {topic}\n"
         discussion_message += f"👤 **Started by:** User {user_id}\n"
         discussion_message += f"🕐 **Time:** {datetime.now().strftime('%H:%M')}\n\n"
@@ -664,7 +661,7 @@ class GroupChatManager:
     def _create_group_welcome_message(self, group_info: Dict[str, Any]) -> str:
         """Create a rich welcome message for newly initialized groups"""
 
-        message = f"🎉 **Welcome to Enhanced Group AI!**\n\n"
+        message = "🎉 **Welcome to Enhanced Group AI!**\n\n"
         message += f"👥 **Group:** {group_info['group_name']}\n"
         message += f"👤 **Initialized by:** User {group_info['initialized_by']}\n"
         message += f"📊 **Members:** {group_info['member_count']}\n\n"
@@ -859,7 +856,6 @@ class GroupChatManager:
             intent["type"] in ["information_sharing", "decision_making"]
             and len(message_text) > 50
         ):
-
             # Simple keyword extraction (can be enhanced with NLP)
             keywords = []
             important_words = [

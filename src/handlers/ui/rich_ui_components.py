@@ -5,10 +5,9 @@ Provides interactive menus, progress indicators, and smart suggestions
 
 import logging
 import asyncio
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
-from datetime import datetime
 import time
 
 logger = logging.getLogger(__name__)
@@ -303,7 +302,7 @@ class InteractiveMenus:
         if current_page > 0:
             nav_buttons.append(
                 InlineKeyboardButton(
-                    "⬅️ Previous", callback_data=f"model_page_{current_page-1}"
+                    "⬅️ Previous", callback_data=f"model_page_{current_page - 1}"
                 )
             )
 
@@ -311,14 +310,14 @@ class InteractiveMenus:
         total_pages = (len(models) - 1) // per_page + 1
         nav_buttons.append(
             InlineKeyboardButton(
-                f"📄 {current_page+1}/{total_pages}", callback_data="page_info"
+                f"📄 {current_page + 1}/{total_pages}", callback_data="page_info"
             )
         )
 
         if end_idx < len(models):
             nav_buttons.append(
                 InlineKeyboardButton(
-                    "➡️ Next", callback_data=f"model_page_{current_page+1}"
+                    "➡️ Next", callback_data=f"model_page_{current_page + 1}"
                 )
             )
 
@@ -527,7 +526,7 @@ class RichUIManager:
         participants = group_context.get("participants", [])
         recent_activity = group_context.get("recent_activity", [])
 
-        status_text = f"👥 **Group Collaboration Panel**\n\n"
+        status_text = "👥 **Group Collaboration Panel**\n\n"
         status_text += f"**Participants:** {len(participants)}\n"
         status_text += f"**Recent Activity:** {len(recent_activity)} messages\n"
 

@@ -1,10 +1,7 @@
 import io
-import os
 import logging
-import asyncio
-import tempfile
-from typing import List, Optional, Union, Tuple, Dict, Any
-from PIL import Image, UnidentifiedImageError
+from typing import Optional, Union
+from PIL import Image
 import re
 
 

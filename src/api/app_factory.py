@@ -79,7 +79,6 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
 
 
 def create_application():
-
     os.environ["DEV_SERVER"] = "uvicorn"
 
     bot = TelegramBot()

@@ -53,7 +53,7 @@ def test_model_configurations():
         # Specific test for llama-3.3-8b to see its OpenRouter mapping
         if "llama-3.3-8b" in all_models:
             llama_config = all_models["llama-3.3-8b"]
-            logger.info(f"🦙 Llama 3.3 8B configuration:")
+            logger.info("🦙 Llama 3.3 8B configuration:")
             logger.info(f"  - OpenRouter key: {llama_config.openrouter_model_key}")
             logger.info(f"  - Provider: {llama_config.provider.value}")
             logger.info(

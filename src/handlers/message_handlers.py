@@ -186,11 +186,11 @@ class MessageHandlers:
                 role = msg.get("role", "unknown")
                 content = msg.get("content", "")
                 preview = content[:100] + ("..." if len(content) > 100 else "")
-                self.logger.info(f"   └─ Message {i+1} [{role.upper()}]: {preview}")
+                self.logger.info(f"   └─ Message {i + 1} [{role.upper()}]: {preview}")
 
                 # Highlight name mentions
                 if "name" in content.lower():
-                    self.logger.info(f"   └─ ⭐ Contains name/identity information!")
+                    self.logger.info("   └─ ⭐ Contains name/identity information!")
 
             # Log the current prompt for reference
             self.logger.info(f"   └─ Current prompt: {prompt[:100]}...")
@@ -332,12 +332,12 @@ class MessageHandlers:
                 and chat
                 and chat.type in ["group", "supergroup"]
             ):
-
                 try:
-                    enhanced_message_text, group_metadata = (
-                        await self._group_chat_integration.process_group_message(
-                            update, context, message_text
-                        )
+                    (
+                        enhanced_message_text,
+                        group_metadata,
+                    ) = await self._group_chat_integration.process_group_message(
+                        update, context, message_text
                     )
                     self.logger.info(f"Enhanced group message for chat {chat.id}")
                 except Exception as e:
@@ -380,10 +380,11 @@ class MessageHandlers:
                             )
                         )
                         if should_route:
-                            intent, confidence = (
-                                await self.ai_command_router.detect_intent(
-                                    message_text, has_attached_media
-                                )
+                            (
+                                intent,
+                                confidence,
+                            ) = await self.ai_command_router.detect_intent(
+                                message_text, has_attached_media
                             )
                             self.logger.info(
                                 f"Routing message to command: {intent.value} (confidence: {confidence:.2f})"
@@ -509,7 +510,7 @@ class MessageHandlers:
 
                     # Log successful processing
                     self.telegram_logger.log_message(
-                        f"Image processed successfully", user_id
+                        "Image processed successfully", user_id
                     )
 
                 else:
@@ -590,10 +591,11 @@ class MessageHandlers:
 
             # Use enhanced VoiceProcessor for downloading and converting voice file
             voice_file = await context.bot.get_file(update.message.voice.file_id)
-            ogg_file_path, wav_file_path = (
-                await self.voice_processor.download_and_convert(
-                    voice_file, str(user_id)
-                )
+            (
+                ogg_file_path,
+                wav_file_path,
+            ) = await self.voice_processor.download_and_convert(
+                voice_file, str(user_id)
             )
 
             # Use enhanced VoiceProcessor for transcribing the voice file
@@ -601,16 +603,18 @@ class MessageHandlers:
                 self.logger.info(
                     f"🎤 Enhanced voice transcription starting for language: {lang}"
                 )
-                text, recognition_language, metadata = (
-                    await self.voice_processor.get_best_transcription(
-                        wav_file_path, language=lang, confidence_threshold=0.6
-                    )
+                (
+                    text,
+                    recognition_language,
+                    metadata,
+                ) = await self.voice_processor.get_best_transcription(
+                    wav_file_path, language=lang, confidence_threshold=0.6
                 )
                 engine_used = metadata.get("engine", "unknown")
                 confidence = metadata.get("confidence", 0.0)
 
                 # Simplified English-only logging
-                self.logger.info(f"🔍 VOICE TRANSCRIPTION RESULT:")
+                self.logger.info("🔍 VOICE TRANSCRIPTION RESULT:")
                 self.logger.info(f"  → Engine: {engine_used}")
                 self.logger.info(f"  → Confidence: {confidence:.3f}")
                 self.logger.info(f"  → Text length: {len(text)} chars")

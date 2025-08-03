@@ -3,7 +3,8 @@ Callback query handler for centralized callback routing.
 Routes callback queries to appropriate command handlers.
 """
 
-import sys, os
+import sys
+import os
 
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -95,7 +96,7 @@ class CallbackHandlers:
             ):
                 message += f"**OpenRouter Key:** `{current_config.openrouter_key}`\n"
 
-            message += f"\n✅ This model is currently active and ready to use!"
+            message += "\n✅ This model is currently active and ready to use!"
         else:
             message = f"❌ Current model '{current_model}' not found in configuration."
 

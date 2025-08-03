@@ -63,23 +63,23 @@ async def test_improved_detection():
         # Special attention to model switching
         if expected == CommandIntent.SWITCH_MODEL:
             if intent == CommandIntent.SWITCH_MODEL:
-                print(f"         🔄 Model switching correctly detected!")
+                print("         🔄 Model switching correctly detected!")
             else:
-                print(f"         ⚠️  Model switching MISSED - this was the main issue!")
+                print("         ⚠️  Model switching MISSED - this was the main issue!")
 
     accuracy = (correct / total) * 100
     print("\n" + "=" * 60)
-    print(f"📊 IMPROVED DETECTION RESULTS:")
+    print("📊 IMPROVED DETECTION RESULTS:")
     print(f"   Total Tests: {total}")
     print(f"   Correct: {correct}")
     print(f"   Accuracy: {accuracy:.1f}%")
 
     if accuracy >= 80:
-        print(f"   🎉 EXCELLENT! Improvements working well")
+        print("   🎉 EXCELLENT! Improvements working well")
     elif accuracy >= 70:
-        print(f"   ✅ GOOD! Significant improvement")
+        print("   ✅ GOOD! Significant improvement")
     else:
-        print(f"   ⚠️  Still needs work")
+        print("   ⚠️  Still needs work")
 
 
 if __name__ == "__main__":

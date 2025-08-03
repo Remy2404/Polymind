@@ -2,6 +2,7 @@
 """
 Test script for the simplified voice processor
 """
+
 import sys
 import os
 
@@ -9,7 +10,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 import asyncio
 from src.services.media.voice_processor import (
-    VoiceProcessor,
     SpeechEngine,
     create_voice_processor,
     get_supported_languages,

@@ -4,7 +4,7 @@ This reduces file complexity and makes adding new APIs easy
 """
 
 import logging
-from typing import Dict, Optional, List, Any, Union
+from typing import Dict, Optional, List, Any
 from enum import Enum
 from dataclasses import dataclass
 from services.gemini_api import GeminiAPI

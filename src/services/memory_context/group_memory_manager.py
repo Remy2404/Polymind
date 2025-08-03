@@ -3,15 +3,11 @@
 Provides shared memory for team collaboration with contextual awareness
 """
 
-import json
-import asyncio
 import logging
-from typing import Dict, List, Optional, Any, Set, Tuple
+from typing import Dict, List, Optional, Any, Set
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
 from dataclasses import dataclass, asdict
-from pathlib import Path
-import pickle
 import hashlib
 import sys
 import os
@@ -21,10 +17,7 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 from database.connection import get_database
-from pymongo.database import Database
 
-from ..user_data_manager import UserDataManager
-from ..utils import Utils
 
 logger = logging.getLogger(__name__)
 

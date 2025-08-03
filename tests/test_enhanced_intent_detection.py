@@ -75,7 +75,7 @@ async def test_enhanced_intent_detection():
             # Special note for educational content
             if expected_intent == CommandIntent.EDUCATIONAL:
                 if detected_intent == CommandIntent.EDUCATIONAL:
-                    print(f"         🎓 Educational content correctly identified!")
+                    print("         🎓 Educational content correctly identified!")
                 else:
                     print(
                         f"         ⚠️  Educational content missed - detected as {detected_intent.value}"
@@ -90,17 +90,17 @@ async def test_enhanced_intent_detection():
     # Results summary
     accuracy = (correct_predictions / total_tests) * 100
     print("=" * 70)
-    print(f"📊 RESULTS SUMMARY")
+    print("📊 RESULTS SUMMARY")
     print(f"   Total Tests: {total_tests}")
     print(f"   Correct Predictions: {correct_predictions}")
     print(f"   Accuracy: {accuracy:.1f}%")
 
     if accuracy >= 80:
-        print(f"   🎉 EXCELLENT! Enhanced detection working well")
+        print("   🎉 EXCELLENT! Enhanced detection working well")
     elif accuracy >= 70:
-        print(f"   ✅ GOOD! Enhanced detection shows improvement")
+        print("   ✅ GOOD! Enhanced detection shows improvement")
     else:
-        print(f"   ⚠️  NEEDS IMPROVEMENT: Consider tuning parameters")
+        print("   ⚠️  NEEDS IMPROVEMENT: Consider tuning parameters")
 
     print("\n🎓 Educational Detection Features:")
     print("   • Dedicated EDUCATIONAL intent for tutorials/guides")
@@ -139,9 +139,7 @@ async def test_routing_behavior():
             if not should_route
             else f"   Should Route: {'YES' if should_route else 'NO'} ❌"
         )
-        print(
-            f"   ✓ Educational content correctly flows to normal conversation handler"
-        )
+        print("   ✓ Educational content correctly flows to normal conversation handler")
         print()
 
 

@@ -2,9 +2,7 @@
 Utility functions for text and media processing.
 """
 
-import os
 import logging
-from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 

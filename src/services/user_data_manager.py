@@ -4,8 +4,6 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Keeping this in case it's needed in future extensions
-from pymongo.collection import Collection
-from database.connection import get_database
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 import logging

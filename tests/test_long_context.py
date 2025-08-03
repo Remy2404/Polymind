@@ -2,6 +2,7 @@
 """
 Test script to verify that all models can generate long context messages
 """
+
 import sys
 import os
 
@@ -78,17 +79,17 @@ async def test_long_context_generation():
             )
 
             if response and not response.startswith("❌"):
-                print(f"   ✅ Response generated successfully!")
+                print("   ✅ Response generated successfully!")
                 print(f"   📝 Response length: {len(response)} characters")
                 print(f"   📊 Word count: {len(response.split())} words")
                 print(f"   🔤 First 200 chars: {response[:200]}...")
 
                 # Check if response is reasonably long for comprehensive content
                 if len(response) > 2000:
-                    print(f"   🎉 Long context generation SUCCESSFUL!")
+                    print("   🎉 Long context generation SUCCESSFUL!")
                 else:
                     print(
-                        f"   ⚠️  Response seems shorter than expected for comprehensive tutorial"
+                        "   ⚠️  Response seems shorter than expected for comprehensive tutorial"
                     )
             else:
                 print(f"   ❌ Response generation failed: {response}")
@@ -96,7 +97,7 @@ async def test_long_context_generation():
         except Exception as e:
             print(f"   ❌ Error: {e}")
 
-    print(f"\n🏁 Long Context Generation Test Complete!")
+    print("\n🏁 Long Context Generation Test Complete!")
 
     # Clean up aiohttp sessions to prevent resource leaks
     try:

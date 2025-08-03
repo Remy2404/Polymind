@@ -1,11 +1,8 @@
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
-import json
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode
-from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +71,9 @@ class GroupUIManager:
 
             # Add quick action buttons for group management
             if self._should_show_management_buttons(update, metadata):
-                enhancements["inline_keyboard"] = (
-                    await self._create_quick_actions_keyboard(metadata.get("group_id"))
-                )
+                enhancements[
+                    "inline_keyboard"
+                ] = await self._create_quick_actions_keyboard(metadata.get("group_id"))
 
             return enhancements
 

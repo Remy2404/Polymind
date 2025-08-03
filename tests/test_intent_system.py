@@ -161,7 +161,7 @@ async def test_intent_detection():
     print()
     print("=" * 50)
     print(
-        f"🎯 Accuracy: {correct_predictions}/{total_tests} ({correct_predictions/total_tests*100:.1f}%)"
+        f"🎯 Accuracy: {correct_predictions}/{total_tests} ({correct_predictions / total_tests * 100:.1f}%)"
     )
 
     if correct_predictions / total_tests >= 0.8:

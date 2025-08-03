@@ -3,7 +3,6 @@ import json
 import aiohttp
 import asyncio
 import logging
-import traceback
 import time
 from typing import Dict, List, Optional
 from dotenv import load_dotenv

@@ -90,7 +90,7 @@ async def test_voice_message_flow():
             )
 
             if response:
-                logger.info(f"✅ OpenRouter API test successful!")
+                logger.info("✅ OpenRouter API test successful!")
                 logger.info(f"Response length: {len(response)} characters")
                 logger.info(f"Response preview: {response[:150]}...")
             else:

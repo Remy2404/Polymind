@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Dict
 from services.model_handlers import ModelHandler
 from services.model_handlers.unified_handler import UnifiedModelHandler
 from services.model_handlers.model_configs import (

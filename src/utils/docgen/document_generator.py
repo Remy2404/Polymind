@@ -4,15 +4,13 @@ Document Generator for creating professionally formatted PDF and DOCX documents.
 
 import io
 import re
-from typing import Optional
 from datetime import datetime
 
 from docx import Document
-from docx.shared import Pt, Inches, RGBColor
-from docx.enum.text import WD_PARAGRAPH_ALIGNMENT, WD_LINE_SPACING
+from docx.shared import Pt, RGBColor
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
-from docx.enum.style import WD_STYLE_TYPE
 
 from .shared_imports import (
     logging,
@@ -24,10 +22,6 @@ from .shared_imports import (
     SimpleDocTemplate,
     Paragraph,
     Spacer,
-    Table,
-    TableStyle,
-    Preformatted,
-    Image,
     ListItem,
     ListFlowable,
 )

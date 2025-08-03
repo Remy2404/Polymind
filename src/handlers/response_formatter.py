@@ -5,9 +5,8 @@ import subprocess
 import tempfile
 import os
 import platform
-from typing import List, Optional, Union, Any
+from typing import List, Optional, Any
 from telegramify_markdown import convert, escape_markdown, markdownify, customize
-from telegram.error import BadRequest
 
 
 class ResponseFormatter:
@@ -36,9 +35,6 @@ class ResponseFormatter:
 
     # --- ENHANCED: Mermaid rendering with better error handling and syntax cleanup ---
     def _render_mermaid_to_image(self, mmd_text: str) -> Any:
-        import os
-        import platform
-
         try:
             # Clean up the Mermaid syntax to handle AI-generated issues
             cleaned_mmd = self._clean_mermaid_syntax(mmd_text)
@@ -675,7 +671,7 @@ class ResponseFormatter:
                     if result:
                         results.append(result)
                 except Exception as e:
-                    self.logger.error(f"Failed to send chunk {i+1}: {e}")
+                    self.logger.error(f"Failed to send chunk {i + 1}: {e}")
             return results[0] if results else None
 
         # For normal-length messages, try different formatting approaches

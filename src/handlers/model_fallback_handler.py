@@ -8,7 +8,6 @@ fails or times out. It provides intelligent model selection and user notificatio
 import asyncio
 import logging
 from typing import List, Dict, Any, Tuple, Optional
-from services.model_handlers.factory import ModelHandlerFactory
 
 
 class ModelFallbackHandler:
@@ -139,7 +138,7 @@ class ModelFallbackHandler:
             try:
                 self.logger.info(
                     f"Attempting response with model: {model_name} "
-                    f"(attempt {i+1}/{len(models_to_try)})"
+                    f"(attempt {i + 1}/{len(models_to_try)})"
                 )
 
                 # Get model handler for current model

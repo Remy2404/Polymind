@@ -11,7 +11,7 @@ def test_database_connection():
 
     uri = os.getenv("DATABASE_URL")
 
-    print(f"🔄 Connecting to database...")
+    print("🔄 Connecting to database...")
 
     max_retries = 3
     current_retry = 0
@@ -36,7 +36,7 @@ def test_database_connection():
             print(f"❌ Connection attempt {current_retry + 1} failed: {str(e)}")
             current_retry += 1
             if current_retry < max_retries:
-                print(f"⏳ Retrying in 5 seconds...")
+                print("⏳ Retrying in 5 seconds...")
                 time.sleep(5)
             else:
                 print("❌ Max retries reached. Could not connect to database.")

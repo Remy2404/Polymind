@@ -30,7 +30,7 @@ async def test_voice_processing_simulation():
 
     print(f"Conversation History ({len(conversation_history)} messages):")
     for i, msg in enumerate(conversation_history):
-        print(f"  {i+1}. [{msg['role'].upper()}]: {msg['content']}")
+        print(f"  {i + 1}. [{msg['role'].upper()}]: {msg['content']}")
 
     print(f"\nNew Voice Prompt: {new_voice_prompt}")
 
@@ -38,12 +38,12 @@ async def test_voice_processing_simulation():
     context_text = " ".join([msg.get("content", "") for msg in conversation_history])
     name_mentioned = "rami" in context_text.lower() or "name" in context_text.lower()
 
-    print(f"\nContext Analysis:")
+    print("\nContext Analysis:")
     print(f"  - Contains name information: {'✅ YES' if name_mentioned else '❌ NO'}")
     print(f"  - Context length: {len(context_text)} characters")
 
     # Test OpenRouter API with this exact scenario
-    print(f"\n--- Testing OpenRouter API ---")
+    print("\n--- Testing OpenRouter API ---")
     try:
         from src.services.openrouter_api import OpenRouterAPI
         from src.services.rate_limiter import RateLimiter
