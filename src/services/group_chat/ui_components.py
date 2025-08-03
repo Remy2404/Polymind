@@ -242,8 +242,6 @@ class GroupUIManager:
                         age_str = f" ({age.seconds // 60}m ago)"
                 except Exception:
                     pass
-            
-                    
 
             thread_info = (
                 f"{i}. {topic}\n"
@@ -325,7 +323,7 @@ class GroupUIManager:
                     f"📅 Context Since: {created_date.strftime('%Y-%m-%d')}"
                 )
             except Exception:
-                pass
+                self.logger.error(f"Error parsing created_at date: {created_at}")
 
         if updated_at:
             try:
@@ -339,8 +337,8 @@ class GroupUIManager:
                     last_update = f"{time_diff.seconds // 60} minutes ago"
 
                 message_parts.append(f"🕒 Last Updated: {last_update}")
-            except:
-                pass
+            except Exception as e:
+                self.logger.error(f"Error parsing updated_at date: {updated_at}, {e}")
 
         return "\n".join(message_parts)
 
@@ -409,8 +407,8 @@ class GroupUIManager:
                     )
                     if datetime.now() - last_active_time > timedelta(days=7):
                         activity_indicator = self.EMOJIS["inactive"]
-                except:
-                    pass
+                except Exception as e:
+                    self.logger.error(f"Error parsing last_active date for user {user_id}: {e}")
 
             # Format participant info
             participant_info = f"{activity_indicator} {name}"
