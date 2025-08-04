@@ -12,7 +12,7 @@ from src.services.model_handlers.model_configs import (
     ModelConfigurations,
     Provider,
     ModelConfig,
-)  # Import ModelConfig
+) 
 
 # Load environment variables
 load_dotenv()
@@ -38,15 +38,13 @@ class OpenRouterAPI:
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
         }
-
-        # Load available models from centralized configuration
-        self._load_openrouter_models_from_config()  # Centralized loading
+        self._load_openrouter_models_from_config()  
 
         # Circuit breaker properties
         self.api_failures = 0
         self.api_last_failure = 0
-        self.circuit_breaker_threshold = 5  # Number of failures before opening circuit
-        self.circuit_breaker_timeout = 300  # Seconds to keep circuit open (5 minutes)
+        self.circuit_breaker_threshold = 5 
+        self.circuit_breaker_timeout = 300
 
         # Initialize session
         self.session = None
@@ -207,7 +205,7 @@ class OpenRouterAPI:
         self,
         prompt: str,
         openrouter_model_key: str,
-        system_message: str = None,  # Renamed from 'model' for clarity, as it's the raw key
+        system_message: str = None,
         context: List[Dict] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
@@ -215,7 +213,6 @@ class OpenRouterAPI:
     ) -> Optional[str]:
         try:
             session = await self.ensure_session()
-            # If a system_message is explicitly provided, use it, otherwise use a generic one.
             final_system_message = (
                 system_message
                 or "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."

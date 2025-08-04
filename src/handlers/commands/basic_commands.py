@@ -100,7 +100,7 @@ class BasicCommands:
         personal_info = await self.user_data_manager.get_user_personal_info(user_id)
 
         # Reset conversation history
-        await self.user_data_manager.reset_conversation(user_id)
+        self.user_data_manager.reset_conversation(user_id)
 
         # If there was personal information, confirm we remember it
         if personal_info and "name" in personal_info:

@@ -108,13 +108,13 @@ class DocumentCommands:
         # Select top models for document generation (limit to avoid too many buttons)
         preferred_models = [
             "gemini",
-            "deepseek-r1-zero",
-            "qwen3-32b",
-            "llama4-maverick",
-            "phi-4-reasoning-plus",
-            "mistral-small-3.1",
-            "deepcoder",
-            "glm-z1-32b",
+            "llama-3.2-3b-instruct",
+            "qwen3-235b", 
+            "dolphin-mistral-24b-venice-edition",  
+            "qwerky-72b",  
+            "deephermes-3-llama-8b", 
+            "dolphin3-r1-mistral-24b",  
+            "openrouter-horizon-beta",  
         ]
 
         for model_id in preferred_models:
@@ -303,41 +303,15 @@ class DocumentCommands:
                     model_config.display_name if model_config else model.capitalize()
                 )
 
-                # Make sure to escape ALL special characters for MarkdownV2
-                special_chars = [
-                    "_",
-                    "*",
-                    "[",
-                    "]",
-                    "(",
-                    ")",
-                    "~",
-                    "`",
-                    ">",
-                    "#",
-                    "+",
-                    "-",
-                    "=",
-                    "|",
-                    "{",
-                    "}",
-                    ".",
-                    "!",
-                ]
-                safe_title = title
-                for char in special_chars:
-                    safe_title = safe_title.replace(char, f"\\{char}")
-
-                caption = (
-                    f"📄 {safe_title}\n\nGenerated using {model_display_name} model"
-                )
+                # Format the caption safely without using MarkdownV2
+                caption = f"📄 {title}\n\nGenerated using {model_display_name} model"
 
                 await context.bot.send_document(
                     chat_id=update.effective_chat.id,
                     document=doc_io,
                     filename=doc_io.name,
                     caption=caption,
-                    parse_mode="MarkdownV2",
+                    parse_mode=None,  # Don't use any markdown parsing
                 )
 
             # Log success

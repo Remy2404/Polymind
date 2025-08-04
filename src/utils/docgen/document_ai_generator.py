@@ -108,9 +108,9 @@ class AIDocumentGenerator:
                         self.logger.info("Fallback to Gemini successful")
                     except Exception as fallback_error:
                         self.logger.error(f"Fallback API error: {str(fallback_error)}")
-                        ai_response = "# Error Generating Document\n\nThere was a problem generating your document with the AI model. Please try again with a different model or prompt."
+                        ai_response = "# Document Generation Error\n\nUnable to generate your document. Please try again with a different model or prompt."
                 else:
-                    ai_response = "# Error Generating Document\n\nThere was a problem generating your document with the AI model. Please try again with a different model or prompt."
+                    ai_response = "# Document Generation Error\n\nUnable to generate your document. Please try again with a different model or prompt."
 
             # The SuperSimpleAPIManager returns a string directly
             content = ai_response if isinstance(ai_response, str) else str(ai_response)
@@ -120,7 +120,10 @@ class AIDocumentGenerator:
                 self.logger.error("Empty or too short content generated")
                 content = "# Document Generation Failed\n\nThe AI model did not generate sufficient content for your document. Please try again with a more specific prompt or a different document type."
 
-            title = self._extract_title(content) or f"AI Document: {prompt[:50]}"
+            title = self._extract_title(content) or f"AI Document: {prompt[:30]}..."
+            # Ensure title is clean and doesn't contain error messages
+            if "error" in title.lower() or "api" in title.lower() or len(title) > 100:
+                title = "Document Generation Error"
             self.logger.info(f"Using title: {title}")
 
             if content:
