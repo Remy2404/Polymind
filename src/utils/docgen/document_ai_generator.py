@@ -159,7 +159,7 @@ class AIDocumentGenerator:
             result_lines.append(current_line)
 
             if re.match(r"^#{1,6}\s+", current_line):
-                heading_level = len(re.match(r"^(#{1,6})\s+", current_line).group(1))
+                re.match(r"^(#{1,6})\s+", current_line)
                 heading_text = current_line.strip("#").strip()
 
                 next_non_empty = i + 1
@@ -362,15 +362,9 @@ class AIDocumentGenerator:
                         break
                     next_heading_index += 1
 
-                current_heading_level = len(
-                    re.match(r"^(#{1,6})\s+", current_line).group(1)
-                )
                 if next_heading_index < len(lines) and re.match(
                     r"^#{1,6}\s+", lines[next_heading_index]
                 ):
-                    next_heading_level = len(
-                        re.match(r"^(#{1,6})\s+", lines[next_heading_index]).group(1)
-                    )
                     if not found_content:
                         if next_heading_index > i + 1:
                             i = next_heading_index - 1

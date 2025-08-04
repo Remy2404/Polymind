@@ -124,13 +124,11 @@ class DocumentGenerator:
             elif line.startswith("```"):
                 # Code block - collect until closing ```
                 code_content = []
-                in_code_block = True
                 code_block_index = content.split("\n").index(line)
-
+        
                 # Skip the opening ``` line
                 for code_line in content.split("\n")[code_block_index + 1 :]:
                     if code_line.strip() == "```":
-                        in_code_block = False
                         break
                     code_content.append(code_line)
 
@@ -235,15 +233,11 @@ class DocumentGenerator:
 
         # Track section headings and table state
         current_section_level = 0
-        current_section_content = False
         in_table = False
         current_table = None
-        table_header_processed = False
 
         # Process content with markdown-style parsing
         current_paragraph = None
-        in_code_block = False
-
         # Split content by lines for processing
         lines = content.split("\n")
         i = 0
@@ -258,7 +252,6 @@ class DocumentGenerator:
                 h1.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 current_paragraph = None
                 current_section_level = 1
-                current_section_content = False
                 in_table = False  # Exit table mode when new section starts
             elif line.startswith("## "):
                 # Section heading (H2)
@@ -266,7 +259,6 @@ class DocumentGenerator:
                 h2.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
                 current_paragraph = None
                 current_section_level = 2
-                current_section_content = False
                 in_table = False  # Exit table mode when new section starts
             elif line.startswith("### "):
                 # Subsection heading (H3)
@@ -274,7 +266,6 @@ class DocumentGenerator:
                 h3.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
                 current_paragraph = None
                 current_section_level = 3
-                current_section_content = False
                 in_table = False  # Exit table mode when new section starts
             elif line.strip() == "":
                 # Empty line - add paragraph break if needed
@@ -285,7 +276,7 @@ class DocumentGenerator:
                     current_paragraph = None
             else:
                 # Content line - mark that we've added content to the current section
-                current_section_content = True
+                pass
 
                 # Process different content types
                 if line.startswith("- ") or line.startswith("* "):
@@ -324,7 +315,6 @@ class DocumentGenerator:
                     # Determine if this is the first row of a table
                     if not in_table:
                         in_table = True
-                        table_header_processed = False
                         current_table = doc.add_table(rows=0, cols=len(cells))
                         current_table.style = "Table Grid"
 
@@ -358,7 +348,7 @@ class DocumentGenerator:
                             )  # Light gray background
                             cell_properties.append(cell_shading)
 
-                        table_header_processed = True
+                        pass
                     else:
                         # Add a regular row to the table
                         row_cells = current_table.add_row().cells
@@ -391,7 +381,7 @@ class DocumentGenerator:
                     if current_section_level == 2:
                         section_title = lines[max(0, i - 2) : i]
                         section_title = [
-                            l for l in section_title if l.startswith("## ")
+                            line for line in section_title if line.startswith("## ")
                         ]
                         if section_title and (
                             "summary" in section_title[0].lower()
@@ -450,7 +440,6 @@ class DocumentGenerator:
         # This is a simplified approach - for complex mixed formatting
         # a proper parser would be better, but this handles common cases
 
-        current_pos = 0
         in_bold = False
         in_code = False
         in_italic = False

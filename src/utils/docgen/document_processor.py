@@ -545,35 +545,6 @@ class DocumentProcessor:
                 "success": False,
                 "metadata": {},
             }
-
-
-# Utility functions for document processing
-async def quick_document_analysis(
-    gemini_api: GeminiAPI,
-    file_data: Union[bytes, io.BytesIO],
-    filename: str,
-    prompt: str = "Analyze this document",
-) -> str:
-    """Quick document analysis helper"""
-    processor = DocumentProcessor(gemini_api)
-    result = await processor.process_document(file_data, filename, prompt)
-    return result.content if result.success else f"Error: {result.error}"
-
-
-async def extract_document_text(
-    gemini_api: GeminiAPI, file_data: Union[bytes, io.BytesIO], filename: str
-) -> str:
-    """Extract plain text from document"""
-    processor = DocumentProcessor(gemini_api)
-    result = await processor.process_document(
-        file_data,
-        filename,
-        "Extract all text content from this document. Return only the text without analysis.",
-    )
-    return result.content if result.success else f"Error: {result.error}"
-
-
-# Utility functions for document processing
 async def quick_document_analysis(
     gemini_api: GeminiAPI,
     file_data: Union[bytes, io.BytesIO],

@@ -669,20 +669,6 @@ class UserDataManager:
             self.logger.error(f"Error extracting personal info: {e}")
             return {}
 
-    async def reset_conversation(self, user_id: int) -> None:
-        """Reset the conversation history for a user."""
-        try:
-            self.users_collection.update_one(
-                {"user_id": user_id},
-                {"$set": {"contexts": [], "conversation_history": []}},
-            )
-            self.logger.info(f"Reset conversation history for user: {user_id}")
-        except Exception as e:
-            self.logger.error(
-                f"Error resetting conversation history for user {user_id}: {str(e)}"
-            )
-            raise
-
     async def save_message_pair(
         self,
         user_id: str,
@@ -804,43 +790,3 @@ class UserDataManager:
 
         except Exception as e:
             self.logger.error(f"Error adding message for user {user_id}: {str(e)}")
-
-    async def save_message_pair(
-        self,
-        user_id: str,
-        user_message: str,
-        assistant_message: str,
-        model_id: str = "unknown",
-    ) -> None:
-        """
-        Save a user-assistant conversation pair to the conversation history.
-        This ensures proper persistence across sessions.
-
-        :param user_id: Unique identifier for the user
-        :param user_message: Content of user's message
-        :param assistant_message: Content of assistant's response
-        :param model_id: Model that generated the response
-        """
-        try:
-            # Convert user_id to string for consistency
-            user_id = str(user_id)
-
-            # Save user message
-            user_msg = {"role": "user", "content": user_message, "model_used": model_id}
-            self.add_message(user_id, user_msg)
-
-            # Save assistant message
-            assistant_msg = {
-                "role": "assistant",
-                "content": assistant_message,
-                "model_used": model_id,
-            }
-            self.add_message(user_id, assistant_msg)
-
-            self.logger.info(
-                f"Saved message pair for user {user_id} with model {model_id}"
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error saving message pair for user {user_id}: {str(e)}")
-            raise

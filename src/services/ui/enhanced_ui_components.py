@@ -235,8 +235,6 @@ class EnhancedUIComponents:
 
         # Analyze context and generate relevant suggestions
         last_message = context.get("last_message", "")
-        message_type = context.get("message_type", "text")
-        user_history = context.get("user_history", [])
 
         # Code-related suggestions
         if any(

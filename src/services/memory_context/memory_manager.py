@@ -378,8 +378,6 @@ class MemoryManager:
     ) -> None:
         """Clear conversation memory with group support"""
         async with self.lock:
-            cache_key = group_id if is_group else conversation_id
-
             if is_group:
                 self.group_memory_cache.pop(group_id, None)
                 self.group_summaries.pop(group_id, None)

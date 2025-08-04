@@ -531,8 +531,8 @@ class MultiFileProcessor:
                 # Read the file content
                 try:
                     content = file_data.read().decode("utf-8", errors="ignore")
-                except:
-                    content = f"[Binary content from {filename}]"
+                except Exception as e:
+                    content = f"[Binary content from {filename} due to error: {e}]"
 
                 file_data.seek(0)  # Reset position
                 file_contents.append(content)
@@ -616,8 +616,8 @@ class MultiFileProcessor:
                         extraction = await self.gemini_api.generate_response(
                             extraction_prompt
                         )
-                    except:
-                        extraction = f"Could not extract {extraction_type} from binary file {filename}"
+                    except Exception as e:
+                        extraction = f"Could not extract {extraction_type} from binary file {filename} due to error: {e}"
 
                 results[filename] = (
                     extraction or f"No {extraction_type} found in {filename}"
@@ -752,7 +752,8 @@ class MultiFileProcessor:
                     file_data, "Describe this image in detail"
                 )
                 return f"[Image description: {description}]"
-            except:
+            except Exception as e:
+                self.logger.error(f"Error describing image {filename}: {e}")
                 return f"[Image file: {filename}]"
 
         elif mime_type.startswith(("text/", "application/json", "application/xml")):
@@ -761,8 +762,8 @@ class MultiFileProcessor:
                 content = file_data.read().decode("utf-8", errors="ignore")
                 file_data.seek(0)  # Reset position
                 return content[:4000]  # Limit length
-            except:
-                return f"[Could not read text content from {filename}]"
+            except Exception as e:
+                return f"[Could not read text content from {filename} due to error: {e}]"
 
         else:
             # For other files, just return a placeholder
