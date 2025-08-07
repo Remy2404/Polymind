@@ -118,9 +118,7 @@ MONGODB_URI=mongodb://localhost:27017  # or MongoDB Atlas URI
 GEMINI_API_KEY=your_gemini_api_key
 OPENROUTER_API_KEY=your_openrouter_api_key  # Access to 50+ models
 DEEPSEEK_API_KEY=your_deepseek_api_key      # Optional, for DeepSeek models
-TOGETHER_API_KEY=your_together_api_key      # For image/video generation
-TEXT_TO_IMAGE_API_KEY=your_huggingface_api_key
-TEXT_TO_VIDEO_API_KEY=your_huggingface_api_key
+TOGETHER_API_KEY=your_together_api_key
 WEBHOOK_URL=https://your-domain.com
 PORT=8000
 ```
@@ -231,11 +229,8 @@ Upload any PDF or DOCX file:
 | `/start`          | Initialize the bot and get welcome   | `/start` |
 | `/help`           | List all available commands          | `/help` |
 | `/genimg`         | Generate an image from text prompt   | `/genimg sunset over mountains` |
-| `/imagen3`        | Advanced image generation (Imagen3)  | `/imagen3 futuristic city` |
 | `/reset`          | Clear conversation history           | `/reset` |
 | `/stats`          | Show usage statistics                | `/stats` |
-| `/preferences`    | Configure user preferences           | `/preferences` |
-| `/settings`       | Access bot settings                  | `/settings` |
 | `/switchmodel`    | Hierarchical AI model selection      | `/switchmodel` |
 | `/listmodels`     | List all available AI models         | `/listmodels` |
 | `/currentmodel`   | Show current AI model                | `/currentmodel` |
