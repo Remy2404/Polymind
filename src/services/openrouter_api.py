@@ -244,16 +244,12 @@ class OpenRouterAPI:
             self.api_failures += 1
             self.api_last_failure = time.time()
             self.logger.error(
-                f"OpenRouter API timeout for model key {openrouter_model_key}"
+                f"OpenRouter API timeout for model keys {openrouter_model_key}"
             )
             return None
         except Exception as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
-            self.logger.error(
-                f"OpenRouter API error for model key {openrouter_model_key}: {str(e)}",
-                exc_info=True,
-            )  # Log full traceback
             return None
 
     def debug_model_mapping(self):
