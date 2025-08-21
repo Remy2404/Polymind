@@ -177,8 +177,10 @@ class DocumentProcessor:
             )
 
             if result.success:
+                # Ensure result.metadata is a dict
+                metadata = result.metadata if isinstance(result.metadata, dict) else {}
                 result.metadata = {
-                    **result.metadata,
+                    **metadata,
                     "processed_files": file_names,
                     "file_count": len(file_names),
                 }
@@ -335,8 +337,9 @@ class DocumentProcessor:
             )
 
             if result.success:
+                metadata = result.metadata if isinstance(result.metadata, dict) else {}
                 result.metadata = {
-                    **result.metadata,
+                    **metadata,
                     "analysis_type": analysis_type,
                     "file_extension": extension,
                     "language": self._detect_language(extension),
@@ -384,7 +387,7 @@ class DocumentProcessor:
     def get_document_info(self, filename: str) -> Dict[str, str]:
         """Get information about document type"""
         if not filename or "." not in filename:
-            return {"type": "unknown", "category": "unknown"}
+            return {"type": "unknown", "category": "unknown", "language": "Unknown"}
 
         extension = filename.split(".")[-1].lower()
 
@@ -412,15 +415,15 @@ class DocumentProcessor:
 
         for category, extensions in categories.items():
             if extension in extensions:
+                # Always return strings, never None
+                language = self._detect_language(extension) if category == "code" else "Unknown"
                 return {
                     "type": extension,
                     "category": category,
-                    "language": (
-                        self._detect_language(extension) if category == "code" else None
-                    ),
+                    "language": language,
                 }
 
-        return {"type": extension, "category": "unknown"}
+        return {"type": extension, "category": "unknown", "language": "Unknown"}
 
     async def process_document_enhanced(
         self,
@@ -554,7 +557,8 @@ async def quick_document_analysis(
     """Quick document analysis helper"""
     processor = DocumentProcessor(gemini_api)
     result = await processor.process_document(file_data, filename, prompt)
-    return result.content if result.success else f"Error: {result.error}"
+    # Always return a string, never None
+    return result.content if result.success and result.content is not None else f"Error: {result.error}"
 
 
 async def extract_document_text(
@@ -567,4 +571,5 @@ async def extract_document_text(
         filename,
         "Extract all text content from this document. Return only the text without analysis.",
     )
-    return result.content if result.success else f"Error: {result.error}"
+    # Always return a string, never None
+    return result.content if result.success and result.content is not None else f"Error: {result.error}"

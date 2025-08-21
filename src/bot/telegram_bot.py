@@ -256,10 +256,11 @@ class TelegramBot:
         # Share utility classes with message_handlers
         self.message_handlers.context_handler = self.context_handler
         self.message_handlers.response_formatter = self.response_formatter
-        self.message_handlers.media_context_extractor = self.media_context_extractor
-        self.message_handlers.image_processor = self.image_processor
+        # Removed assignments for attributes not defined in MessageHandlers:
+        # self.message_handlers.media_context_extractor = self.media_context_extractor
+        # self.message_handlers.image_processor = self.image_processor
         self.message_handlers.voice_processor = self.voice_processor
-        self.message_handlers.prompt_formatter = self.prompt_formatter
+        # self.message_handlers.prompt_formatter = self.prompt_formatter
         self.message_handlers.preferences_manager = self.preferences_manager
         self.message_handlers._conversation_manager = self.conversation_manager
         self.message_handlers.document_processor = self.document_processor
@@ -308,8 +309,42 @@ class TelegramBot:
         self.message_handlers.register_handlers(self.application)
 
         # Register reminder and language commands separately
+
+        # Fix: wrap set_reminder in a handler with correct signature
+        async def remind_handler(update: Update, context):
+            # Extract arguments from the command
+            user = update.effective_user
+            user_id = user.id if user is not None else None
+            args = context.args if hasattr(context, "args") else []
+            # Use update.effective_message for reply_text (handles both message and callback)
+            message_obj = update.effective_message
+
+            if user_id is None:
+                if message_obj:
+                    await message_obj.reply_text("User ID not found. Cannot set reminder.")
+                return
+
+            if len(args) < 2:
+                if message_obj:
+                    await message_obj.reply_text("Usage: /remind <time> <message>")
+                return
+
+            from datetime import datetime
+            time_str = args[0]
+            message = " ".join(args[1:])
+            try:
+                remind_time = datetime.fromisoformat(time_str)
+            except Exception:
+                if message_obj:
+                    await message_obj.reply_text("Invalid time format. Use YYYY-MM-DDTHH:MM")
+                return
+
+            await self.reminder_manager.set_reminder(user_id, remind_time, message)
+            if message_obj:
+                await message_obj.reply_text(f"Reminder set for {remind_time}: {message}")
+
         self.application.add_handler(
-            CommandHandler("remind", self.reminder_manager.set_reminder)
+            CommandHandler("remind", remind_handler)
         )
         self.application.add_handler(
             CommandHandler("language", self.language_manager.set_language)
@@ -317,7 +352,17 @@ class TelegramBot:
 
         # Set up error handler
         self.application.error_handlers.clear()
-        self.application.add_error_handler(self.message_handlers._error_handler)
+
+        # Fix: wrap error handler to match expected signature
+        async def error_handler(update_or_obj, context):
+            # If update_or_obj is Update, pass to original handler
+            if hasattr(update_or_obj, "message") or hasattr(update_or_obj, "update_id"):
+                await self.message_handlers._error_handler(update_or_obj, context)
+            else:
+                # fallback: log error
+                self.logger.error(f"Error handler received non-Update object: {update_or_obj}")
+
+        self.application.add_error_handler(error_handler)
 
     async def setup_webhook(self):
         """Set up webhook with proper update processing."""
@@ -385,10 +430,11 @@ class TelegramBot:
             # Safe error logging that doesn't rely on .get() method
             update_id = "unknown"
             try:
-                if hasattr(update_data, "update_id"):
-                    update_id = update_data.update_id
-                elif isinstance(update_data, dict):
+                # Fix: use .get for dict, not .update_id
+                if isinstance(update_data, dict):
                     update_id = update_data.get("update_id", "unknown")
+                elif hasattr(update_data, "update_id"):
+                    update_id = update_data.update_id
             except (AttributeError, KeyError, TypeError):
                 pass
 

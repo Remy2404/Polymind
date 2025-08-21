@@ -50,12 +50,11 @@ class BasicCommands:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        if update.callback_query:
-            await update.callback_query.message.reply_text(
+        # Use effective_message for reply
+        if update.effective_message:
+            await update.effective_message.reply_text(
                 welcome_message, reply_markup=reply_markup
             )
-        else:
-            await update.message.reply_text(welcome_message, reply_markup=reply_markup)
 
         await self.user_data_manager.initialize_user(user_id)
         self.logger.info(f"New user started the bot: {user_id}")
@@ -82,18 +81,21 @@ class BasicCommands:
             "• Supports markdown formatting\n\n"
             "Need help? Join our support channel @GemBotAI!"
         )
-        if update.callback_query:
-            await update.callback_query.message.reply_text(help_text)
-        else:
-            await update.message.reply_text(help_text)
-            await update.callback_query.message.reply_text(help_text)
-        self.telegram_logger.log_message(
-            update.effective_user.id, "Help command requested"
-        )
+        # Use effective_message for reply
+        if update.effective_message:
+            await update.effective_message.reply_text(help_text)
+        # Only log if effective_user exists
+        if update.effective_user:
+            self.telegram_logger.log_message(
+                update.effective_user.id, "Help command requested"
+            )
 
     async def reset_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
+        # Only proceed if effective_user exists
+        if not update.effective_user:
+            return
         user_id = update.effective_user.id
 
         # Get personal info before resetting
@@ -103,9 +105,10 @@ class BasicCommands:
         self.user_data_manager.reset_conversation(user_id)
 
         # If there was personal information, confirm we remember it
-        if personal_info and "name" in personal_info:
-            await update.message.reply_text(
-                f"Conversation history has been reset, {personal_info['name']}! I'll still remember your personal details."
-            )
-        else:
-            await update.message.reply_text("Conversation history has been reset!")
+        if update.effective_message:
+            if personal_info and "name" in personal_info:
+                await update.effective_message.reply_text(
+                    f"Conversation history has been reset, {personal_info['name']}! I'll still remember your personal details."
+                )
+            else:
+                await update.effective_message.reply_text("Conversation history has been reset!")

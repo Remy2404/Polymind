@@ -60,7 +60,6 @@ except ImportError:
     getSampleStyleSheet = None
     ParagraphStyle = None
     colors = None
-    A4 = None
     SimpleDocTemplate = None
     Paragraph = None
     Spacer = None

@@ -129,7 +129,19 @@ class GroupManager:
             user = update.effective_user
             message = update.message
 
+            # Ensure this is a group chat
             if not chat or chat.type not in ["group", "supergroup"]:
+                return message_text, {}
+
+            # Ensure message exists
+            if not message:
+                return message_text, {}
+
+            # Fallback to message.from_user if effective_user is not set
+            if not user:
+                user = message.from_user
+
+            if not user:
                 return message_text, {}
 
             # Get or create group context
@@ -175,7 +187,7 @@ class GroupManager:
             return message_text, {}
 
     async def _get_or_create_group_context(
-        self, chat: Chat, user: User
+        self, chat: Chat, user: Optional[User]
     ) -> GroupConversationContext:
         """Get or create group conversation context."""
         group_id = chat.id
@@ -199,18 +211,21 @@ class GroupManager:
 
         group_context = self.group_contexts[group_id]
 
-        # Add or update participant
-        if user.id not in group_context.participants:
-            participant = GroupParticipant(
-                user_id=user.id,
-                username=user.username,
-                full_name=user.full_name or user.first_name or "Unknown",
-                role=GroupRole.MEMBER,
-                join_date=datetime.now(),
-                last_active=datetime.now(),
-            )
-            group_context.participants[user.id] = participant
-            self.logger.info(f"Added new participant {user.id} to group {group_id}")
+        # Add or update participant if user is available
+        if user and getattr(user, "id", None) is not None:
+            if user.id not in group_context.participants:
+                participant = GroupParticipant(
+                    user_id=user.id,
+                    username=getattr(user, "username", None),
+                    full_name=getattr(user, "full_name", None)
+                    or getattr(user, "first_name", None)
+                    or "Unknown",
+                    role=GroupRole.MEMBER,
+                    join_date=datetime.now(),
+                    last_active=datetime.now(),
+                )
+                group_context.participants[user.id] = participant
+                self.logger.info(f"Added new participant {user.id} to group {group_id}")
 
         return group_context
 
@@ -219,25 +234,32 @@ class GroupManager:
     ) -> Optional[GroupThread]:
         """Determine or create conversation thread for the message."""
         # Check if replying to a message (creates thread context)
-        if message.reply_to_message:
+        if getattr(message, "reply_to_message", None):
             # Create thread ID based on original message
             original_msg_id = message.reply_to_message.message_id
             thread_id = f"{group_context.group_id}_{original_msg_id}"
 
             if thread_id not in group_context.threads:
                 # Create new thread
+                from_user_id = getattr(message.from_user, "id", None)
+                participants_set: Set[int] = set()
+                if from_user_id is not None:
+                    participants_set.add(from_user_id)
+
                 group_context.threads[thread_id] = GroupThread(
                     thread_id=thread_id,
                     group_id=group_context.group_id,
                     topic=None,  # Will be inferred from conversation
-                    participants={message.from_user.id},
+                    participants=participants_set,
                     created_at=datetime.now(),
                     last_message_at=datetime.now(),
                     context_scope=ContextScope.THREAD_LOCAL,
                 )
 
             thread = group_context.threads[thread_id]
-            thread.participants.add(message.from_user.id)
+            from_user_id = getattr(message.from_user, "id", None)
+            if from_user_id is not None:
+                thread.participants.add(from_user_id)
             thread.last_message_at = datetime.now()
             thread.message_count += 1
 
@@ -245,10 +267,12 @@ class GroupManager:
 
         # Check for ongoing threads based on message timing and participants
         recent_cutoff = datetime.now() - timedelta(minutes=10)
+        from_user_id = getattr(message.from_user, "id", None)
         for thread in group_context.threads.values():
             if (
                 thread.last_message_at > recent_cutoff
-                and message.from_user.id in thread.participants
+                and from_user_id is not None
+                and from_user_id in thread.participants
             ):
                 thread.last_message_at = datetime.now()
                 thread.message_count += 1

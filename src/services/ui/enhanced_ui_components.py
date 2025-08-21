@@ -4,6 +4,7 @@ Provides modern, interactive UI elements with rich functionality
 """
 
 import logging
+import asyncio
 from typing import List, Dict, Any, Optional
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
@@ -451,16 +452,33 @@ class EnhancedUIComponents:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str, data: str
     ) -> None:
         """Handle quick action interactions"""
+        async def safe_reply(text):
+            # Safely reply to the user, handling cases where message/chat may be None
+            message_obj = getattr(update.callback_query, "message", None)
+            reply_text_func = getattr(message_obj, "reply_text", None)
+            chat = getattr(update, "effective_chat", None)
+            if callable(reply_text_func):
+                if asyncio.iscoroutinefunction(reply_text_func):
+                    await reply_text_func(text)
+                else:
+                    reply_text_func(text)
+            elif chat and getattr(chat, "id", None) is not None:
+                await context.bot.send_message(chat_id=chat.id, text=text)
+            else:
+                # Fallback: answer callback query if possible
+                if update.callback_query:
+                    await update.callback_query.answer(text)
+
         if action == "chat":
-            await update.callback_query.message.reply_text(
+            await safe_reply(
                 "🤖 Quick Chat activated! What would you like to discuss?"
             )
         elif action == "image":
-            await update.callback_query.message.reply_text(
+            await safe_reply(
                 "🎨 Image Generator ready! Describe the image you want to create."
             )
         elif action == "search":
-            await update.callback_query.message.reply_text(
+            await safe_reply(
                 "🔍 Smart Search activated! What would you like to find in our conversation history?"
             )
         # Add more quick actions as needed
@@ -469,8 +487,25 @@ class EnhancedUIComponents:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str, data: str
     ) -> None:
         """Handle adaptive keyboard interactions"""
+        async def safe_reply(text):
+            # Safely reply to the user, handling cases where message/chat may be None
+            message_obj = getattr(update.callback_query, "message", None)
+            reply_text_func = getattr(message_obj, "reply_text", None)
+            chat = getattr(update, "effective_chat", None)
+            if callable(reply_text_func):
+                if asyncio.iscoroutinefunction(reply_text_func):
+                    await reply_text_func(text)
+                else:
+                    reply_text_func(text)
+            elif chat and getattr(chat, "id", None) is not None:
+                await context.bot.send_message(chat_id=chat.id, text=text)
+            else:
+                # Fallback: answer callback query if possible
+                if update.callback_query:
+                    await update.callback_query.answer(text)
+
         if action == "discover":
-            await update.callback_query.message.reply_text(
+            await safe_reply(
                 "🔮 **Discover New Features**\n\nHere are some features you might not know about:\n"
                 "• 🧠 Semantic memory search\n"
                 "• 👥 Group collaboration tools\n"
@@ -478,7 +513,7 @@ class EnhancedUIComponents:
                 "• 🎯 Smart model selection"
             )
         elif action == "stats":
-            await update.callback_query.message.reply_text(
+            await safe_reply(
                 "📈 **Your Usage Statistics**\n\n"
                 "This feature is being prepared for you!\n"
                 "Soon you'll see detailed analytics about your bot usage."
@@ -487,16 +522,48 @@ class EnhancedUIComponents:
     async def _handle_suggestion_action(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str, data: str
     ) -> None:
-        """Handle context-aware suggestion interactions"""
-        suggestion_responses = {
-            "explain_code": "🔍 **Code Explanation Service**\n\nI'll analyze and explain any code you share!",
-            "debug": "🐛 **Debug Assistant**\n\nShare your code and error message, I'll help you fix it!",
-            "examples": "🎯 **Example Generator**\n\nI'll provide practical examples for better understanding!",
-            "analyze": "📊 **Content Analyzer**\n\nI'll provide detailed analysis of your content!",
-        }
+        """Handle suggestion action interactions"""
+        async def safe_reply(text):
+            # Safely reply to the user, handling cases where message/chat may be None
+            message_obj = getattr(update.callback_query, "message", None)
+            reply_text_func = getattr(message_obj, "reply_text", None)
+            chat = getattr(update, "effective_chat", None)
+            if callable(reply_text_func):
+                if asyncio.iscoroutinefunction(reply_text_func):
+                    await reply_text_func(text)
+                else:
+                    reply_text_func(text)
+            elif chat and getattr(chat, "id", None) is not None:
+                await context.bot.send_message(chat_id=chat.id, text=text)
+            else:
+                # Fallback: answer callback query if possible
+                if update.callback_query:
+                    await update.callback_query.answer(text)
 
-        response = suggestion_responses.get(
-            action,
-            f"🔧 **{action.title()}**\n\nThis feature is being activated for you!",
-        )
-        await update.callback_query.message.reply_text(response)
+        # Example suggestion actions
+        if action == "explain_code":
+            await safe_reply("🔍 Here is an explanation of the code snippet you referenced.")
+        elif action == "debug":
+            await safe_reply("🐛 Debug Help: Please describe the issue you're facing.")
+        elif action == "best_practices":
+            await safe_reply("📚 Here are some best practices for your code.")
+        elif action == "variations":
+            await safe_reply("🎨 Generating creative variations for your image.")
+        elif action == "style_transfer":
+            await safe_reply("🖼️ Style transfer is being applied to your image.")
+        elif action == "edit_image":
+            await safe_reply("📏 Please specify how you'd like to edit or resize your image.")
+        elif action == "details":
+            await safe_reply("📖 Here are more details on your topic.")
+        elif action == "examples":
+            await safe_reply("🎯 Here are some examples to illustrate your query.")
+        elif action == "related":
+            await safe_reply("🔗 Here are related topics you might find useful.")
+        elif action == "rephrase":
+            await safe_reply("🔄 Here is a rephrased version of your message.")
+        elif action == "analyze":
+            await safe_reply("📊 Analyzing your message for insights.")
+        elif action == "save":
+            await safe_reply("💾 Your message has been saved as important.")
+        else:
+            await safe_reply("💡 Suggestion action received.")

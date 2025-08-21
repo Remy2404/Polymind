@@ -5,6 +5,9 @@ Document Generator for creating professionally formatted PDF and DOCX documents.
 import io
 import re
 from datetime import datetime
+from typing import Optional
+from typing import cast
+from docx.styles.style import ParagraphStyle as DocxParagraphStyle
 
 from docx import Document
 from docx.shared import Pt, RGBColor
@@ -34,7 +37,7 @@ class DocumentGenerator:
         self.logger = logging.getLogger(__name__)
 
     async def create_pdf(
-        self, content: str, title: str = None, author: str = "DeepGem Bot"
+        self, content: str, title: Optional[str] = None, author: str = "DeepGem Bot"
     ) -> bytes:
         """Generate a professionally formatted PDF from text content"""
         if not REPORTLAB_AVAILABLE:
@@ -137,18 +140,16 @@ class DocumentGenerator:
                     elements.append(Paragraph(code_text, styles["CustomCode"]))
                 continue
             elif line.startswith("- "):
-                # List item with dash - using ListFlowable to wrap the ListItem
+                # List item with dash - use Paragraph directly for ListFlowable
                 bullet_text = Paragraph(line[2:], styles["Normal"])
-                list_item = ListItem(bullet_text, leftIndent=36)
                 elements.append(
-                    ListFlowable([list_item], bulletType="bullet", start=None)
+                    ListFlowable([bullet_text], bulletType="bullet", start=None)
                 )
             elif line.strip().startswith("*") and line.strip()[1:2].isspace():
-                # List item with asterisk - using ListFlowable to wrap the ListItem
+                # List item with asterisk - use Paragraph directly for ListFlowable
                 bullet_text = Paragraph(line.strip()[2:], styles["Normal"])
-                list_item = ListItem(bullet_text, leftIndent=36)
                 elements.append(
-                    ListFlowable([list_item], bulletType="bullet", start=None)
+                    ListFlowable([bullet_text], bulletType="bullet", start=None)
                 )
             elif line.startswith("> "):
                 # Blockquote
@@ -170,13 +171,13 @@ class DocumentGenerator:
                 # Regular paragraph
                 elements.append(Paragraph(line, styles["Normal"]))
 
-        # Build the document
+        # Build the document@
         doc.build(elements)
         buffer.seek(0)
         return buffer.getvalue()
 
     async def create_docx(
-        self, content: str, title: str = None, author: str = "DeepGem Bot"
+        self, content: str, title: Optional[str] = None, author: str = "DeepGem Bot"
     ) -> bytes:
         """Generate a professionally formatted DOCX from text content"""
         # First, pre-process content to fix common formatting issues
@@ -192,26 +193,34 @@ class DocumentGenerator:
 
         # Apply professional document styling
         # Set default font
-        style = doc.styles["Normal"]
-        style.font.name = "Calibri"
-        style.font.size = Pt(11)
+        try:
+            style = doc.styles["Normal"]
+            style_font = cast(DocxParagraphStyle, style).font
+            style_font.name = "Calibri"
+            style_font.size = Pt(11)
+        except Exception as e:
+            self.logger.warning(f"Could not set font for Normal style: {e}")
 
         # Customize heading styles for visual consistency
         for i in range(1, 4):
-            heading_style = doc.styles[f"Heading {i}"]
-            heading_style.font.name = "Calibri"
-            heading_style.font.color.rgb = RGBColor(0, 70, 127)  # Dark blue
+            try:
+                heading_style = doc.styles[f"Heading {i}"]
+                heading_font = cast(DocxParagraphStyle, heading_style).font
+                heading_font.name = "Calibri"
+                heading_font.color.rgb = RGBColor(0, 70, 127)  # Dark blue
 
-            # Different sizes for different heading levels
-            if i == 1:
-                heading_style.font.size = Pt(18)
-                heading_style.font.bold = True
-            elif i == 2:
-                heading_style.font.size = Pt(16)
-                heading_style.font.bold = True
-            else:
-                heading_style.font.size = Pt(14)
-                heading_style.font.bold = True
+                # Different sizes for different heading levels
+                if i == 1:
+                    heading_font.size = Pt(18)
+                    heading_font.bold = True
+                elif i == 2:
+                    heading_font.size = Pt(16)
+                    heading_font.bold = True
+                else:
+                    heading_font.size = Pt(14)
+                    heading_font.bold = True
+            except Exception as e:
+                self.logger.warning(f"Could not set font for Heading {i} style: {e}")
 
         # Document properties
         doc.core_properties.author = author
@@ -228,7 +237,9 @@ class DocumentGenerator:
         metadata = doc.add_paragraph(
             f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         )
-        metadata.italic = True
+        # Set italic on a run, not Paragraph
+        run = metadata.runs[0] if metadata.runs else metadata.add_run()
+        run.italic = True
         doc.add_paragraph()  # Empty line
 
         # Track section headings and table state
@@ -351,19 +362,20 @@ class DocumentGenerator:
                         pass
                     else:
                         # Add a regular row to the table
-                        row_cells = current_table.add_row().cells
+                        if current_table is not None:
+                            row_cells = current_table.add_row().cells
 
-                        # Add cell content with formatting
-                        for j, cell_text in enumerate(cells):
-                            if j < len(row_cells):
-                                cell = row_cells[j]
-                                # Process formatting in cell text
-                                if "**" in cell_text or "*" in cell_text:
-                                    paragraph = cell.paragraphs[0]
-                                    paragraph.text = ""
-                                    self._process_mixed_formatting(paragraph, cell_text)
-                                else:
-                                    cell.text = cell_text
+                            # Add cell content with formatting
+                            for j, cell_text in enumerate(cells):
+                                if j < len(row_cells):
+                                    cell = row_cells[j]
+                                    # Process formatting in cell text
+                                    if "**" in cell_text or "*" in cell_text:
+                                        paragraph = cell.paragraphs[0]
+                                        paragraph.text = ""
+                                        self._process_mixed_formatting(paragraph, cell_text)
+                                    else:
+                                        cell.text = cell_text
 
                     # No need to set current_paragraph since we're in table mode
                     i += 1

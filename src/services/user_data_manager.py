@@ -5,7 +5,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Keeping this in case it's needed in future extensions
 from datetime import datetime, timedelta
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Union, Optional
 import logging
 import warnings
 
@@ -43,14 +43,16 @@ class UserDataManager:
         # Add preference memory cache to ensure consistency
         self.preference_cache = {}
 
-    async def initialize_user(self, user_id: int) -> None:
+    async def initialize_user(self, user_id: Union[int, str]) -> None:
         """Initialize a new user in the database."""
         try:
+            user_id = str(user_id)
             user_data = {
                 "user_id": user_id,
                 "conversation_history": [],
                 "settings": {"markdown_enabled": True, "code_suggestions": True},
             }
+            # update_user_data handles DB None case
             await self.update_user_data(user_id, user_data)
             self.logger.info(f"Initialized new user: {user_id}")
         except Exception as e:
@@ -100,9 +102,19 @@ class UserDataManager:
             self.logger.error(f"Error updating user stats: {str(e)}")
             return False
 
-    async def update_user_data(self, user_id: int, user_data: dict) -> None:
+    async def update_user_data(self, user_id: Union[int, str], user_data: dict) -> None:
         """Update user data in the database."""
         try:
+            user_id = str(user_id)
+            # ensure id is consistent inside the document
+            user_data["user_id"] = user_id
+
+            # If no DB available, keep data in in-memory cache
+            if self.users_collection is None:
+                self.user_data_cache[user_id] = user_data
+                self.logger.info(f"Cached data for user (no DB): {user_id}")
+                return
+
             self.users_collection.update_one(
                 {"user_id": user_id}, {"$set": user_data}, upsert=True
             )
@@ -111,7 +123,7 @@ class UserDataManager:
             self.logger.error(f"Error updating data for user {user_id}: {str(e)}")
             raise
 
-    def clear_history(self, user_id: str) -> None:
+    def clear_history(self, user_id: Union[int, str]) -> None:
         """
         Clear the conversation history for a user.
         Now clears both contexts and conversation_history collection.
@@ -119,15 +131,21 @@ class UserDataManager:
         :param user_id: Unique identifier for the user
         """
         try:
-            # Convert user_id to string for consistency
             user_id = str(user_id)
 
-            # Clear user contexts
-            self.users_collection.update_one(
-                {"user_id": user_id}, {"$set": {"contexts": []}}
-            )
+            # If no DB, clear caches only
+            if self.users_collection is None:
+                # Clear cache contexts if present
+                if user_id in self.user_data_cache:
+                    self.user_data_cache[user_id].setdefault("contexts", [])
+                    self.user_data_cache[user_id]["contexts"].clear()
+                self.logger.info(f"Cleared in-memory history for user: {user_id}")
+            else:
+                self.users_collection.update_one(
+                    {"user_id": user_id}, {"$set": {"contexts": []}}
+                )
 
-            # Clear conversation_history collection
+            # Clear conversation_history collection if available
             if self.conversation_history is not None:
                 result = self.conversation_history.delete_many({"user_id": user_id})
                 self.logger.info(
@@ -143,7 +161,7 @@ class UserDataManager:
             self.logger.error(f"Error clearing history for user {user_id}: {str(e)}")
             raise
 
-    def add_message(self, user_id: str, message: Dict[str, str]) -> None:
+    def add_message(self, user_id: Union[int, str], message: Dict[str, Any]) -> None:
         """
         Add a message dictionary to the user's conversation history.
         Now saves to both contexts (for backwards compatibility) and conversation_history collection.
@@ -158,24 +176,22 @@ class UserDataManager:
                 or "role" not in message
                 or "content" not in message
             ):
-                self.logger.error(
-                    f"Invalid message format for user {user_id}: {message}"
-                )
+                self.logger.error(f"Invalid message format for user {user_id}: {message}")
                 return
 
-            # Convert user_id to string for consistency
             user_id = str(user_id)
 
             # Add timestamp and message_id if not present
             current_time = datetime.now()
             if "timestamp" not in message:
+                # allow numeric timestamp (float) or ISO string; keep numeric for DB timestamp fields if needed
                 message["timestamp"] = current_time.timestamp()
             if "message_id" not in message:
                 message["message_id"] = (
                     f"{message['role']}_{user_id}_{int(current_time.timestamp() * 1000)}"
                 )
 
-            # Save to conversation_history collection for persistence
+            # Save to conversation_history collection for persistence if available
             if self.conversation_history is not None:
                 conversation_doc = {
                     "user_id": user_id,
@@ -191,12 +207,20 @@ class UserDataManager:
                     f"Saved message to conversation_history collection for user: {user_id}"
                 )
 
-            # Also save to user contexts for backwards compatibility
-            self.users_collection.update_one(
-                {"user_id": user_id},
-                {"$push": {"contexts": message}},  # Push the dictionary
-            )
-            self.logger.debug(f"Added message to history for user: {user_id}")
+            # If no DB collection, keep in-memory cache
+            if self.users_collection is None:
+                if user_id not in self.user_data_cache:
+                    self.user_data_cache[user_id] = {"contexts": []}
+                self.user_data_cache[user_id]["contexts"].append(message)
+                self.logger.debug(f"Cached message for user: {user_id}")
+            else:
+                # Also save to user contexts for backwards compatibility
+                self.users_collection.update_one(
+                    {"user_id": user_id},
+                    {"$push": {"contexts": message}},  # Push the dictionary
+                    upsert=True,
+                )
+                self.logger.debug(f"Added message to history for user: {user_id}")
         except Exception as e:
             self.logger.error(f"Error adding message for user {user_id}: {str(e)}")
             raise
@@ -209,7 +233,7 @@ class UserDataManager:
         )
         self.add_message(user_id, message)
 
-    async def get_user_data(self, user_id: str) -> Dict[str, Any]:
+    async def get_user_data(self, user_id: Union[int, str]) -> Dict[str, Any]:
         """
         Retrieve all data for a specific user with improved error handling.
         """
@@ -224,6 +248,10 @@ class UserDataManager:
             # Check cache first for performance
             if user_id in self.user_data_cache:
                 return self.user_data_cache[user_id]
+
+            # If collection is not available, fallback to cache
+            if self.users_collection is None:
+                return self.user_data_cache.get(user_id, {})
 
             user_data = self.users_collection.find_one({"user_id": user_id})
             if not user_data:
@@ -241,9 +269,15 @@ class UserDataManager:
             return self.user_data_cache.get(str(user_id), {})
 
     # Rename this method to avoid conflict with the async version
-    def get_user_settings_sync(self, user_id: int) -> dict:
+    def get_user_settings_sync(self, user_id: Union[int, str]) -> dict:
         """Get user settings from the database (synchronous version)."""
         try:
+            user_id = str(user_id)
+            if self.users_collection is None:
+                # fallback to cache if present
+                cached = self.user_data_cache.get(user_id, {})
+                return cached.get("settings", {"markdown_enabled": True, "code_suggestions": True})
+
             user_data = self.users_collection.find_one({"user_id": user_id})
             if user_data and "settings" in user_data:
                 return user_data["settings"]
@@ -306,7 +340,7 @@ class UserDataManager:
                 self.logger.warning(
                     f"User {user_id} context is not a list: {type(context)}. Clearing."
                 )
-                await self.clear_history(user_id)
+                self.clear_history(user_id)
                 return []
 
             # Filter out any invalid entries and ensure proper format
@@ -355,18 +389,26 @@ class UserDataManager:
         user_data = await self.get_user_data(user_id)
         return user_data.get("settings", {})
 
-    def update_user_settings(self, user_id: str, new_settings: Dict[str, Any]) -> None:
+    def update_user_settings(self, user_id: Union[int, str], new_settings: Dict[str, Any]) -> None:
         """
-        Update user settings.
-
-        :param user_id: Unique identifier for the user
-        :param new_settings: Dictionary of settings to update
+        Update user settings (synchronous).
         """
         try:
-            current_settings = self.get_user_settings(user_id)
+            user_id = str(user_id)
+            current_settings = self.get_user_settings_sync(user_id)
             current_settings.update(new_settings)
+
+            # If no DB collection, update cache
+            if self.users_collection is None:
+                if user_id not in self.user_data_cache:
+                    self.user_data_cache[user_id] = {}
+                self.user_data_cache[user_id].setdefault("settings", {})
+                self.user_data_cache[user_id]["settings"].update(new_settings)
+                self.logger.info(f"Updated in-memory settings for user: {user_id}")
+                return
+
             self.users_collection.update_one(
-                {"user_id": user_id}, {"$set": {"settings": current_settings}}
+                {"user_id": user_id}, {"$set": {"settings": current_settings}}, upsert=True
             )
             self.logger.info(f"Updated settings for user: {user_id}")
         except Exception as e:
@@ -374,23 +416,28 @@ class UserDataManager:
             raise
 
     async def update_user_settings_async(
-        self, user_id: str, new_settings: Dict[str, Any]
+        self, user_id: Union[int, str], new_settings: Dict[str, Any]
     ) -> None:
         """
         Update user settings asynchronously.
-
-        :param user_id: Unique identifier for the user
-        :param new_settings: Dictionary of settings to update
         """
         try:
+            user_id = str(user_id)
             user_data = await self.get_user_data(user_id)
             current_settings = user_data.get("settings", {})
             current_settings.update(new_settings)
 
-            # Update in database
-            self.users_collection.update_one(
-                {"user_id": user_id}, {"$set": {"settings": current_settings}}
-            )
+            # If no DB collection, update cache
+            if self.users_collection is None:
+                if user_id not in self.user_data_cache:
+                    self.user_data_cache[user_id] = {}
+                self.user_data_cache[user_id].setdefault("settings", {})
+                self.user_data_cache[user_id]["settings"].update(new_settings)
+            else:
+                # Update in database
+                self.users_collection.update_one(
+                    {"user_id": user_id}, {"$set": {"settings": current_settings}}, upsert=True
+                )
 
             # Update in memory cache if exists
             if hasattr(self, "user_data_cache") and user_id in self.user_data_cache:
@@ -414,6 +461,9 @@ class UserDataManager:
         :param days_threshold: Number of days of inactivity before cleanup
         """
         try:
+            if self.users_collection is None:
+                self.logger.warning("cleanup_inactive_users skipped: no DB connection")
+                return
             threshold_date = datetime.now() - timedelta(days=days_threshold)
             result = self.users_collection.delete_many(
                 {"stats.last_active": {"$lt": threshold_date.isoformat()}}
@@ -423,9 +473,17 @@ class UserDataManager:
             self.logger.error(f"Error during cleanup of inactive users: {str(e)}")
             raise
 
-    def get_user_stats(self, user_id: int) -> dict:
+    def get_user_stats(self, user_id: Union[int, str]) -> dict:
         """Get user statistics from the database."""
         try:
+            user_id = str(user_id)
+            if self.users_collection is None:
+                return self.user_data_cache.get(user_id, {}).get("stats", {
+                    "messages_sent": 0,
+                    "images_sent": 0,
+                    "voice_messages_sent": 0,
+                    "pdf_documents_sent": 0,
+                })
             user_data = self.users_collection.find_one({"user_id": user_id})
             if user_data and "stats" in user_data:
                 return user_data["stats"]
@@ -443,9 +501,16 @@ class UserDataManager:
             self.logger.error(f"Error getting stats for user {user_id}: {str(e)}")
             raise
 
-    def update_user_stats(self, user_id: int, stats: dict) -> None:
+    def update_user_stats(self, user_id: Union[int, str], stats: dict) -> None:
         """Update user statistics in the database."""
         try:
+            user_id = str(user_id)
+            if self.users_collection is None:
+                if user_id not in self.user_data_cache:
+                    self.user_data_cache[user_id] = {}
+                self.user_data_cache[user_id]["stats"] = stats
+                self.logger.info(f"Cached stats for user: {user_id}")
+                return
             self.users_collection.update_one(
                 {"user_id": user_id}, {"$set": {"stats": stats}}, upsert=True
             )
@@ -454,9 +519,15 @@ class UserDataManager:
             self.logger.error(f"Error updating stats for user {user_id}: {str(e)}")
             raise
 
-    def reset_conversation(self, user_id: int) -> None:
+    def reset_conversation(self, user_id: Union[int, str]) -> None:
         """Reset the conversation history for a user."""
         try:
+            user_id = str(user_id)
+            if self.users_collection is None:
+                if user_id in self.user_data_cache:
+                    self.user_data_cache[user_id]["conversation_history"] = []
+                self.logger.info(f"Reset in-memory conversation history for user: {user_id}")
+                return
             self.users_collection.update_one(
                 {"user_id": user_id}, {"$set": {"conversation_history": []}}
             )
@@ -467,12 +538,12 @@ class UserDataManager:
             )
             raise
 
-    # Convert these methods to async since they call async methods
     async def get_user_preference(
-        self, user_id: int, preference_key: str, default=None
+        self, user_id: Union[int, str], preference_key: str, default=None
     ):
         """Get a user's preference setting."""
         try:
+            user_id = str(user_id)
             # Check the in-memory preference cache first
             if hasattr(self, "preference_cache") and user_id in self.preference_cache:
                 if preference_key in self.preference_cache[user_id]:
@@ -525,14 +596,37 @@ class UserDataManager:
             self.logger.error(f"Error getting user preference: {e}")
             return default
 
-    async def set_user_preference(self, user_id: int, preference_key: str, value):
+    async def set_user_preference(self, user_id: Union[int, str], preference_key: str, value):
         """Set a user's preference setting."""
         try:
+            user_id = str(user_id)
             # Initialize user if not yet initialized
             await self.initialize_user(user_id)
 
-            # Update preference directly with a dedicated update operation
-            # This ensures the preference is properly saved
+            # If no DB, update cache only
+            if self.users_collection is None:
+                if not hasattr(self, "preference_cache"):
+                    self.preference_cache = {}
+                if user_id not in self.preference_cache:
+                    self.preference_cache[user_id] = {}
+                self.preference_cache[user_id][preference_key] = value
+
+                # Also update user cache
+                if hasattr(self, "user_data_cache") and user_id in self.user_data_cache:
+                    if "preferences" not in self.user_data_cache[user_id]:
+                        self.user_data_cache[user_id]["preferences"] = {}
+                    self.user_data_cache[user_id]["preferences"][preference_key] = value
+
+                # Store preference in backup
+                if not hasattr(self, "preference_backup"):
+                    self.preference_backup = {}
+                if user_id not in self.preference_backup:
+                    self.preference_backup[user_id] = {}
+                self.preference_backup[user_id][preference_key] = value
+
+                return True
+
+            # Update preference directly with a dedicated update operation in DB
             result = self.users_collection.update_one(
                 {"user_id": user_id},
                 {"$set": {f"preferences.{preference_key}": value}},
@@ -545,24 +639,20 @@ class UserDataManager:
                     f"Set preference {preference_key} for user {user_id} to: {value} (matched: {result.matched_count}, modified: {result.modified_count})"
                 )
             else:
-                self.logger.warning(
-                    f"Preference update not acknowledged for user {user_id}"
-                )
+                self.logger.warning(f"Preference update not acknowledged for user {user_id}")
 
-            # Always update the preference_cache to ensure consistency
+            # Always update preference_cache, user_data_cache and preference_backup
             if not hasattr(self, "preference_cache"):
                 self.preference_cache = {}
             if user_id not in self.preference_cache:
                 self.preference_cache[user_id] = {}
             self.preference_cache[user_id][preference_key] = value
 
-            # Also update in-memory cache if we have one
             if hasattr(self, "user_data_cache") and user_id in self.user_data_cache:
                 if "preferences" not in self.user_data_cache[user_id]:
                     self.user_data_cache[user_id]["preferences"] = {}
                 self.user_data_cache[user_id]["preferences"][preference_key] = value
 
-            # Store preference in a persistent in-memory backup
             if not hasattr(self, "preference_backup"):
                 self.preference_backup = {}
             if user_id not in self.preference_backup:
@@ -575,7 +665,7 @@ class UserDataManager:
             return False
 
     async def update_user_personal_info(
-        self, user_id: int, info_key: str, info_value: str
+        self, user_id: Union[int, str], info_key: str, info_value: str
     ) -> bool:
         """
         Store or update a piece of personal information about a user.
@@ -586,12 +676,21 @@ class UserDataManager:
         :return: Success status
         """
         try:
+            user_id = str(user_id)
             # Initialize user if not yet initialized
             await self.initialize_user(user_id)
 
-            # Update or create personal info
+            # If no DB, update cache
+            if self.users_collection is None:
+                if user_id not in self.personal_info_cache:
+                    self.personal_info_cache[user_id] = {}
+                self.personal_info_cache[user_id][info_key] = info_value
+                self.logger.info(f"Cached personal info '{info_key}' for user {user_id}")
+                return True
+
+            # Update or create personal info in DB
             update_query = {"$set": {f"personal_info.{info_key}": info_value}}
-            self.users_collection.update_one({"user_id": user_id}, update_query)
+            self.users_collection.update_one({"user_id": user_id}, update_query, upsert=True)
 
             # Update in-memory cache
             if user_id not in self.personal_info_cache:
@@ -604,7 +703,7 @@ class UserDataManager:
             self.logger.error(f"Error updating personal info for user {user_id}: {e}")
             return False
 
-    async def get_user_personal_info(self, user_id: int, info_key: str = None) -> Any:
+    async def get_user_personal_info(self, user_id: int, info_key: Optional[str] = None) -> Any:
         """
         Retrieve personal information for a user.
 
@@ -671,10 +770,10 @@ class UserDataManager:
 
     async def save_message_pair(
         self,
-        user_id: str,
+        user_id: Union[int, str],
         user_message: str,
         assistant_message: str,
-        model_id: str = None,
+        model_id: Optional[str] = None,
     ) -> None:
         """
         Save a user-assistant message pair for web app memory context.
@@ -718,14 +817,15 @@ class UserDataManager:
             ]
 
             # Update database
-            self.users_collection.update_one(
-                {"user_id": user_id},
-                {
-                    "$push": {"contexts": {"$each": messages_to_add}},
-                    "$set": {"last_updated": datetime.now()},
-                },
-                upsert=True,
-            )
+            if self.users_collection is not None:
+                self.users_collection.update_one(
+                    {"user_id": user_id},
+                    {
+                        "$push": {"contexts": {"$each": messages_to_add}},
+                        "$set": {"last_updated": datetime.now()},
+                    },
+                    upsert=True,
+                )
 
             # Update cache
             if user_id in self.user_data_cache:
@@ -741,7 +841,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error saving message pair for user {user_id}: {str(e)}")
 
-    async def add_message_async(self, user_id: str, message: Dict[str, str]) -> None:
+    async def add_message_async(self, user_id: Union[int, str], message: Dict[str, Any]) -> None:
         """
         Async version of add_message with enhanced error handling.
         """
@@ -754,16 +854,14 @@ class UserDataManager:
                 or "role" not in message
                 or "content" not in message
             ):
-                self.logger.error(
-                    f"Invalid message format for user {user_id}: {message}"
-                )
+                self.logger.error(f"Invalid message format for user {user_id}: {message}")
                 return
 
             # Add timestamp if not present
             if "timestamp" not in message:
                 message["timestamp"] = datetime.now().isoformat()
 
-            if self.db is None:
+            if self.db is None or self.users_collection is None:
                 # Store in cache
                 if user_id not in self.user_data_cache:
                     self.user_data_cache[user_id] = {"contexts": []}
