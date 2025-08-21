@@ -81,7 +81,7 @@ class OpenRouterAPI:
             self.logger.info("Closed OpenRouter API aiohttp session.")
             self.session = None
 
-    def _build_system_message(self, model_id: str, context: List[Dict] = None) -> str:
+    def _build_system_message(self, model_id: str, context: Optional[List[Dict]] = None) -> str:
         """Return a system message based on model and context, using ModelConfigurations."""
         model_config: Optional[ModelConfig] = ModelConfigurations.get_all_models().get(
             model_id
@@ -112,7 +112,7 @@ class OpenRouterAPI:
     async def generate_response(
         self,
         prompt: str,
-        context: List[Dict] = None,
+        context: Optional[List[Dict]] = None,
         model: str = "deepseek-chat",
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
@@ -205,8 +205,8 @@ class OpenRouterAPI:
         self,
         prompt: str,
         openrouter_model_key: str,
-        system_message: str = None,
-        context: List[Dict] = None,
+        system_message: Optional[str] = None,
+        context: Optional[List[Dict]] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         timeout: float = 300.0,

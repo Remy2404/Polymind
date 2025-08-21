@@ -188,13 +188,13 @@ class MemoryManager:
                 )
 
             # Persist to storage
-            await self.persistence_manager.persist_memory(
-                conversation_id if not is_group else group_id,
-                self._get_memory_data(
-                    conversation_id if not is_group else group_id, is_group
-                ),
-                is_group,
-            )
+            persist_key = conversation_id if not is_group else group_id
+            if persist_key is not None:
+                await self.persistence_manager.persist_memory(
+                    persist_key,
+                    self._get_memory_data(persist_key, is_group),
+                    is_group,
+                )
 
     async def add_assistant_message(
         self,
@@ -255,15 +255,16 @@ class MemoryManager:
                 % 20
                 == 0
             ):
-                await self._generate_conversation_summary(cache_key, is_group)
+                if cache_key is not None:
+                    await self._generate_conversation_summary(cache_key, is_group)
 
-            await self.persistence_manager.persist_memory(
-                conversation_id if not is_group else group_id,
-                self._get_memory_data(
-                    conversation_id if not is_group else group_id, is_group
-                ),
-                is_group,
-            )
+            persist_key = conversation_id if not is_group else group_id
+            if persist_key is not None:
+                await self.persistence_manager.persist_memory(
+                    persist_key,
+                    self._get_memory_data(persist_key, is_group),
+                    is_group,
+                )
 
     async def get_relevant_memory(
         self,
@@ -277,6 +278,8 @@ class MemoryManager:
         """Get relevant messages using semantic search with group support"""
         try:
             cache_key = group_id if is_group else conversation_id
+            if cache_key is None:
+                return []
             message_cache = (
                 self.group_memory_cache.get(group_id, [])
                 if is_group
@@ -332,6 +335,8 @@ class MemoryManager:
     ) -> List[Dict[str, Any]]:
         """Get recent messages with group support and auto-loading from storage"""
         cache_key = group_id if is_group else conversation_id
+        if cache_key is None:
+            return []
         message_cache = (
             self.group_memory_cache.get(group_id, [])
             if is_group
@@ -360,6 +365,8 @@ class MemoryManager:
     ) -> Optional[str]:
         """Get or generate conversation summary with group support"""
         cache_key = group_id if is_group else conversation_id
+        if cache_key is None:
+            return None
         summary_cache = (
             self.group_summaries if is_group else self.conversation_summaries
         )
@@ -379,9 +386,10 @@ class MemoryManager:
         """Clear conversation memory with group support"""
         async with self.lock:
             if is_group:
-                self.group_memory_cache.pop(group_id, None)
-                self.group_summaries.pop(group_id, None)
-                self.group_operations.clear_group_data(group_id)
+                if group_id is not None:
+                    self.group_memory_cache.pop(group_id, None)
+                    self.group_summaries.pop(group_id, None)
+                    self.group_operations.clear_group_data(group_id)
             else:
                 self.memory_cache.pop(conversation_id, None)
                 self.conversation_summaries.pop(conversation_id, None)
@@ -442,6 +450,8 @@ class MemoryManager:
         try:
             # Load memory if not already in cache
             cache_key = group_id if is_group else conversation_id
+            if cache_key is None:
+                return []
             await self.load_memory(cache_key, is_group)
 
             # Get all messages from cache
@@ -466,6 +476,8 @@ class MemoryManager:
         """Export complete conversation data including summary"""
         try:
             cache_key = group_id if is_group else conversation_id
+            if cache_key is None:
+                return {}
             await self.load_memory(cache_key, is_group)
 
             # Get messages

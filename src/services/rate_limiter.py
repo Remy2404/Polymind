@@ -154,7 +154,7 @@ class UserRateLimiter:
         async with self.lock:
             if user_id not in self.user_limiters:
                 self.user_limiters[user_id] = RateLimiter(
-                    requests_per_minute=self.requests_per_hour / 60
+                    requests_per_minute=int(self.requests_per_hour / 60)
                 )
 
             limiter = self.user_limiters[user_id]

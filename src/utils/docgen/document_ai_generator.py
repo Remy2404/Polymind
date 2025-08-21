@@ -16,9 +16,9 @@ logging.basicConfig(level=logging.DEBUG)
 class AIDocumentGenerator:
     def __init__(
         self,
-        gemini_api: GeminiAPI = None,
-        openrouter_api: OpenRouterAPI = None,
-        deepseek_api: DeepSeekLLM = None,
+        gemini_api: Optional[GeminiAPI] = None,
+        openrouter_api: Optional[OpenRouterAPI] = None,
+        deepseek_api: Optional[DeepSeekLLM] = None,
         api_manager=None,
     ):
         # Use provided API manager or create a new one
@@ -40,7 +40,7 @@ class AIDocumentGenerator:
         output_format: str = "pdf",
         document_type: str = "article",
         model: str = "gemini",
-        additional_context: str = None,
+        additional_context: Optional[str] = None,
         max_tokens: int = 32000,
     ) -> Tuple[bytes, str]:
         try:
@@ -162,7 +162,7 @@ class AIDocumentGenerator:
             result_lines.append(current_line)
 
             if re.match(r"^#{1,6}\s+", current_line):
-                re.match(r"^(#{1,6})\s+", current_line)
+                # No need to use the result of re.match here, just extract heading text
                 heading_text = current_line.strip("#").strip()
 
                 next_non_empty = i + 1
@@ -250,16 +250,17 @@ class AIDocumentGenerator:
             if re.match(r"^#{1,6}", line):
                 for j in range(6, 0, -1):
                     pattern = r"^#{" + str(j) + r"}([^#\s]?)(.*)"
-                    if re.match(pattern, line):
-                        match = re.match(pattern, line)
+                    match = re.match(pattern, line)
+                    if match:
                         heading_text = match.group(2)
                         if heading_text and heading_text[0].islower():
                             heading_text = heading_text[0].upper() + heading_text[1:]
-                        line = "#" * j + " " + match.group(1) + heading_text
+                        line = "#" * j + match.group(1) + heading_text
                         break
 
             if re.match(r"^\s*[\*\-•]([^\s]|$)", line):
-                indentation = re.match(r"^(\s*)", line).group(1)
+                indentation_match = re.match(r"^(\s*)", line)
+                indentation = indentation_match.group(1) if indentation_match else ""
                 content_match = re.match(r"^\s*[\*\-•]\s*(.*)", line)
                 if content_match:
                     content = content_match.group(1)
@@ -270,8 +271,10 @@ class AIDocumentGenerator:
                     line = f"{indentation}* "
 
             if re.match(r"^\s*\d+\.[^\s]", line):
-                indentation = re.match(r"^(\s*)", line).group(1)
-                number = re.match(r"^\s*(\d+)\.", line).group(1)
+                indentation_match = re.match(r"^(\s*)", line)
+                indentation = indentation_match.group(1) if indentation_match else ""
+                number_match = re.match(r"^\s*(\d+)\.", line)
+                number = number_match.group(1) if number_match else ""
                 content_match = re.match(r"^\s*\d+\.\s*(.*)", line)
                 if content_match:
                     content = content_match.group(1)
