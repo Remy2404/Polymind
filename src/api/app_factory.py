@@ -41,11 +41,19 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
         # If WEBHOOK_URL is set, configure webhook; otherwise, start polling fallback
         if os.getenv("WEBHOOK_URL"):
             await bot.setup_webhook()
-            raw_token = bot.token
-            url_encoded_token = raw_token.replace(":", "%3A")
-            bot.logger.info(
-                f"Webhook endpoints registered at /webhook/{raw_token} and /webhook/{url_encoded_token}"
-            )
+            raw_token = getattr(bot, "token", None)
+            if raw_token:
+                from urllib.parse import quote
+
+                # URL-encode the token safely (handles ":" and other special chars)
+                url_encoded_token = quote(raw_token, safe="")
+                bot.logger.info(
+                    f"Webhook endpoints registered at /webhook/{raw_token} and /webhook/{url_encoded_token}"
+                )
+            else:
+                bot.logger.warning(
+                    "WEBHOOK_URL is set but bot.token is not available; webhook endpoints may not be registered."
+                )
         else:
             # Start polling in a background thread for development/local usage
             from threading import Thread

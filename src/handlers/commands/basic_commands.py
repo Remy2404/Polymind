@@ -111,4 +111,6 @@ class BasicCommands:
                     f"Conversation history has been reset, {personal_info['name']}! I'll still remember your personal details."
                 )
             else:
-                await update.effective_message.reply_text("Conversation history has been reset!")
+                await update.effective_message.reply_text(
+                    "Conversation history has been reset!"
+                )

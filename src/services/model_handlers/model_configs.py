@@ -720,7 +720,7 @@ class ModelConfigurations:
                 description="Advanced conversational AI - Free",
                 type="creative_writing",
                 capabilities=["creative_writing"],
-            )
+            ),
         }
         return models
 

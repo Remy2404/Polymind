@@ -452,6 +452,7 @@ class EnhancedUIComponents:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str, data: str
     ) -> None:
         """Handle quick action interactions"""
+
         async def safe_reply(text):
             # Safely reply to the user, handling cases where message/chat may be None
             message_obj = getattr(update.callback_query, "message", None)
@@ -470,9 +471,7 @@ class EnhancedUIComponents:
                     await update.callback_query.answer(text)
 
         if action == "chat":
-            await safe_reply(
-                "🤖 Quick Chat activated! What would you like to discuss?"
-            )
+            await safe_reply("🤖 Quick Chat activated! What would you like to discuss?")
         elif action == "image":
             await safe_reply(
                 "🎨 Image Generator ready! Describe the image you want to create."
@@ -487,6 +486,7 @@ class EnhancedUIComponents:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str, data: str
     ) -> None:
         """Handle adaptive keyboard interactions"""
+
         async def safe_reply(text):
             # Safely reply to the user, handling cases where message/chat may be None
             message_obj = getattr(update.callback_query, "message", None)
@@ -523,6 +523,7 @@ class EnhancedUIComponents:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str, data: str
     ) -> None:
         """Handle suggestion action interactions"""
+
         async def safe_reply(text):
             # Safely reply to the user, handling cases where message/chat may be None
             message_obj = getattr(update.callback_query, "message", None)
@@ -542,7 +543,9 @@ class EnhancedUIComponents:
 
         # Example suggestion actions
         if action == "explain_code":
-            await safe_reply("🔍 Here is an explanation of the code snippet you referenced.")
+            await safe_reply(
+                "🔍 Here is an explanation of the code snippet you referenced."
+            )
         elif action == "debug":
             await safe_reply("🐛 Debug Help: Please describe the issue you're facing.")
         elif action == "best_practices":
@@ -552,7 +555,9 @@ class EnhancedUIComponents:
         elif action == "style_transfer":
             await safe_reply("🖼️ Style transfer is being applied to your image.")
         elif action == "edit_image":
-            await safe_reply("📏 Please specify how you'd like to edit or resize your image.")
+            await safe_reply(
+                "📏 Please specify how you'd like to edit or resize your image."
+            )
         elif action == "details":
             await safe_reply("📖 Here are more details on your topic.")
         elif action == "examples":

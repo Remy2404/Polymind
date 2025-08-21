@@ -8,7 +8,7 @@ import logging
 import io
 from typing import Optional, List, Dict, Any, Union
 
-from services.gemini_api import (
+from src.services.gemini_api import (
     GeminiAPI,
     ProcessingResult,
     create_document_input,
@@ -416,7 +416,11 @@ class DocumentProcessor:
         for category, extensions in categories.items():
             if extension in extensions:
                 # Always return strings, never None
-                language = self._detect_language(extension) if category == "code" else "Unknown"
+                language = (
+                    self._detect_language(extension)
+                    if category == "code"
+                    else "Unknown"
+                )
                 return {
                     "type": extension,
                     "category": category,
@@ -548,6 +552,8 @@ class DocumentProcessor:
                 "success": False,
                 "metadata": {},
             }
+
+
 async def quick_document_analysis(
     gemini_api: GeminiAPI,
     file_data: Union[bytes, io.BytesIO],
@@ -558,7 +564,11 @@ async def quick_document_analysis(
     processor = DocumentProcessor(gemini_api)
     result = await processor.process_document(file_data, filename, prompt)
     # Always return a string, never None
-    return result.content if result.success and result.content is not None else f"Error: {result.error}"
+    return (
+        result.content
+        if result.success and result.content is not None
+        else f"Error: {result.error}"
+    )
 
 
 async def extract_document_text(
@@ -572,4 +582,8 @@ async def extract_document_text(
         "Extract all text content from this document. Return only the text without analysis.",
     )
     # Always return a string, never None
-    return result.content if result.success and result.content is not None else f"Error: {result.error}"
+    return (
+        result.content
+        if result.success and result.content is not None
+        else f"Error: {result.error}"
+    )

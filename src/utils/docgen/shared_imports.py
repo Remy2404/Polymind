@@ -36,7 +36,6 @@ except Exception as e:
 # Try to import a fallback PDF library (reportlab) for PDF generation
 REPORTLAB_AVAILABLE = False
 try:
-    from reportlab.lib.pagesizes import A4
     from reportlab.platypus import (
         SimpleDocTemplate,
         Paragraph,
@@ -50,6 +49,7 @@ try:
     )
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
 
     REPORTLAB_AVAILABLE = True
 except ImportError:
@@ -69,3 +69,4 @@ except ImportError:
     Image = None
     ListItem = None
     ListFlowable = None
+    globals().setdefault("A4", None)

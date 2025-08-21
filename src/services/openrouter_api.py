@@ -12,7 +12,7 @@ from src.services.model_handlers.model_configs import (
     ModelConfigurations,
     Provider,
     ModelConfig,
-) 
+)
 
 # Load environment variables
 load_dotenv()
@@ -38,12 +38,12 @@ class OpenRouterAPI:
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
         }
-        self._load_openrouter_models_from_config()  
+        self._load_openrouter_models_from_config()
 
         # Circuit breaker properties
         self.api_failures = 0
         self.api_last_failure = 0
-        self.circuit_breaker_threshold = 5 
+        self.circuit_breaker_threshold = 5
         self.circuit_breaker_timeout = 300
 
         # Initialize session
@@ -81,7 +81,9 @@ class OpenRouterAPI:
             self.logger.info("Closed OpenRouter API aiohttp session.")
             self.session = None
 
-    def _build_system_message(self, model_id: str, context: Optional[List[Dict]] = None) -> str:
+    def _build_system_message(
+        self, model_id: str, context: Optional[List[Dict]] = None
+    ) -> str:
         """Return a system message based on model and context, using ModelConfigurations."""
         model_config: Optional[ModelConfig] = ModelConfigurations.get_all_models().get(
             model_id
@@ -247,7 +249,7 @@ class OpenRouterAPI:
                 f"OpenRouter API timeout for model keys {openrouter_model_key}"
             )
             return None
-        except Exception as e:
+        except Exception:
             self.api_failures += 1
             self.api_last_failure = time.time()
             return None

@@ -159,9 +159,9 @@ class KnowledgeGraph:
 
                         self.graph.nodes[entity_id]["documents"] = docs
                         self.graph.nodes[entity_id]["contexts"] = contexts
-                        self.graph.nodes[entity_id]["last_seen"] = (
-                            datetime.now().isoformat()
-                        )
+                        self.graph.nodes[entity_id][
+                            "last_seen"
+                        ] = datetime.now().isoformat()
 
                     # Connect document to entity
                     self.graph.add_edge(
@@ -756,9 +756,9 @@ class KnowledgeGraph:
                             last_updated=datetime.now().isoformat(),
                         )
                     else:
-                        self.graph.nodes[conversation_context_id]["last_updated"] = (
-                            datetime.now().isoformat()
-                        )
+                        self.graph.nodes[conversation_context_id][
+                            "last_updated"
+                        ] = datetime.now().isoformat()
 
                     # Connect message to conversation context
                     self.graph.add_edge(

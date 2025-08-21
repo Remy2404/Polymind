@@ -428,9 +428,9 @@ class GroupIntelligenceSystem:
             }
 
             # Generate recommendations
-            insights[
-                "recommendations"
-            ] = await self._generate_collaboration_recommendations(group_id, insights)
+            insights["recommendations"] = (
+                await self._generate_collaboration_recommendations(group_id, insights)
+            )
 
             return insights
 

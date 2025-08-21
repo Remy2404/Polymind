@@ -321,7 +321,9 @@ class TelegramBot:
 
             if user_id is None:
                 if message_obj:
-                    await message_obj.reply_text("User ID not found. Cannot set reminder.")
+                    await message_obj.reply_text(
+                        "User ID not found. Cannot set reminder."
+                    )
                 return
 
             if len(args) < 2:
@@ -330,22 +332,25 @@ class TelegramBot:
                 return
 
             from datetime import datetime
+
             time_str = args[0]
             message = " ".join(args[1:])
             try:
                 remind_time = datetime.fromisoformat(time_str)
             except Exception:
                 if message_obj:
-                    await message_obj.reply_text("Invalid time format. Use YYYY-MM-DDTHH:MM")
+                    await message_obj.reply_text(
+                        "Invalid time format. Use YYYY-MM-DDTHH:MM"
+                    )
                 return
 
             await self.reminder_manager.set_reminder(user_id, remind_time, message)
             if message_obj:
-                await message_obj.reply_text(f"Reminder set for {remind_time}: {message}")
+                await message_obj.reply_text(
+                    f"Reminder set for {remind_time}: {message}"
+                )
 
-        self.application.add_handler(
-            CommandHandler("remind", remind_handler)
-        )
+        self.application.add_handler(CommandHandler("remind", remind_handler))
         self.application.add_handler(
             CommandHandler("language", self.language_manager.set_language)
         )
@@ -360,7 +365,9 @@ class TelegramBot:
                 await self.message_handlers._error_handler(update_or_obj, context)
             else:
                 # fallback: log error
-                self.logger.error(f"Error handler received non-Update object: {update_or_obj}")
+                self.logger.error(
+                    f"Error handler received non-Update object: {update_or_obj}"
+                )
 
         self.application.add_error_handler(error_handler)
 

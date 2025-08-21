@@ -763,7 +763,9 @@ class MultiFileProcessor:
                 file_data.seek(0)  # Reset position
                 return content[:4000]  # Limit length
             except Exception as e:
-                return f"[Could not read text content from {filename} due to error: {e}]"
+                return (
+                    f"[Could not read text content from {filename} due to error: {e}]"
+                )
 
         else:
             # For other files, just return a placeholder

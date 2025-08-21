@@ -109,12 +109,12 @@ class DocumentCommands:
         preferred_models = [
             "gemini",
             "llama-3.2-3b-instruct",
-            "qwen3-235b", 
-            "dolphin-mistral-24b-venice-edition",  
-            "qwerky-72b",  
-            "deephermes-3-llama-8b", 
-            "dolphin3-r1-mistral-24b",  
-            "openrouter-horizon-beta",  
+            "qwen3-235b",
+            "dolphin-mistral-24b-venice-edition",
+            "qwerky-72b",
+            "deephermes-3-llama-8b",
+            "dolphin3-r1-mistral-24b",
+            "openrouter-horizon-beta",
         ]
 
         for model_id in preferred_models:

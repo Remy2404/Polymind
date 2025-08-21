@@ -67,9 +67,9 @@ class DeepSeekLLM:
 
         if system_message_idx >= 0:
             # Append to existing system message
-            modified_messages[system_message_idx]["content"] += (
-                f"\n\n{anti_thinking_instruction}"
-            )
+            modified_messages[system_message_idx][
+                "content"
+            ] += f"\n\n{anti_thinking_instruction}"
         else:
             # Add new system message at the beginning
             modified_messages.insert(

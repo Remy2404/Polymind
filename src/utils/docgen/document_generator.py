@@ -25,7 +25,6 @@ from .shared_imports import (
     SimpleDocTemplate,
     Paragraph,
     Spacer,
-    ListItem,
     ListFlowable,
 )
 
@@ -128,7 +127,7 @@ class DocumentGenerator:
                 # Code block - collect until closing ```
                 code_content = []
                 code_block_index = content.split("\n").index(line)
-        
+
                 # Skip the opening ``` line
                 for code_line in content.split("\n")[code_block_index + 1 :]:
                     if code_line.strip() == "```":
@@ -373,7 +372,9 @@ class DocumentGenerator:
                                     if "**" in cell_text or "*" in cell_text:
                                         paragraph = cell.paragraphs[0]
                                         paragraph.text = ""
-                                        self._process_mixed_formatting(paragraph, cell_text)
+                                        self._process_mixed_formatting(
+                                            paragraph, cell_text
+                                        )
                                     else:
                                         cell.text = cell_text
 

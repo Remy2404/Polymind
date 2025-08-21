@@ -9,7 +9,14 @@ from telegram.ext import ContextTypes
 # Spire.Doc imports - specific imports instead of star imports
 try:
     from spire.doc import Document, Section, FileFormat
-    from spire.doc.common import Color, HorizontalAlignment, VerticalAlignment, BorderStyle, HyperlinkType
+    from spire.doc.common import (
+        Color,
+        HorizontalAlignment,
+        VerticalAlignment,
+        BorderStyle,
+        HyperlinkType,
+    )
+
     SPIRE_AVAILABLE = True
 except ImportError:
     # Fallback if Spire.Doc is not available
@@ -45,8 +52,10 @@ class SpireDocumentExporter:
     def create_docx(self, content: str) -> bytes:
         """Create DOCX using Spire.Doc - simplified to export content only"""
         if not SPIRE_AVAILABLE:
-            raise ImportError("Spire.Doc is not available. Please install it to use DOCX export functionality.")
-        
+            raise ImportError(
+                "Spire.Doc is not available. Please install it to use DOCX export functionality."
+            )
+
         try:
             # Create document using Spire.Doc
             document = Document()

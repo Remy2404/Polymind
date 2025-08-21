@@ -71,9 +71,9 @@ class GroupUIManager:
 
             # Add quick action buttons for group management
             if self._should_show_management_buttons(update, metadata):
-                enhancements[
-                    "inline_keyboard"
-                ] = await self._create_quick_actions_keyboard(metadata.get("group_id"))
+                enhancements["inline_keyboard"] = (
+                    await self._create_quick_actions_keyboard(metadata.get("group_id"))
+                )
 
             return enhancements
 
@@ -408,7 +408,9 @@ class GroupUIManager:
                     if datetime.now() - last_active_time > timedelta(days=7):
                         activity_indicator = self.EMOJIS["inactive"]
                 except Exception as e:
-                    self.logger.error(f"Error parsing last_active date for user {user_id}: {e}")
+                    self.logger.error(
+                        f"Error parsing last_active date for user {user_id}: {e}"
+                    )
 
             # Format participant info
             participant_info = f"{activity_indicator} {name}"
