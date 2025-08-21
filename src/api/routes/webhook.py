@@ -3,7 +3,7 @@ import os
 import time
 import urllib.parse
 import logging
-from typing import Any
+from typing import Any, Type
 from fastapi import APIRouter, Request, BackgroundTasks, Depends
 try:
     # Prefer fastapi_msgspec for faster msgspec encoding/decoding when available
@@ -41,8 +41,8 @@ class WebhookException(Exception):
 # Minimal schema for Telegram updates. Use MsgspecStruct as base when available,
 # otherwise fall back to object so static analyzers see a single class.
 if MsgspecStruct is not None:
-    # Use the msgspec Struct type directly when available
-    UpdateMsg = MsgspecStruct
+    # Use the msgspec Struct type directly when available.
+    UpdateMsg: Type[Any] = MsgspecStruct  # type: ignore
 else:
     # Fallback lightweight class for static analysis and runtime
     class UpdateMsg:

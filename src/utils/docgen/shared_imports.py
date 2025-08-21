@@ -7,6 +7,27 @@ import os
 import warnings
 from dotenv import load_dotenv
 
+# Define what this module exports
+__all__ = [
+    "logging",
+    "GEMINI_API_KEY",
+    "WEASYPRINT_AVAILABLE", 
+    "REPORTLAB_AVAILABLE",
+    "getSampleStyleSheet",
+    "ParagraphStyle",
+    "colors",
+    "A4",
+    "SimpleDocTemplate",
+    "Paragraph",
+    "Spacer",
+    "Table",
+    "TableStyle",
+    "Preformatted",
+    "Image",
+    "ListItem",
+    "ListFlowable",
+]
+
 # Suppress WeasyPrint GTK warnings on Windows
 warnings.filterwarnings("ignore", message=".*libgobject.*")
 warnings.filterwarnings("ignore", message=".*WeasyPrint could not import.*")
