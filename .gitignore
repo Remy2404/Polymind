@@ -35,4 +35,5 @@ models.json
 docs
 MiniWebApp/
 CLAUDE.md
-
+copilot-instructions.md
+call_tools.toolsets.jsonc

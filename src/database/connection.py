@@ -13,13 +13,17 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# Connection pool configuration
+# Connection pool configuration with timeout improvements
 CONNECTION_POOL = {}
-MAX_POOL_SIZE = 50
-MIN_POOL_SIZE = 5
-CONNECTION_TIMEOUT = 5000  # ms
-MAX_IDLE_TIME_MS = 60000  # 1 minute
+MAX_POOL_SIZE = 20  # Reduced pool size for better stability
+MIN_POOL_SIZE = 2   # Reduced minimum connections
+CONNECTION_TIMEOUT = 30000  # Increased to 30 seconds
+SERVER_SELECTION_TIMEOUT = 30000  # Added server selection timeout
+SOCKET_TIMEOUT = 20000  # Added socket timeout for individual operations
+MAX_IDLE_TIME_MS = 300000  # Increased to 5 minutes
 RETRY_WRITES = True
+HEARTBEAT_FREQUENCY = 30000  # Added heartbeat frequency (30 seconds)
+CONNECT_TIMEOUT = 30000  # Added connection timeout
 
 
 # Mock database for development mode
@@ -135,19 +139,37 @@ def get_database(
 
     for attempt in range(max_retries):
         try:
-            # Create client with optimized connection pool settings
+            # Create client with optimized connection pool settings for timeout handling
+            # Note: Compression libraries are optional and won't cause failures
+            try:
+                import snappy  # noqa: F401 - Only checking availability
+                compressors = ['snappy', 'zlib']
+            except ImportError:
+                compressors = ['zlib']  # Fallback to zlib only if snappy not available
+                
             client = MongoClient(
                 mongodb_uri,
                 maxPoolSize=MAX_POOL_SIZE,
                 minPoolSize=MIN_POOL_SIZE,
-                connectTimeoutMS=CONNECTION_TIMEOUT,
+                connectTimeoutMS=CONNECT_TIMEOUT,
+                serverSelectionTimeoutMS=SERVER_SELECTION_TIMEOUT,
+                socketTimeoutMS=SOCKET_TIMEOUT,
                 maxIdleTimeMS=MAX_IDLE_TIME_MS,
+                heartbeatFrequencyMS=HEARTBEAT_FREQUENCY,
                 retryWrites=RETRY_WRITES,
-                serverSelectionTimeoutMS=5000,  # 5 seconds for server selection
+                retryReads=True,  # Enable retry reads for better resilience
+                compressors=compressors,  # Use available compressors
+                zlibCompressionLevel=6,  # Moderate compression level
             )
 
-            # Force a connection to verify it works
-            client.admin.command("ismaster")
+            # Force a connection to verify it works with proper timeout handling
+            try:
+                # Use ping instead of ismaster (deprecated) with explicit timeout
+                client.admin.command("ping", maxTimeMS=15000)  # 15 second ping timeout
+                logger.info("MongoDB connection verified successfully")
+            except Exception as ping_error:
+                logger.warning(f"Ping verification failed: {ping_error}")
+                # Continue anyway as connection might still work
 
             # Get the database
             db = client[db_name]
@@ -158,17 +180,37 @@ def get_database(
 
             return db, client
 
-        except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+        except (ConnectionFailure, ServerSelectionTimeoutError, Exception) as e:
+            # Enhanced error handling with specific timeout error detection
+            error_msg = str(e).lower()
+            is_timeout = any(keyword in error_msg for keyword in ['timeout', 'timed out', 'connection timeout'])
+            
             if attempt < max_retries - 1:
-                logger.warning(
-                    f"Database connection attempt {attempt + 1} failed: {str(e)}. Retrying in {current_retry_interval:.1f}s..."
-                )
+                if is_timeout:
+                    logger.warning(
+                        f"Database connection timeout on attempt {attempt + 1}: {str(e)[:200]}... "
+                        f"This is likely due to network issues or MongoDB Atlas connection limits. "
+                        f"Retrying in {current_retry_interval:.1f}s..."
+                    )
+                else:
+                    logger.warning(
+                        f"Database connection attempt {attempt + 1} failed: {str(e)[:200]}... "
+                        f"Retrying in {current_retry_interval:.1f}s..."
+                    )
                 time.sleep(current_retry_interval)
-                current_retry_interval *= 2  # Exponential backoff
+                current_retry_interval = min(current_retry_interval * 2, 30)  # Cap at 30 seconds
             else:
-                logger.error(
-                    f"Failed to connect to MongoDB after {max_retries} attempts: {str(e)}"
-                )
+                if is_timeout:
+                    logger.error(
+                        f"Failed to connect to MongoDB after {max_retries} attempts due to persistent timeouts. "
+                        f"This may be due to: 1) Network connectivity issues, 2) MongoDB Atlas connection limits, "
+                        f"3) Firewall blocking connections, or 4) MongoDB server overload. "
+                        f"Last error: {str(e)}"
+                    )
+                else:
+                    logger.error(
+                        f"Failed to connect to MongoDB after {max_retries} attempts: {str(e)}"
+                    )
                 # Use mock DB as fallback if configured
                 if os.getenv("IGNORE_DB_ERROR", "false").lower() == "true":
                     logger.warning("IGNORE_DB_ERROR is true, using mock database")

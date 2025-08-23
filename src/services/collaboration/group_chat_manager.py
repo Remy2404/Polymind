@@ -10,6 +10,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMem
 from telegram.ext import ContextTypes
 from telegram.constants import ChatType
 import time
+# Import the bot username helper for dynamic username detection
+from src.utils.bot_username_helper import BotUsernameHelper
 
 logger = logging.getLogger(__name__)
 
@@ -726,9 +728,8 @@ class GroupChatManager:
             return 0
 
     def _is_bot_mentioned(self, message_text: str, context) -> bool:
-        """Check if bot is mentioned in message"""
-        bot_username = context.bot.username
-        return f"@{bot_username}" in message_text if bot_username else False
+        """Check if bot is mentioned in message using dynamic username detection"""
+        return BotUsernameHelper.is_bot_mentioned(message_text, context)
 
     def _detect_media_type(self, message) -> str:
         """Detect media type in message"""

@@ -4,6 +4,7 @@ This module provides functions to determine which messages should be ignored or 
 """
 
 import logging
+from .bot_username_helper import BotUsernameHelper
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class MessageFilter:
         """Initialize the message filter with default settings."""
         self.logger = logging.getLogger(__name__)
 
-    def should_ignore_update(self, update_data: dict, bot_username: str = None) -> bool:
+    def should_ignore_update(self, update_data: dict, bot_username: str = None, context=None) -> bool:
         """
         Determine if an update should be ignored based on content and chat type.
 
@@ -31,7 +32,8 @@ class MessageFilter:
 
         Args:
             update_data: The update data received from Telegram
-            bot_username: The bot's username for mention detection
+            bot_username: The bot's username for mention detection (deprecated, use context)
+            context: Telegram context object for dynamic username detection
 
         Returns:
             True if the update should be ignored, False otherwise
@@ -68,41 +70,48 @@ class MessageFilter:
                 # No text, ignore non-text messages in groups
                 return True
 
-            # Default to provided bot_username or use fallback
-            if not bot_username:
-                bot_username = "Gemini_AIAssistBot"
+            # Get bot username dynamically from context, fallback to parameter
+            if context:
+                # Use the dynamic helper for accurate username detection
+                message_text = message.get("text", "")
+                entities = message.get("entities", [])
+                is_mentioned = BotUsernameHelper.is_bot_mentioned(message_text, context, entities=entities)
+            else:
+                # Fallback to the old method if no context provided
+                if not bot_username:
+                    bot_username = "Gemini_AIAssistBot"
 
-            # Check if bot is mentioned in the message text
-            message_text = message.get("text", "")
-            mentioned_in_text = f"@{bot_username}" in message_text
+                # Check if bot is mentioned in the message text
+                message_text = message.get("text", "")
+                mentioned_in_text = f"@{bot_username}" in message_text
 
-            # Check for mentions in entities
-            entities = message.get("entities", [])
-            mentioned_in_entities = False
+                # Check for mentions in entities
+                entities = message.get("entities", [])
+                mentioned_in_entities = False
 
-            for entity in entities:
-                if entity.get("type") == "mention":
-                    # Extract the mention text
-                    start = entity.get("offset", 0)
-                    length = entity.get("length", 0)
-                    if start + length <= len(message_text):
-                        mention_text = message_text[start : start + length]
-                        if f"@{bot_username}" == mention_text:
+                for entity in entities:
+                    if entity.get("type") == "mention":
+                        # Extract the mention text
+                        start = entity.get("offset", 0)
+                        length = entity.get("length", 0)
+                        if start + length <= len(message_text):
+                            mention_text = message_text[start : start + length]
+                            if f"@{bot_username}" == mention_text:
+                                mentioned_in_entities = True
+                                break
+
+                    # Check for text_mention entity type (for users without usernames)
+                    elif entity.get("type") == "text_mention":
+                        user = entity.get("user", {})
+                        if (
+                            user.get("is_bot", False)
+                            and user.get("username") == bot_username
+                        ):
                             mentioned_in_entities = True
                             break
 
-                # Check for text_mention entity type (for users without usernames)
-                elif entity.get("type") == "text_mention":
-                    user = entity.get("user", {})
-                    if (
-                        user.get("is_bot", False)
-                        and user.get("username") == bot_username
-                    ):
-                        mentioned_in_entities = True
-                        break
-
-            # In groups, only respond if bot is mentioned
-            is_mentioned = mentioned_in_text or mentioned_in_entities
+                # In groups, only respond if bot is mentioned
+                is_mentioned = mentioned_in_text or mentioned_in_entities
 
             if is_group and not is_mentioned:
                 # Bot not mentioned in a group chat, ignore this message

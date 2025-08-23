@@ -121,27 +121,62 @@ class TelegramBot:
             raise
 
     def _init_db_connection(self):
-        """Initialize database connection with retry mechanism."""
-        max_retries = 3
-        retry_delay = 0.5  # Start with 500ms
+        """Initialize database connection with enhanced retry mechanism and fallback."""
+        max_retries = int(os.getenv("DB_MAX_RETRIES", "5")) 
+        retry_delay = float(os.getenv("DB_RETRY_DELAY", "2.0"))  
+        
+        self.logger.info(f"Initializing database connection with {max_retries} max retries...")
 
         for attempt in range(max_retries):
             try:
-                self.db, self.client = get_database()
+                # Use enhanced get_database with longer timeouts for bot initialization
+                self.db, self.client = get_database(max_retries=2, retry_interval=3.0)
                 if self.db is None:
-                    raise ConnectionError("Failed to connect to the database")
-                self.logger.info("Connected to MongoDB successfully")
+                    raise ConnectionError("Database connection returned None")
+                    
+                self.logger.info("✅ Connected to MongoDB successfully")
+                
+                # Test the connection with a simple operation
+                try:
+                    collections = self.db.list_collection_names()
+                    self.logger.info(f"Database collections accessible: {len(collections)} found")
+                except Exception as test_error:
+                    self.logger.warning(f"Database test operation failed: {test_error}")
+                    # Continue anyway as basic connection might still work
+                
                 return
+                
             except Exception as e:
+                error_msg = str(e).lower()
+                is_timeout = any(keyword in error_msg for keyword in ['timeout', 'timed out'])
+                
                 if attempt < max_retries - 1:
-                    self.logger.warning(
-                        f"Database connection attempt {attempt + 1} failed, retrying..."
-                    )
+                    if is_timeout:
+                        self.logger.warning(
+                            f"⏰ Database connection timeout on attempt {attempt + 1}/{max_retries}. "
+                            f"This is common with MongoDB Atlas. Retrying in {retry_delay:.1f}s..."
+                        )
+                    else:
+                        self.logger.warning(
+                            f"🔄 Database connection attempt {attempt + 1}/{max_retries} failed: {str(e)[:150]}... "
+                            f"Retrying in {retry_delay:.1f}s..."
+                        )
                     time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                    retry_delay = min(retry_delay * 1.5, 10.0)  # Gentler backoff, cap at 10s
                 else:
-                    self.logger.error(f"All database connection attempts failed: {e}")
-                    raise
+                    if is_timeout:
+                        self.logger.error(
+                            f"❌ Database connection failed after {max_retries} attempts due to persistent timeouts. "
+                            f"Bot will continue with limited functionality. Consider checking: "
+                            f"1) Internet connection, 2) MongoDB Atlas whitelist, 3) Connection string validity"
+                        )
+                    else:
+                        self.logger.error(f"❌ All database connection attempts failed: {e}")
+                    
+                    # Set up for degraded mode
+                    self.db = None
+                    self.client = None
+                    self.logger.warning("🚨 Bot starting in degraded mode without database persistence")
 
     def _init_services(self):
         """Initialize bot services and API clients."""

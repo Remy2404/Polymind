@@ -30,6 +30,8 @@ from src.services.model_handlers.model_configs import (
     Provider,
     ModelConfig,
 )
+# Import the new bot username helper
+from src.utils.bot_username_helper import BotUsernameHelper
 
 logger = logging.getLogger(__name__)
 
@@ -345,10 +347,23 @@ class MessageHandlers:
                     # Fall back to original message if group processing fails
 
             # Check if the bot is mentioned but don't send an automatic reply
-            # Just log it for tracking purposes
-            bot_username = "@Gemini_AIAssistBot"
-            if bot_username in enhanced_message_text:
-                self.logger.info(f"Bot mentioned by user {user_id}")
+            # Just log it for tracking purposes using dynamic username detection
+            message_entities = []
+            if update.message and update.message.entities:
+                message_entities = [
+                    {
+                        "type": entity.type,
+                        "offset": entity.offset,
+                        "length": entity.length,
+                        "url": getattr(entity, "url", None),
+                        "user": getattr(entity, "user", None)
+                    }
+                    for entity in update.message.entities
+                ]
+            
+            if BotUsernameHelper.is_bot_mentioned(enhanced_message_text, context, entities=message_entities):
+                bot_username = BotUsernameHelper.get_bot_username(context, with_at=True)
+                self.logger.info(f"Bot mentioned by user {user_id} using username: {bot_username}")
                 # Remove the automatic greeting that was causing duplicate responses
                 # We'll let the text handler process the full message instead
 
@@ -357,7 +372,7 @@ class MessageHandlers:
                 try:
                     # Only route commands if private chat or bot is mentioned in group chat
                     is_group_chat = chat and chat.type in ["group", "supergroup"]
-                    is_mentioned = "@Gemini_AIAssistBot" in enhanced_message_text
+                    is_mentioned = BotUsernameHelper.is_bot_mentioned(enhanced_message_text, context, entities=message_entities)
                     if not is_group_chat or is_mentioned:
                         # IMPORTANT: Use original message_text for intent detection, not enhanced_message_text
                         # This prevents group context from interfering with command detection
@@ -1002,13 +1017,27 @@ class MessageHandlers:
             # Check if the message is in a group chat
             if update.effective_chat.type in ["group", "supergroup"]:
                 # Process only if the bot is mentioned in the caption
-                bot_username = "@" + context.bot.username
                 caption = update.message.caption or ""
-                if bot_username not in caption:
+                
+                # Extract caption entities for mention detection
+                caption_entities = []
+                if update.message.caption_entities:
+                    caption_entities = [
+                        {
+                            "type": entity.type,
+                            "offset": entity.offset,
+                            "length": entity.length,
+                            "url": getattr(entity, "url", None),
+                            "user": getattr(entity, "user", None)
+                        }
+                        for entity in update.message.caption_entities
+                    ]
+                
+                if not BotUsernameHelper.is_bot_mentioned(caption, context, entities=caption_entities):
                     return
                 else:
-                    # Remove bot mention
-                    caption = caption.replace(bot_username, "").strip()
+                    # Remove bot mention from caption
+                    caption = BotUsernameHelper.remove_bot_mention(caption, context)
             else:
                 caption = update.message.caption or "Please analyze this document."
 

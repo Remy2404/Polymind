@@ -21,6 +21,9 @@ from .text_processing.utilities import MediaUtilities
 from .model_fallback_handler import ModelFallbackHandler
 from src.services.ai_command_router import EnhancedIntentDetector
 
+# Import the bot username helper
+from src.utils.bot_username_helper import BotUsernameHelper
+
 
 class TextHandler:
     def __init__(
@@ -125,13 +128,36 @@ class TextHandler:
 
             # In group chats, only process messages that mention the bot
             if update.effective_chat.type in ["group", "supergroup"]:
-                bot_username = "@" + context.bot.username
-                if bot_username not in message_text:
+                # Extract entities for accurate mention detection
+                entities = []
+                if message.entities:
+                    entities = [
+                        {
+                            "type": entity.type,
+                            "offset": entity.offset,
+                            "length": entity.length,
+                            "url": getattr(entity, "url", None),
+                            "user": getattr(entity, "user", None),
+                        }
+                        for entity in message.entities
+                    ]
+
+                self.logger.debug(f"Group chat message entities: {entities}")
+
+                if not BotUsernameHelper.is_bot_mentioned(
+                    message_text, context, entities=entities
+                ):
                     # Bot not mentioned, ignore message
+                    self.logger.debug(
+                        f"Bot not mentioned in group chat message: '{message_text}'"
+                    )
                     return
                 else:
                     # Remove bot username from message text
-                    message_text = message_text.replace(bot_username, "").strip()
+                    self.logger.debug("Bot mentioned in group chat, processing message")
+                    message_text = BotUsernameHelper.remove_bot_mention(
+                        message_text, context
+                    )
 
             # Extract any attached media files
             (
