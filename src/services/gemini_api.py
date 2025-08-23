@@ -254,7 +254,7 @@ class GeminiAPI:
         text_prompt: str,
         media_inputs: Optional[List[MediaInput]] = None,
         context: Optional[List[Dict]] = None,
-        model_name: str = "gemini-2.0-flash-exp",
+        model_name: str = "gemini-2.5-flash",
     ) -> ProcessingResult:
         """
         Process combined multimodal input (text + images + documents + audio + video)

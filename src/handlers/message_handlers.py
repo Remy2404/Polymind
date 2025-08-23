@@ -507,20 +507,16 @@ class MessageHandlers:
                 )
 
                 if result.success and result.content:
-                    # Format the response
+                    # Format the response using ResponseFormatter.format_response
                     formatted_response = await self.response_formatter.format_response(
                         result.content, user_id, model_name="gemini-2.0-flash"
                     )
 
                     # Delete processing message and send response
                     await processing_message.delete()
-                    await update.message.reply_text(
-                        formatted_response,
-                        parse_mode=(
-                            "Markdown"
-                            if "```" in formatted_response or "*" in formatted_response
-                            else None
-                        ),
+                    await self.response_formatter.safe_send_message(
+                        update.message,
+                        formatted_response
                     )
 
                     # Log successful processing
@@ -1282,6 +1278,10 @@ class MessageHandlers:
             ]
             format_markup = InlineKeyboardMarkup(format_options)
 
+            await update.message.reply_text(
+                "Please select the document format you want to export to:",
+                reply_markup=format_markup,
+            )
             await update.message.reply_text(
                 "Please select the document format you want to export to:",
                 reply_markup=format_markup,

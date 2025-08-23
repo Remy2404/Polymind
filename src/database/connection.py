@@ -141,11 +141,11 @@ def get_database(
         try:
             # Create client with optimized connection pool settings for timeout handling
             # Note: Compression libraries are optional and won't cause failures
-            try:
-                import snappy  # noqa: F401 - Only checking availability
+            import importlib
+            if importlib.util.find_spec("snappy") is not None:
                 compressors = ['snappy', 'zlib']
-            except ImportError:
-                compressors = ['zlib']  # Fallback to zlib only if snappy not available
+            else:
+                compressors = ['zlib']
                 
             client = MongoClient(
                 mongodb_uri,

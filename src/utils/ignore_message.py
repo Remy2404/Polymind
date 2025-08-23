@@ -19,7 +19,7 @@ class MessageFilter:
         """Initialize the message filter with default settings."""
         self.logger = logging.getLogger(__name__)
 
-    def should_ignore_update(self, update_data: dict, bot_username: str = None, context=None) -> bool:
+    def should_ignore_update(self, update_data: dict, bot_username: str = "", context=None) -> bool:
         """
         Determine if an update should be ignored based on content and chat type.
 
