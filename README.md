@@ -50,13 +50,12 @@ A powerful, multi-modal Telegram bot leveraging cutting-edge AI technologies inc
 - **Role-Based Access**: Customizable permissions for different group members
 - **Real-Time Collaboration**: Live typing indicators and activity streams
 
-### 🔧 **Technical Excellence**
-- **Production-Ready**: Optimized for high-traffic deployments with webhook support
-- **Rate Limiting**: Intelligent request management and flood protection
-- **Advanced Formatting**: Rich markdown with tables, spoilers, LaTeX, and code highlighting  
-- **Smart Message Chunking**: Automatic splitting of long responses within Telegram limits
-- **Error Recovery**: Comprehensive error handling with graceful degradation
-- **Performance Monitoring**: Built-in logging, analytics, and debugging tools
+### � **Web Search & Research (MCP Integration)**
+- **Exa Search Integration**: Real-time web search with AI-powered results
+- **Company Research**: Deep-dive analysis of companies and organizations
+- **Web Content Extraction**: Intelligent webpage crawling and content analysis
+- **MCP Server Management**: Dynamic tool loading and server orchestration
+- **Universal Model Access**: All 50+ AI models can leverage MCP functionality
 
 ## 🔧 Prerequisites
 - **Python 3.11+** with asyncio support
@@ -118,6 +117,10 @@ GEMINI_API_KEY=your_gemini_api_key
 OPENROUTER_API_KEY=your_openrouter_api_key  # Access to 50+ models
 DEEPSEEK_API_KEY=your_deepseek_api_key      # Optional, for DeepSeek models
 TOGETHER_API_KEY=your_together_api_key
+# 🔍 MCP & Search APIs
+EXA_API_KEY=your_exa_search_api_key         # Required for web search functionality
+# OR use MCP_API_KEY as an alternative:
+MCP_API_KEY=your_mcp_api_key                 # Alternative to EXA_API_KEY for MCP functionality
 WEBHOOK_URL=https://your-domain.com
 PORT=8000
 ```
@@ -207,7 +210,7 @@ Upload any PDF or DOCX file:
 🤖 [Shows organized discussion topics and threads]
 ```
 
-#### For Document Export & Creation
+#### For Research & Web Search
 ```bash
 👤 /exportdoc
 🤖 Choose what to export:
@@ -234,6 +237,11 @@ Upload any PDF or DOCX file:
 | `/currentmodel`   | Show current AI model                | `/currentmodel` |
 | `/exportdoc`      | Export chat to PDF/DOCX              | `/exportdoc` |
 | `/gendoc`         | Generate AI-powered documents        | `/gendoc` |
+| `/search`         | Web search using Exa AI              | `/search latest AI news` |
+| `/company`        | Research companies                   | `/company Tesla Inc` |
+| `/crawl`          | Extract webpage content              | `/crawl https://example.com` |
+| `/mcp`            | Query specific MCP servers           | `/mcp exa_search AI trends` |
+| `/mcp_status`     | Show MCP server status               | `/mcp_status` |
 
 ### 👥 **Group Chat Commands**
 | Command           | Description                          | Usage Example |
