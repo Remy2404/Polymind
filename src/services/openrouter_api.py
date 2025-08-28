@@ -12,15 +12,7 @@ from src.services.model_handlers.model_configs import (
 )
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
-
-# Load environment variables
-load_dotenv()
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
-if not OPENROUTER_API_KEY:
-    telegram_logger.log_error(
-        "OPENROUTER_API_KEY not found in environment variables.", 0
-    )
+from pydantic_ai.providers.openai import OpenAIProvider
 
 # Load environment variables
 load_dotenv()
@@ -43,9 +35,6 @@ class OpenRouterAPI:
 
         self._load_openrouter_models_from_config()
 
-        # Initialize PydanticAI Agent with OpenAI-compatible interface
-        self._setup_pydantic_agent()
-
         # Circuit breaker properties
         self.api_failures = 0
         self.api_last_failure = 0
@@ -66,12 +55,6 @@ class OpenRouterAPI:
             f"Loaded {len(self.available_models)} OpenRouter models from configuration."
         )
 
-    def _setup_pydantic_agent(self):
-        """Setup PydanticAI Agent infrastructure for OpenRouter."""
-        # Agent instances will be created per request with specific models
-        # No default agent needed since we create agents dynamically
-        self.logger.info("PydanticAI Agent infrastructure ready for OpenRouter.")
-
     def get_available_models(self) -> Dict[str, str]:
         """Get the mapping of model IDs to OpenRouter model keys."""
         return self.available_models.copy()
@@ -90,13 +73,20 @@ class OpenRouterAPI:
                 "You are an advanced AI assistant that helps users with various tasks."
             )
 
-        context_hint = (
-            " Use conversation history/context when relevant." if context else ""
-        )
+        # Include conversation history in system message if context is provided
+        if context:
+            context_str = "\n\nConversation History:\n"
+            for msg in context:
+                if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                    role = msg["role"]
+                    content = msg["content"]
+                    context_str += f"{role.title()}: {content}\n"
+            base_message += context_str + "\nPlease continue the conversation naturally, considering the history above."
+
         if not context and not model_config:
             # If no context is provided and no specific model config, add a general helpfulness hint.
             return base_message + " Be concise, helpful, and accurate."
-        return base_message + context_hint
+        return base_message
 
     @rate_limit
     async def generate_response(
@@ -112,29 +102,26 @@ class OpenRouterAPI:
             # Get model with fallback support from centralized config
             openrouter_model = ModelConfigurations.get_model_with_fallback(model)
 
-            # Build system message
+            # Build system message with context included
             system_message = self._build_system_message(model, context)
+
+            # Create OpenAI provider with OpenRouter configuration
+            openai_provider = OpenAIProvider(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=OPENROUTER_API_KEY
+            )
 
             # Create a new agent instance with the specific model for this request
             request_model = OpenAIModel(
                 model_name=openrouter_model,
-                api_key=OPENROUTER_API_KEY,
-                base_url="https://openrouter.ai/api/v1"
+                provider=openai_provider
             )
 
-            # Create agent with the specific model and system message
+            # Create agent with the specific model and system message (includes context)
             request_agent = Agent(
                 model=request_model,
                 system_prompt=system_message
             )
-
-            # Prepare messages
-            messages = []
-            if context:
-                messages.extend(
-                    [msg for msg in context if "role" in msg and "content" in msg]
-                )
-            messages.append({"role": "user", "content": prompt})
 
             self.logger.info(
                 f"Sending request to OpenRouter via PydanticAI Agent with model {model} (mapped to {openrouter_model})"
@@ -143,7 +130,6 @@ class OpenRouterAPI:
             # Use PydanticAI Agent to generate response
             result = await request_agent.run(
                 user_prompt=prompt,
-                message_history=messages[:-1] if messages[:-1] else None,  # Exclude the current user message
                 temperature=temperature,
                 max_tokens=max_tokens
             )
@@ -179,29 +165,39 @@ class OpenRouterAPI:
         timeout: float = 300.0,
     ) -> Optional[str]:
         try:
+            # Create OpenAI provider with OpenRouter configuration
+            openai_provider = OpenAIProvider(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=OPENROUTER_API_KEY
+            )
+
             # Create a new agent instance with the specific model key
             request_model = OpenAIModel(
                 model_name=openrouter_model_key,
-                api_key=OPENROUTER_API_KEY,
-                base_url="https://openrouter.ai/api/v1"
+                provider=openai_provider
             )
 
-            # Use provided system message or default
-            final_system_message = (
-                system_message
-                or "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."
-            )
+            # Build final system message with context included
+            if system_message:
+                final_system_message = system_message
+            else:
+                final_system_message = "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."
 
-            # Create agent with the specific model and system message
+            # Include conversation history in system message if context is provided
+            if context:
+                context_str = "\n\nConversation History:\n"
+                for msg in context:
+                    if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                        role = msg["role"]
+                        content = msg["content"]
+                        context_str += f"{role.title()}: {content}\n"
+                final_system_message += context_str + "\nPlease continue the conversation naturally, considering the history above."
+
+            # Create agent with the specific model and system message (includes context)
             request_agent = Agent(
                 model=request_model,
                 system_prompt=final_system_message
             )
-
-            # Prepare messages
-            messages = []
-            if context:
-                messages.extend(context)
 
             self.logger.info(
                 f"Sending request to OpenRouter via PydanticAI Agent with model key {openrouter_model_key}"
@@ -210,7 +206,6 @@ class OpenRouterAPI:
             # Use PydanticAI Agent to generate response
             result = await request_agent.run(
                 user_prompt=prompt,
-                message_history=messages if messages else None,
                 temperature=temperature,
                 max_tokens=max_tokens
             )
