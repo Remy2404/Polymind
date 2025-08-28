@@ -63,27 +63,40 @@ class BasicCommands:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         help_text = (
-            "🤖 Available Commands\n\n"
+            "🤖 **Available Commands**\n\n"
+            "**Basic Commands:**\n"
             "/start - Start the bot\n"
             "/help - Show this help message\n"
             "/reset - Reset conversation history\n"
             "/settings - Configure bot settings\n"
-            "/stats - Show bot statistics\n"
+            "/stats - Show bot statistics\n\n"
+            "**AI & Content:**\n"
             "/genimg - Generate images with Together AI\n"
             "/switchmodel - Switch between AI models\n"
+            "/gendoc - Generate AI documents\n"
             "/export - Export conversation history\n\n"
-            "💡 Features\n"
-            "• General conversations with AI\n"
-            "• Code assistance\n"
-            "• Voice to text conversion\n"
-            "• Image generation and analysis\n"
-            "• Statistics tracking\n"
-            "• Supports markdown formatting\n\n"
+            "**Search & Research (MCP):**\n"
+            "/search <query> - Web search via Exa AI\n"
+            "/company <name> - Research companies\n"
+            "/crawl <url> - Extract content from URLs\n"
+            "/mcp - MCP server management\n\n"
+            "**Group Features:**\n"
+            "/groupsettings - Configure group settings\n"
+            "/groupcontext - Manage group context\n"
+            "/groupthreads - View conversation threads\n\n"
+            "💡 **Features**\n"
+            "• Multi-modal AI conversations (54+ models)\n"
+            "• Real-time web search and research\n"
+            "• Company intelligence and analysis\n"
+            "• Document generation and analysis\n"
+            "• Voice, image, and document processing\n"
+            "• Group collaboration tools\n"
+            "• MCP server integration\n\n"
             "Need help? Join our support channel @GemBotAI!"
         )
         # Use effective_message for reply
         if update.effective_message:
-            await update.effective_message.reply_text(help_text)
+            await update.effective_message.reply_text(help_text, parse_mode='Markdown')
         # Only log if effective_user exists
         if update.effective_user:
             self.telegram_logger.log_message(

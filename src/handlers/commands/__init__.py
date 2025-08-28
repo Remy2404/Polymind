@@ -7,6 +7,7 @@ from .document_commands import DocumentCommands
 from .export_commands import ExportCommands, EnhancedExportCommands
 from .callback_handlers import CallbackHandlers
 from .open_web_app import OpenWebAppCommands
+from .mcp_commands import MCPCommands
 
 __all__ = [
     "BasicCommands",
@@ -17,4 +18,5 @@ __all__ = [
     "EnhancedExportCommands",
     "CallbackHandlers",
     "OpenWebAppCommands",
+    "MCPCommands",
 ]

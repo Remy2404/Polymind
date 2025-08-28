@@ -1,0 +1,62 @@
+{
+  "servers": {
+    "exa-search": {
+      "type": "stdio",
+      "command": "mcp",
+      "args": ["server"],
+      "env": {
+        "MCP_API_KEY": "",
+        "EXA_PROFILE": ""
+      },
+      "enabled": true,
+      "description": "Exa AI Search via Smithery.ai",
+      "url": "https://server.smithery.ai/exa/mcp"
+    },
+    "fetch-mcp": {
+      "type": "stdio", 
+      "command": "mcp",
+      "args": ["server"],
+      "enabled": true,
+      "description": "Web content fetching via Smithery.ai"
+    },
+    "doc-git": {
+      "type": "streamable_http",
+      "enabled": false,
+      "description": "Git repo documentation"
+    },
+    "context7": {
+      "type": "stdio",
+      "enabled": true,
+      "description": "Context7 library docs"
+    },
+    "docfork": {
+      "type": "stdio",
+      "enabled": true,
+      "description": "Document analysis via Docfork/Smithery.ai"
+    },
+    "duckduckgo-search": {
+      "type": "stdio",
+      "enabled": true,
+      "description": "DuckDuckGo web search"
+    },
+    "sequential-thinking": {
+      "type": "stdio",
+      "enabled": true,
+      "description": "Sequential thinking/problem-solving tools"
+    }
+  },
+  "tools": {
+    "exa_search_company_research_exa": {
+      "server": "exa-search",
+      "description": "Research companies using Exa search"
+    },
+    "exa_search_web_search_exa": {
+      "server": "exa-search", 
+      "description": "Perform web search using Exa"
+    },
+    "exa_search_content_crawler": {
+      "server": "exa-search",
+      "description": "Crawl and extract content from URLs"
+    }
+  }
+}

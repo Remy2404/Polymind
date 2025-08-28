@@ -66,4 +66,6 @@ dependencies = [
     "docxtpl>=0.20.0",
     "spire-doc>=13.4.6",
     "ruff>=0.12.7",
+    "pydantic-ai>=0.0.1",
+    "mcp[cli]>=0.1.0",
 ]

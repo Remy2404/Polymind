@@ -36,6 +36,7 @@ from .commands import (
     ExportCommands,
     CallbackHandlers,
     OpenWebAppCommands,
+    MCPCommands,
 )
 
 
@@ -119,6 +120,11 @@ class CommandHandlers:
         )
         self.open_web_app_commands = OpenWebAppCommands(
             user_data_manager, telegram_logger
+        )
+        
+        # Initialize MCP commands
+        self.mcp_commands = MCPCommands(
+            user_data_manager, telegram_logger, self.api_manager
         )
 
         # Initialize callback handlers
@@ -441,6 +447,27 @@ class CommandHandlers:
     ) -> None:
         return await self.open_web_app_commands.open_web_app_command(update, context)
 
+    # Delegate MCP commands
+    async def search_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.mcp_commands.search_command(update, context)
+
+    async def company_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.mcp_commands.company_command(update, context)
+
+    async def crawl_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.mcp_commands.crawl_command(update, context)
+
+    async def mcp_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.mcp_commands.mcp_command(update, context)
+
     def register_handlers(self, application: Application, cache=None) -> None:
         try:
             # Command handlers
@@ -482,6 +509,12 @@ class CommandHandlers:
             application.add_handler(
                 CommandHandler("cleanthreads", self.clean_threads_command)
             )
+
+            # MCP commands
+            application.add_handler(CommandHandler("search", self.search_command))
+            application.add_handler(CommandHandler("company", self.company_command))
+            application.add_handler(CommandHandler("crawl", self.crawl_command))
+            application.add_handler(CommandHandler("mcp", self.mcp_command))
 
             # Specific callback handlers if needed
             self.response_cache = cache
