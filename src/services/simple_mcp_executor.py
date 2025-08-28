@@ -91,60 +91,89 @@ class SimpleMCPExecutor:
         smithery_key = os.getenv("SMITHERY_API_KEY")
         if not smithery_key:
             return "Error: SMITHERY_API_KEY not configured"
-        
+
         try:
             # Build the command
             cmd = [
                 "npx", "-y", "@smithery/cli@latest", "run", service,
                 "--key", smithery_key
             ]
-            
+
             # Add action and parameters
             if action:
                 cmd.extend(["--action", action])
-            
-            # Add parameters as JSON
+
+            # Add parameters as JSON - ensure proper escaping
             if params:
-                cmd.extend(["--params", json.dumps(params)])
-            
-            logger.info(f"Executing Smithery command: {' '.join(cmd)}")
-            
+                try:
+                    params_json = json.dumps(params, ensure_ascii=True)
+                    cmd.extend(["--params", params_json])
+                except (TypeError, ValueError) as e:
+                    logger.error(f"Failed to serialize parameters: {e}")
+                    return f"Error: Invalid parameters for {service} {action}"
+
+            logger.info(f"Executing Smithery command: {' '.join(cmd[:5])}...")  # Log partial command for security
+
             # Execute the command using subprocess.run for Windows compatibility
             import subprocess
-            
+
             try:
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=30
+                    timeout=30,
+                    encoding='utf-8',
+                    errors='replace'  # Replace invalid characters
                 )
-                
+
                 stdout = result.stdout
                 stderr = result.stderr
                 returncode = result.returncode
-                
+
             except subprocess.TimeoutExpired:
-                return "Error: Tool execution timed out"
-            
+                return "Error: Tool execution timed out after 30 seconds"
+            except UnicodeDecodeError as e:
+                logger.error(f"Unicode decoding error in tool output: {e}")
+                return "Error: Tool returned invalid character encoding"
+
             logger.info(f"Smithery command completed with return code: {returncode}")
             if stderr:
-                logger.warning(f"Smithery stderr: {stderr}")
-            
+                logger.warning(f"Smithery stderr: {stderr[:500]}...")  # Log first 500 chars
+
             if returncode == 0:
-                result = stdout
-                logger.info(f"Smithery tool result: {result[:200]}...")  # Log first 200 chars
+                # Validate that stdout is not empty and contains valid content
+                if not stdout or stdout.strip() == "":
+                    return "Error: Tool returned empty result"
+
+                # Clean the result to ensure it's safe for JSON processing
+                result = stdout.strip()
+
+                # Remove any potential control characters that might break JSON parsing
+                result = ''.join(char for char in result if ord(char) >= 32 or char in '\n\r\t')
+
+                # Check if result looks like valid JSON and try to parse it
+                if result.startswith('{') or result.startswith('['):
+                    try:
+                        # Try to parse as JSON to validate it's well-formed
+                        json.loads(result)
+                        logger.info("Tool returned valid JSON response")
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Tool returned malformed JSON: {e}")
+                        # Don't fail completely, just log the issue
+
+                logger.info(f"Smithery tool result length: {len(result)}")
                 return result
             else:
-                error_msg = stderr if stderr else "Unknown error"
-                logger.error(f"Smithery tool failed with code {returncode}: {error_msg}")
-                return f"Error: {error_msg}"
-                
+                error_msg = stderr.strip() if stderr else "Unknown error"
+                logger.error(f"Smithery tool failed with code {returncode}: {error_msg[:500]}...")
+                return f"Error: Tool execution failed - {error_msg[:200]}"
+
         except asyncio.TimeoutError:
             return "Error: Tool execution timed out"
         except Exception as e:
             logger.error(f"Error executing Smithery tool: {e}", exc_info=True)
-            return f"Error: {str(e)}"
+            return f"Error: Tool execution failed - {str(e)[:200]}"
     
     async def execute_context7_search(self, query: str) -> str:
         """Execute Context7 documentation search."""
