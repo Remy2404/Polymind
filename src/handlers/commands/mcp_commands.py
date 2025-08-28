@@ -55,12 +55,81 @@ class MCPCommands:
         self._initialized = False
         
     async def _ensure_initialized(self):
-        """Ensure the agent is initialized."""
+        """Ensure the agent is initialized with proper error handling."""
         if not self._initialized:
-            success = await self.agent.initialize()
-            self._initialized = success
-            if not success:
-                self.logger.warning("Enhanced Agent initialization failed")
+            try:
+                success = await self.agent.initialize()
+                self._initialized = success
+                if not success:
+                    self.logger.warning("Enhanced Agent initialization failed - using fallback mode")
+            except Exception as e:
+                self.logger.error(f"Agent initialization error: {e}")
+                self._initialized = False
+                
+    async def _get_fallback_response(self, query: str, search_type: str) -> str:
+        """Generate fallback response when MCP is not available."""
+        try:
+            if search_type == "search":
+                return (
+                    f"🔍 **Search Query:** {query}\n\n"
+                    "⚠️ **MCP Search Currently Unavailable**\n\n"
+                    "**Alternative Options:**\n"
+                    "• Try rephrasing your query\n"
+                    "• Use a web browser for real-time results\n"
+                    "• Contact admin to configure MCP servers\n\n"
+                    "**What I can help with instead:**\n"
+                    "• General knowledge questions\n"
+                    "• Document analysis\n"
+                    "• Code assistance\n"
+                    "• Image generation\n\n"
+                    "💡 *MCP integration provides enhanced search capabilities when properly configured.*"
+                )
+            elif search_type == "company":
+                return (
+                    f"🏢 **Company Research:** {query}\n\n"
+                    "⚠️ **MCP Company Research Currently Unavailable**\n\n"
+                    "**I can still help with:**\n"
+                    "• General business knowledge\n"
+                    "• Industry analysis concepts\n"
+                    "• Business strategy discussions\n"
+                    "• Financial concepts\n\n"
+                    "**For real-time data:**\n"
+                    "• Check company websites directly\n"
+                    "• Use financial news sources\n"
+                    "• Visit investor relations pages\n\n"
+                    "💡 *When MCP is configured, I can provide real-time company intelligence.*"
+                )
+            elif search_type == "crawl":
+                return (
+                    f"🕸️ **URL Content Request:** {query}\n\n"
+                    "⚠️ **MCP URL Crawling Currently Unavailable**\n\n"
+                    "**Alternative Approaches:**\n"
+                    "• Copy and paste the content manually\n"
+                    "• Upload content as a document for analysis\n"
+                    "• Share specific text excerpts for discussion\n\n"
+                    "**I can analyze:**\n"
+                    "• Uploaded documents (PDF, DOCX, TXT)\n"
+                    "• Pasted text content\n"
+                    "• Images with text\n\n"
+                    "💡 *MCP integration enables automated content extraction when configured.*"
+                )
+            else:
+                return (
+                    f"🔧 **MCP Request:** {query}\n\n"
+                    "⚠️ **MCP Services Currently Unavailable**\n\n"
+                    "This may be due to:\n"
+                    "• Missing API configuration (SMITHERY_API_KEY)\n"
+                    "• Network connectivity issues\n"
+                    "• Server maintenance\n\n"
+                    "**Check:**\n"
+                    "• `/mcp status` for system information\n"
+                    "• Environment variables are set\n"
+                    "• Internet connection is stable\n\n"
+                    "💡 *Contact admin if this issue persists.*"
+                )
+        except Exception as e:
+            self.logger.error(f"Error generating fallback response: {e}")
+            return f"❌ Unable to process request: {query}\n\nPlease try again or contact support."
                 
     async def search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /search command for web search."""
@@ -99,20 +168,25 @@ class MCPCommands:
                     response = self._format_search_results(query, search_result)
                 else:
                     # Fallback: Use AI model to simulate search assistance
-                    ai_prompt = f"User is searching for: {query}. Provide helpful information and suggest where they might find current information about this topic."
-                    
-                    if self.api_manager:
-                        current_model = self.user_data_manager.get_user_model(user_id)
-                        ai_response = await self.api_manager.generate_response(
-                            model_id=current_model,
-                            prompt=ai_prompt,
-                            max_tokens=1000
-                        )
+                    if not self._initialized:
+                        # MCP not available, provide fallback response
+                        response = await self._get_fallback_response(query, "search")
                     else:
-                        ai_response = "Search functionality is currently in development. Please try again later."
+                        # MCP available but returned mock results
+                        ai_prompt = f"User is searching for: {query}. Provide helpful information and suggest where they might find current information about this topic."
                         
-                    response = f"🔍 **Search Results for:** {query}\n\n{ai_response}\n\n"
-                    response += "💡 *Note: This is an AI-generated response. For real-time results, ensure MCP servers are properly configured.*"
+                        if self.api_manager:
+                            current_model = self.user_data_manager.get_user_model(user_id)
+                            ai_response = await self.api_manager.generate_response(
+                                model_id=current_model,
+                                prompt=ai_prompt,
+                                max_tokens=1000
+                            )
+                        else:
+                            ai_response = "Search functionality is currently in development. Please try again later."
+                            
+                        response = f"🔍 **Search Results for:** {query}\n\n{ai_response}\n\n"
+                        response += "💡 *Note: This is an AI-generated response. For real-time results, ensure MCP servers are properly configured.*"
                 
                 # Update status message with results
                 await status_msg.edit_text(response, parse_mode='Markdown')
@@ -172,20 +246,25 @@ class MCPCommands:
                     response = self._format_company_results(company_name, research_result)
                 else:
                     # Fallback: Use AI model for company analysis
-                    ai_prompt = f"Provide a comprehensive analysis of the company '{company_name}'. Include information about their business model, recent developments, market position, and key metrics if known."
-                    
-                    if self.api_manager:
-                        current_model = self.user_data_manager.get_user_model(user_id)
-                        ai_response = await self.api_manager.generate_response(
-                            model_id=current_model,
-                            prompt=ai_prompt,
-                            max_tokens=1500
-                        )
+                    if not self._initialized:
+                        # MCP not available, provide fallback response
+                        response = await self._get_fallback_response(company_name, "company")
                     else:
-                        ai_response = "Company research functionality is currently in development."
+                        # MCP available but returned mock results
+                        ai_prompt = f"Provide a comprehensive analysis of the company '{company_name}'. Include information about their business model, recent developments, market position, and key metrics if known."
                         
-                    response = f"🏢 **Company Research:** {company_name}\n\n{ai_response}\n\n"
-                    response += "💡 *Note: For real-time data and financial metrics, ensure MCP servers are properly configured.*"
+                        if self.api_manager:
+                            current_model = self.user_data_manager.get_user_model(user_id)
+                            ai_response = await self.api_manager.generate_response(
+                                model_id=current_model,
+                                prompt=ai_prompt,
+                                max_tokens=1500
+                            )
+                        else:
+                            ai_response = "Company research functionality is currently in development."
+                            
+                        response = f"🏢 **Company Research:** {company_name}\n\n{ai_response}\n\n"
+                        response += "💡 *Note: For real-time data and financial metrics, ensure MCP servers are properly configured.*"
                 
                 # Update status message with results
                 await status_msg.edit_text(response, parse_mode='Markdown')
@@ -249,13 +328,18 @@ class MCPCommands:
                     response = self._format_crawl_results(url, crawl_result)
                 else:
                     # Fallback: Inform user about limitations
-                    response = f"🕸️ **URL Crawl Request:** {url}\n\n"
-                    response += "⚠️ URL crawling functionality requires MCP server configuration.\n\n"
-                    response += "**What you can do:**\n"
-                    response += "• Copy and paste the content manually\n"
-                    response += "• Use document upload if the content is in a file\n"
-                    response += "• Contact admin to configure MCP servers\n\n"
-                    response += "💡 *Note: Mock crawl result - MCP servers not fully configured.*"
+                    if not self._initialized:
+                        # MCP not available, provide fallback response
+                        response = await self._get_fallback_response(url, "crawl")
+                    else:
+                        # MCP available but returned mock results
+                        response = f"🕸️ **URL Crawl Request:** {url}\n\n"
+                        response += "⚠️ URL crawling functionality requires MCP server configuration.\n\n"
+                        response += "**What you can do:**\n"
+                        response += "• Copy and paste the content manually\n"
+                        response += "• Use document upload if the content is in a file\n"
+                        response += "• Contact admin to configure MCP servers\n\n"
+                        response += "💡 *Note: Mock crawl result - MCP servers not fully configured.*"
                 
                 # Update status message with results
                 await status_msg.edit_text(response, parse_mode='Markdown')
