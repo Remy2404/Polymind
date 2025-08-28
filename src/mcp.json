@@ -1,0 +1,101 @@
+{
+  "mcpServers": {
+    "exa-search": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "exa",
+        "--key",
+        "${SMITHERY_API_KEY}"
+      ],
+      "tools": [
+        "exa_search_company_research_exa",
+        "exa_search_crawling_exa",
+        "exa_search_deep_researcher_start",
+        "exa_search_deep_researcher_check",
+        "exa_search_linkedin_search_exa",
+        "exa_search_web_search_exa"
+      ],
+      "description": "Exa AI Search via Smithery.ai - Web search, company research, and content crawling"
+    },
+    "fetch-mcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "fetch-mcp",
+        "--key",
+        "${SMITHERY_API_KEY}"
+      ],
+      "description": "Web content fetching and HTML processing via Smithery.ai"
+    },
+    "doc-git": {
+      "type": "streamable_http",
+      "url": "https://gitmvp.com/mcp",
+      "enabled": false,
+      "description": "Git repository documentation and analysis (disabled - HTTP support experimental)"
+    },
+    "context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "description": "Context7 library documentation access"
+    },
+
+    "docfork": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@docfork/mcp",
+        "--key",
+        "${SMITHERY_API_KEY}"
+      ],
+      "enabled": true,
+      "description": "Document processing and analysis via Docfork and Smithery.ai"
+    },
+    "duckduckgo-search": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@nickclyde/duckduckgo-mcp-server",
+        "--key",
+        "${SMITHERY_API_KEY}"
+      ],
+      "description": "DuckDuckGo web search via Smithery.ai"
+    },
+    "sequential-thinking": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"],
+      "description": "Sequential thinking and problem-solving tools"
+    }
+  },
+  "globalSettings": {
+    "defaultToolPrefix": "mcp",
+    "allowSampling": true,
+    "maxConcurrentServers": 15,
+    "serverTimeout": 30000,
+    "retryAttempts": 3,
+    "enabledByDefault": [
+      "exa-search",
+      "fetch-mcp",
+      "duckduckgo-search",
+      "sequential-thinking",
+      "docfork",
+      "playwright-extension"
+    ]
+  }
+}

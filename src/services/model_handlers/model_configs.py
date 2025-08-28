@@ -842,3 +842,16 @@ class ModelConfigurations:
 
         # If still not found, return the model_id as a last resort
         return model_id
+
+def get_default_agent_model() -> ModelConfig:
+    """
+    Returns the recommended default model configuration for Pydantic AI Agent.
+    This can be used to instantiate the Agent with the correct model and system prompt.
+    """
+    models = ModelConfigurations.get_all_models()
+    # Prefer Gemini if available, else fallback to DeepSeek or first available
+    for preferred in ["gemini", "deepseek"]:
+        if preferred in models:
+            return models[preferred]
+    # Fallback: return the first model in the dict
+    return next(iter(models.values()))
