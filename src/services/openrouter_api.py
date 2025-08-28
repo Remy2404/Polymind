@@ -115,7 +115,7 @@ class OpenRouterAPI:
         self,
         prompt: str,
         context: Optional[List[Dict]] = None,
-        model: str = "deepseek-chat",
+        model: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         timeout: float = 300.0,
