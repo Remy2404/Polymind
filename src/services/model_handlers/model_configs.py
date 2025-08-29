@@ -915,23 +915,23 @@ class ModelConfigurations:
         
         if model_id not in all_models:
             # Fallback to most reliable model that avoids rate limits
-            return "openrouter:google/gemini-2.0-flash-exp:free"
+            return "google/gemini-2.0-flash-exp:free"
         
         cfg = all_models[model_id]
         
         # Special handling for native Gemini - use OpenRouter version to avoid HTTP client issues
         if cfg.provider == Provider.GEMINI:
             # Use OpenRouter Gemini instead of native API to avoid HTTP client configuration issues
-            return "openrouter:google/gemini-2.0-flash-exp:free"
+            return "google/gemini-2.0-flash-exp:free"
         elif cfg.provider == Provider.DEEPSEEK:
             # Use native DeepSeek API if available, otherwise OpenRouter
-            return getattr(cfg, "model_id", "openrouter:deepseek/deepseek-r1:free")
+            return getattr(cfg, "model_id", "deepseek/deepseek-r1:free")
         elif cfg.provider == Provider.OPENROUTER and cfg.openrouter_model_key:
             # Use OpenRouter models (preferred for compatibility)
-            return f"openrouter:{cfg.openrouter_model_key}"
+            return cfg.openrouter_model_key
         else:
             # Use model_id if set, otherwise fallback to OpenRouter Gemini
-            return getattr(cfg, "model_id", "openrouter:google/gemini-2.0-flash-exp:free")
+            return getattr(cfg, "model_id", "google/gemini-2.0-flash-exp:free")
 
 
 def get_default_agent_model() -> ModelConfig:
