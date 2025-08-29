@@ -177,7 +177,9 @@ class OpenRouterAPI:
                 if available_models:
                     model = next(iter(available_models.keys()))
                 else:
-                    model = "qwen3-235b"
+                    # Import and use the proper default model from model configs
+                    from src.services.model_handlers.model_configs import get_default_agent_model
+                    model = get_default_agent_model()
 
             # Create enhanced agent with MCP tools
             agent = await self._create_enhanced_agent(model, system_message, use_mcp)

@@ -1182,9 +1182,13 @@ class MessageHandlers:
     def register_handlers(self, application):
         """Register message handlers with the application."""
         try:
+            # Create custom filter for text messages that includes MCP commands
+            mcp_commands = ['search', 'company', 'context7', 'sequentialthinking', 'docfork', 'context']
+            mcp_filter = filters.Regex(rf'^/({"|".join(mcp_commands)})\s+.+') 
+            
             application.add_handler(
                 MessageHandler(
-                    filters.TEXT & ~filters.COMMAND, self._handle_text_message
+                    (filters.TEXT & ~filters.COMMAND) | mcp_filter, self._handle_text_message
                 )
             )
             application.add_handler(

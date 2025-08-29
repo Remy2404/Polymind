@@ -1,6 +1,8 @@
 import io
 import os
 import logging
+import re
+from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
@@ -23,6 +25,9 @@ from src.services.ai_command_router import EnhancedIntentDetector
 
 # Import the bot username helper
 from src.utils.bot_username_helper import BotUsernameHelper
+
+# Import MCP integration for /context functionality
+from src.services.mcp import get_mcp_registry
 
 
 class TextHandler:
@@ -68,6 +73,111 @@ class TextHandler:
 
         # Optional components (will be set externally if needed)
         self.user_model_manager = None
+        
+        # MCP integration cache for discovered tools
+        self.discovered_mcp_tools = {}
+
+    def _detect_context_command(self, text: str) -> tuple[bool, str]:
+        """
+        Detect context commands and MCP tool patterns.
+        
+        Args:
+            text: Message text to check
+            
+        Returns:
+            tuple: (is_context_command, extracted_query)
+        """
+        # Match /context command pattern
+        context_pattern = r'^/context\s+(.+)$'
+        context_match = re.match(context_pattern, text.strip(), re.IGNORECASE)
+        
+        if context_match:
+            return True, context_match.group(1).strip()
+        
+        # Check for MCP tool commands that might not be handled by command handlers
+        mcp_patterns = [
+            r'^/sequentialthinking\s+(.+)$',
+            r'^/search\s+(.+)$', 
+            r'^/company\s+(.+)$',
+            r'^/context7\s+(.+)$',
+            r'^/docfork\s+(.+)$'
+        ]
+        
+        for pattern in mcp_patterns:
+            match = re.match(pattern, text.strip(), re.IGNORECASE)
+            if match:
+                return True, match.group(1).strip()
+        
+        return False, ""
+        
+    async def _discover_mcp_tools(self) -> dict:
+        """Discover available MCP tools, with caching."""
+        if self.discovered_mcp_tools:
+            return self.discovered_mcp_tools
+            
+        try:
+            registry = await get_mcp_registry()
+            self.discovered_mcp_tools = await registry.discover_available_tools()
+            return self.discovered_mcp_tools
+        except Exception as e:
+            self.logger.error(f"Failed to discover MCP tools: {e}")
+            return {}
+            
+    async def _execute_mcp_context(self, query: str, user_id: int, preferred_model: str = None) -> tuple[bool, str]:
+        """
+        Execute MCP tools for context query.
+        
+        Args:
+            query: User query for MCP tools
+            user_id: User ID for logging
+            preferred_model: User's preferred model for MCP execution
+            
+        Returns:
+            tuple: (success, result_text)
+        """
+        try:
+            # Discover available tools
+            discovered_tools = await self._discover_mcp_tools()
+            
+            if not discovered_tools:
+                return False, "❌ No MCP tools available for context queries."
+            
+            # Use user's preferred model or fallback to system default
+            if preferred_model:
+                model_to_use = preferred_model
+            else:
+                # Import and use the proper default model from model configs
+                from src.services.model_handlers.model_configs import get_default_agent_model
+                model_to_use = get_default_agent_model()
+            
+            # Use OpenRouter API with MCP integration if available
+            if hasattr(self, 'openrouter_api') and self.openrouter_api:
+                # Create enhanced prompt that guides the AI to use appropriate MCP tools
+                enhanced_prompt = f"""I need help with: {query}
+
+Please use the most appropriate available MCP tool to help answer this query. You have access to web search, company research, documentation search, and other specialized tools through the Model Context Protocol.
+
+Provide a comprehensive and helpful response using the available tools."""
+
+                # Execute using OpenRouter API with MCP tools
+                response, tool_logger = await self.openrouter_api.generate_response_with_tool_logging(
+                    prompt=enhanced_prompt,
+                    model=model_to_use,
+                    use_mcp=True,
+                    timeout=120.0
+                )
+                
+                if response:
+                    # Return the response directly for unified formatting
+                    return True, response
+                else:
+                    return False, "❌ No response generated from MCP tools."
+            else:
+                return False, "❌ OpenRouter API not available for MCP integration."
+                
+        except Exception as e:
+            self.logger.error(f"Error executing MCP context: {e}")
+            return False, f"❌ Error executing context query: {str(e)[:200]}..."
 
     # Removed delegation methods - use response_formatter directly
 
@@ -174,9 +284,62 @@ class TextHandler:
             )  # Detect user intent (analyze, generate image, or chat)
             intent_result = await self.intent_detector.detect_intent(message_text)
             user_intent = (intent_result.intent, intent_result.confidence)
-
-            # Get user's preferred model
+            
+            # Get user's preferred model early for consistent usage
             preferred_model = await self._get_user_preferred_model(user_id)
+            
+            # Check for /context command - integrate MCP tools in conversation flow
+            is_context_command, context_query = self._detect_context_command(message_text)
+            
+            if is_context_command:
+                # Execute MCP context query within the conversation workflow
+                telegram_logger.log_message(f"Context command: {context_query}", user_id)
+                
+                # Execute MCP tools with user's preferred model
+                success, mcp_result = await self._execute_mcp_context(context_query, user_id, preferred_model)
+                
+                if success:
+                    # Instead of replacing message_text, use MCP result as the AI response
+                    # This maintains the original query in memory but provides MCP-enhanced response
+                    
+                    # Update thinking message to show MCP processing
+                    await thinking_message.edit_text("🔧 Processing with MCP tools...")
+                    
+                    # Use the MCP result directly as the response, but process it through normal formatting
+                    response = mcp_result
+                    
+                    # Get model indicator for proper formatting
+                    if 'qwen3-235b' in preferred_model.lower():
+                        model_indicator = "🌟 Qwen3 235B A22B"
+                    else:
+                        model_indicator = f"🌟 {preferred_model.split('/')[-1].replace('-', ' ').title()}"
+                    
+                    # Send the MCP response with proper formatting and memory persistence
+                    await self._send_formatted_response(
+                        update, context, message, response, model_indicator,
+                        quoted_text, quoted_message_id
+                    )
+                    
+                    # Store in conversation memory
+                    await self.conversation_manager.save_message_pair(
+                        user_id=user_id,
+                        user_message=message_text,
+                        assistant_message=response,
+                        model_id=preferred_model
+                    )
+                    
+                    # Update user stats
+                    self.user_data_manager.update_user_stats(user_id, {
+                        'mcp_queries': 1,
+                        'last_mcp_query': context_query,
+                        'last_activity': datetime.now().isoformat()
+                    })
+                    telegram_logger.log_success("MCP context response sent successfully")
+                    return
+                else:
+                    # Handle MCP failure gracefully with proper formatting
+                    await thinking_message.edit_text(mcp_result, parse_mode='Markdown')
+                    return
 
             # Extract user information using memory manager directly
             await self.memory_manager.extract_and_save_user_info(user_id, message_text)

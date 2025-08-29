@@ -61,7 +61,7 @@ class BasicCommands:
         # Use effective_message for reply
         if update.effective_message:
             await update.effective_message.reply_text(
-                welcome_message, reply_markup=reply_markup, parse_mode='Markdown'
+                welcome_message, reply_markup=reply_markup, parse_mode="Markdown"
             )
 
         await self.user_data_manager.initialize_user(user_id)
@@ -110,7 +110,7 @@ class BasicCommands:
         )
         # Use effective_message for reply
         if update.effective_message:
-            await update.effective_message.reply_text(help_text, parse_mode='Markdown')
+            await update.effective_message.reply_text(help_text, parse_mode="Markdown")
         # Only log if effective_user exists
         if update.effective_user:
             self.telegram_logger.log_message(

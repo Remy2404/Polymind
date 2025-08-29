@@ -493,33 +493,12 @@ class CommandHandlers:
                 CommandHandler("cleanthreads", self.clean_threads_command)
             )
 
-            # MCP Commands - Add handlers if available
+            # MCP integration is handled within text_handlers.py using unified workflow
+            # This maintains memory context and proper response formatting
             if hasattr(self, 'mcp_commands') and self.mcp_commands:
-                application.add_handler(
-                    CommandHandler("search", self.mcp_commands.search_command)
-                )
-                application.add_handler(
-                    CommandHandler("company", self.mcp_commands.company_command)
-                )
-                application.add_handler(
-                    CommandHandler("Context7", self.mcp_commands.context7_command)
-                )
-                application.add_handler(
-                    CommandHandler("sequentialthinking", self.mcp_commands.sequentialthinking_command)
-                )
-                application.add_handler(
-                    CommandHandler("Docfork", self.mcp_commands.docfork_command)
-                )
-                application.add_handler(
-                    CommandHandler("mcp_status", self.mcp_commands.mcp_status_command)
-                )
-                application.add_handler(
-                    CommandHandler("mcp_tools", self.mcp_commands.mcp_tools_command)
-                )
-                application.add_handler(
-                    CommandHandler("mcp_help", self.mcp_commands.mcp_help_command)
-                )
-                self.logger.info("MCP command handlers registered successfully")
+                self.logger.info("MCP integration available via text_handlers.py with unified conversation flow")
+            else:
+                self.logger.info("MCP integration available via /context in text conversations")
 
             # Specific callback handlers if needed
             self.response_cache = cache
