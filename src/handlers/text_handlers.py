@@ -334,7 +334,7 @@ Provide a comprehensive and helpful response using the available tools."""
                         'last_mcp_query': context_query,
                         'last_activity': datetime.now().isoformat()
                     })
-                    telegram_logger.log_success("MCP context response sent successfully")
+                    telegram_logger.log_message("MCP context response sent successfully", user_id)
                     return
                 else:
                     # Handle MCP failure gracefully with proper formatting
