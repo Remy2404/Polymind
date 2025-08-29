@@ -14,7 +14,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from src.services.mcp import get_mcp_registry, MCPRegistry
-from src.services.mcp_tool_logger import MCPToolLogger, ToolCall
+from src.services.mcp_tool_logger import MCPToolLogger
 from datetime import datetime
 
 # Load environment variables
@@ -47,6 +47,7 @@ class OpenRouterAPI:
         # MCP integration
         self.mcp_registry: Optional[MCPRegistry] = None
         self._mcp_initialized = False
+        self._mcp_disabled_until = 0  # Timestamp when MCP can be re-enabled
         self.tool_logger = MCPToolLogger()
 
     def _load_openrouter_models_from_config(self):
@@ -64,17 +65,34 @@ class OpenRouterAPI:
         )
 
     async def initialize_mcp(self) -> None:
-        """Initialize MCP integration."""
+        """Initialize MCP integration with robust error handling."""
+        if self._mcp_initialized:
+            return
+            
+        # Check if MCP is temporarily disabled
+        if time.time() < self._mcp_disabled_until:
+            self.logger.info("MCP temporarily disabled due to previous errors")
+            return
+            
         try:
-            if self._mcp_initialized:
-                return
-
+            self.logger.info("Initializing MCP integration...")
             self.mcp_registry = await get_mcp_registry()
-            self._mcp_initialized = True
-            self.logger.info("MCP integration initialized successfully")
+            
+            if self.mcp_registry and self.mcp_registry.get_server_names():
+                server_count = len(self.mcp_registry.get_server_names())
+                self.logger.info(f"MCP integration initialized successfully with {server_count} servers")
+                self._mcp_initialized = True
+            else:
+                self.logger.warning("MCP registry initialized but no servers available")
+                self._mcp_initialized = True  # Still mark as initialized to avoid retry loops
+                
         except Exception as e:
             self.logger.error(f"Failed to initialize MCP: {e}")
-            # Don't raise - allow API to work without MCP
+            self.logger.info("Continuing without MCP integration - API will work normally")
+            # Temporarily disable MCP for 5 minutes to prevent repeated failures
+            self._mcp_disabled_until = time.time() + 300
+            # Don't set _mcp_initialized = True so it won't retry on every call
+            # But also don't raise - allow API to work without MCP
 
     async def _create_enhanced_agent(self, model_id: str, system_message: str, 
                                    use_mcp: bool = True) -> Agent:
@@ -101,8 +119,13 @@ class OpenRouterAPI:
                 toolsets = self.mcp_registry.get_toolsets()
                 if toolsets:
                     self.logger.info(f"Using {len(toolsets)} MCP toolsets with agent")
+                else:
+                    self.logger.info("No MCP toolsets available, proceeding without MCP")
             except Exception as e:
                 self.logger.warning(f"Failed to get MCP toolsets: {e}")
+                self.logger.info("Proceeding without MCP toolsets")
+        elif use_mcp:
+            self.logger.info("MCP not initialized, proceeding without MCP toolsets")
 
         # Create agent with or without MCP toolsets
         agent = Agent(
@@ -159,6 +182,10 @@ class OpenRouterAPI:
         """
         Generate response with detailed MCP tool call logging.
         Returns both the response and the tool logger for inspection.
+        
+        Note: temperature and max_tokens parameters are accepted for API compatibility
+        but are not directly supported by PydanticAI Agent.run() method.
+        These would need to be configured at the model level if needed.
         """
         # Clear previous tool calls
         self.tool_logger.clear()
@@ -191,9 +218,7 @@ class OpenRouterAPI:
             # Use PydanticAI Agent to generate response
             start_time = datetime.now()
             result = await agent.run(
-                user_prompt=prompt,
-                temperature=temperature,
-                max_tokens=max_tokens
+                user_prompt=prompt
             )
             
             # Log agent execution summary
@@ -214,10 +239,28 @@ class OpenRouterAPI:
         except Exception as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
+            
+            # Check if this is an MCP-related timeout error
+            error_str = str(e)
+            if "timeout" in error_str.lower() and "mcp" in error_str.lower():
+                self.logger.warning("MCP timeout detected, temporarily disabling MCP for 10 minutes")
+                self._mcp_disabled_until = time.time() + 600  # 10 minutes
+                self._mcp_initialized = False  # Reset to allow re-initialization
+                
+                # Retry once without MCP if the original request wanted MCP
+                if use_mcp:
+                    self.logger.info("Retrying request without MCP...")
+                    try:
+                        return await self.generate_response_with_tool_logging(
+                            prompt, context, model, temperature, max_tokens, timeout, use_mcp=False
+                        )
+                    except Exception as retry_error:
+                        self.logger.error(f"Retry without MCP also failed: {retry_error}")
+            
             self.logger.error(
-                f"OpenRouter API error via PydanticAI for model {model}: {str(e)}", exc_info=True
+                f"OpenRouter API error via PydanticAI for model {model}: {error_str}", exc_info=True
             )
-            return f"OpenRouter API error: {str(e)}", self.tool_logger
+            return f"OpenRouter API error: {error_str}", self.tool_logger
 
     @rate_limit
     async def generate_response(
@@ -230,7 +273,12 @@ class OpenRouterAPI:
         timeout: float = 300.0,
         use_mcp: bool = True,
     ) -> Optional[str]:
-        """Legacy method - calls new tool logging method and returns only response."""
+        """Legacy method - calls new tool logging method and returns only response.
+        
+        Note: temperature and max_tokens parameters are accepted for API compatibility
+        but are not directly supported by PydanticAI Agent.run() method.
+        These would need to be configured at the model level if needed.
+        """
         response, _ = await self.generate_response_with_tool_logging(
             prompt, context, model, temperature, max_tokens, timeout, use_mcp
         )
@@ -248,6 +296,12 @@ class OpenRouterAPI:
         timeout: float = 300.0,
         use_mcp: bool = True,
     ) -> Optional[str]:
+        """Generate response using a specific OpenRouter model key.
+        
+        Note: temperature and max_tokens parameters are accepted for API compatibility
+        but are not directly supported by PydanticAI Agent.run() method.
+        These would need to be configured at the model level if needed.
+        """
         try:
             # Initialize MCP if not already done
             if not self._mcp_initialized:
@@ -278,9 +332,7 @@ class OpenRouterAPI:
 
             # Use PydanticAI Agent to generate response (with or without MCP tools)
             result = await agent.run(
-                user_prompt=prompt,
-                temperature=temperature,
-                max_tokens=max_tokens
+                user_prompt=prompt
             )
 
             if result and result.output:
@@ -307,6 +359,16 @@ class OpenRouterAPI:
 
     def get_mcp_status(self) -> Dict[str, str]:
         """Get MCP integration status."""
+        current_time = time.time()
+        
+        if current_time < self._mcp_disabled_until:
+            remaining = int(self._mcp_disabled_until - current_time)
+            return {
+                "status": "temporarily_disabled", 
+                "servers": "0",
+                "reason": f"MCP disabled due to errors, {remaining}s remaining"
+            }
+        
         if not self._mcp_initialized:
             return {"status": "not_initialized", "servers": "0"}
         
@@ -319,3 +381,12 @@ class OpenRouterAPI:
             "servers": str(server_count),
             "server_names": ", ".join(self.mcp_registry.get_server_names())
         }
+        
+    def reenable_mcp(self) -> bool:
+        """Manually re-enable MCP if it was temporarily disabled."""
+        if time.time() < self._mcp_disabled_until:
+            self._mcp_disabled_until = 0
+            self._mcp_initialized = False  # Reset to allow re-initialization
+            self.logger.info("MCP manually re-enabled")
+            return True
+        return False
