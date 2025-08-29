@@ -26,9 +26,6 @@ from datetime import datetime, timedelta
 from cachetools import TTLCache
 from typing import Optional
 from PIL import Image
-from services.agent import EnhancedAgent, AgentDeps, SearchResult
-from services.mcp_registry import MCPRegistry
-from services.mcp_integration import get_mcp_service
 
 # Import all command modules
 from .commands import (
@@ -139,22 +136,6 @@ class CommandHandlers:
             self.document_commands, self.model_commands, self.export_commands
         )
 
-        # Research agent for MCP-backed tools (Exa, Context7, etc.)
-        self.research_agent = None
-
-        # MCP registry for status checks
-        self.mcp_registry = MCPRegistry()
-
-    async def initialize_mcp(self, preferred_model: Optional[str] = None) -> None:
-        """Initialize research agent with optional user preferences."""
-        try:
-            from services.agent import EnhancedAgent
-            self.research_agent = EnhancedAgent(preferred_model=preferred_model)
-            self.logger.info("Research agent initialized successfully")
-        except Exception as e:
-            self.logger.error(f"Failed to initialize research agent: {e}")
-            self.research_agent = None
-
     # Delegate basic commands
     async def start_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -219,219 +200,6 @@ class CommandHandlers:
         return await self.export_commands.handle_export_conversation(
             update, context
         )  # Main callback query handler - delegate to central callback handler
-
-    # --- Research commands ---
-    async def _reply_search_result(self, update: Update, result: SearchResult) -> None:
-        # Import response formatter
-        from handlers.response_formatter import ResponseFormatter
-        formatter = ResponseFormatter()
-        
-        # Build formatted response with markdown
-        lines = [result.summary]
-        if result.sources:
-            lines.append("\n*Sources:*")
-            for i, url in enumerate(result.sources[:5], 1):
-                lines.append(f"{i}. [Link]({url})")
-        
-        # Format the response properly for Telegram
-        formatted_text = "\n".join(lines)
-        
-        try:
-            # Use response formatter for proper Telegram markdown handling
-            final_text = await formatter.format_telegram_markdown(formatted_text)
-            await update.message.reply_text(final_text, parse_mode="MarkdownV2")
-        except Exception as e:
-            # Fallback to plain text if formatting fails
-            self.logger.warning(f"Failed to format response: {e}")
-            await update.message.reply_text(formatted_text)
-
-    async def search_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        try:
-            # Get user's preferred model using the existing user_data_manager
-            preferred_model = await self.user_data_manager.get_user_preference(
-                update.effective_user.id, "preferred_model", "qwen3-14b"
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to get user preference: {e}")
-            preferred_model = "qwen3-14b"  # fallback
-        
-        if not self.research_agent:
-            await self.initialize_mcp(preferred_model)
-        
-        if not self.research_agent:
-            await update.message.reply_text("Search is unavailable right now.")
-            return
-            
-        query = " ".join(context.args) if context.args else ""
-        if not query:
-            await update.message.reply_text("Usage: /search <query>")
-            return
-            
-        deps = AgentDeps(
-            user_id=update.effective_user.id, 
-            username=update.effective_user.username,
-            preferred_model=preferred_model
-        )
-        try:
-            # Use the agent's natural language interface to call the search tool
-            res = await self.research_agent.run(
-                f"Please search for: {query}", deps=deps
-            )
-            await self._reply_search_result(update, res)
-        except Exception as e:
-            self.logger.error(f"/search error: {e}")
-            await update.message.reply_text("Search failed. Please try again later.")
-
-    async def company_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        try:
-            # Get user's preferred model using the existing user_data_manager
-            preferred_model = await self.user_data_manager.get_user_preference(
-                update.effective_user.id, "preferred_model", "qwen3-14b"
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to get user preference: {e}")
-            preferred_model = "qwen3-14b"  # fallback
-        
-        if not self.research_agent:
-            await self.initialize_mcp(preferred_model)
-        
-        if not self.research_agent:
-            await update.message.reply_text(
-                "Company research is unavailable right now."
-            )
-            return
-            
-        name = " ".join(context.args) if context.args else ""
-        if not name:
-            await update.message.reply_text("Usage: /company <company name>")
-            return
-            
-        deps = AgentDeps(
-            user_id=update.effective_user.id, 
-            username=update.effective_user.username,
-            preferred_model=preferred_model
-        )
-        try:
-            res = await self.research_agent.run(
-                f"Please research the company: {name}", deps=deps
-            )
-            await self._reply_search_result(update, res)
-        except Exception as e:
-            self.logger.error(f"/company error: {e}")
-            await update.message.reply_text(
-                "Company research failed. Please try again later."
-            )
-
-    async def crawl_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        try:
-            # Get user's preferred model using the existing user_data_manager
-            preferred_model = await self.user_data_manager.get_user_preference(
-                update.effective_user.id, "preferred_model", "qwen3-14b"
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to get user preference: {e}")
-            preferred_model = "qwen3-14b"  # fallback
-        
-        if not self.research_agent:
-            await self.initialize_mcp(preferred_model)
-        
-        if not self.research_agent:
-            await update.message.reply_text("Crawl is unavailable right now.")
-            return
-            
-        url = " ".join(context.args) if context.args else ""
-        if not url:
-            await update.message.reply_text("Usage: /crawl <url>")
-            return
-            
-        deps = AgentDeps(
-            user_id=update.effective_user.id, 
-            username=update.effective_user.username,
-            preferred_model=preferred_model
-        )
-        try:
-            res = await self.research_agent.run(
-                f"Please crawl and extract content from this URL: {url}", deps=deps
-            )
-            await self._reply_search_result(update, res)
-        except Exception as e:
-            self.logger.error(f"/crawl error: {e}")
-            await update.message.reply_text("Crawl failed. Please try again later.")
-
-    async def context7_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        try:
-            # Get user's preferred model using the existing user_data_manager
-            preferred_model = await self.user_data_manager.get_user_preference(
-                update.effective_user.id, "preferred_model", "qwen3-14b"
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to get user preference: {e}")
-            preferred_model = "qwen3-14b"  # fallback
-        
-        if not self.research_agent:
-            await self.initialize_mcp(preferred_model)
-        
-        if not self.research_agent:
-            await update.message.reply_text("Context7 is unavailable right now.")
-            return
-            
-        query = " ".join(context.args) if context.args else ""
-        if not query:
-            await update.message.reply_text("Usage: /Context7 <query>")
-            return
-            
-        deps = AgentDeps(
-            user_id=update.effective_user.id, 
-            username=update.effective_user.username,
-            preferred_model=preferred_model
-        )
-        try:
-            res = await self.research_agent.run(
-                f"Please search library documentation for: {query}", deps=deps
-            )
-            await self._reply_search_result(update, res)
-        except Exception as e:
-            self.logger.error(f"/Context7 error: {e}")
-            await update.message.reply_text(
-                "Context7 lookup failed. Please try again later."
-            )
-
-    async def mcp_status_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        try:
-            health = self.mcp_registry.health()
-            lines = [
-                "MCP Status:",
-                f"- Config: {health.get('config_path')}",
-                f"- Servers: {', '.join(health.get('servers') or [])}",
-                f"- Enabled: {', '.join(health.get('enabled_servers') or [])}",
-                f"- Tools present: {'Yes' if health.get('has_tools') else 'No'}",
-            ]
-            missing = health.get("missing_env") or []
-            if missing:
-                lines.append(f"- Missing env: {', '.join(missing)}")
-            
-            # Add research agent status
-            if self.research_agent:
-                lines.append("- Research Agent: Initialized")
-                lines.append("- Available tools: exa_search, company_research, crawl, context7, duckduckgo")
-                lines.append("- Tool execution: Via SimpleMCPExecutor")
-            else:
-                lines.append("- Research Agent: Not initialized")
-                
-            await update.message.reply_text("\n".join(lines))
-        except Exception as e:
-            self.logger.error(f"/mcp_status error: {e}")
-            await update.message.reply_text("Failed to read MCP status.")
 
     async def handle_callback_query(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -690,14 +458,6 @@ class CommandHandlers:
             application.add_handler(CommandHandler("help", self.help_command))
             application.add_handler(CommandHandler("reset", self.reset_command))
             application.add_handler(CommandHandler("export", self.handle_export))
-            # Research & docs commands
-            application.add_handler(CommandHandler("search", self.search_command))
-            application.add_handler(CommandHandler("company", self.company_command))
-            application.add_handler(CommandHandler("crawl", self.crawl_command))
-            application.add_handler(CommandHandler("Context7", self.context7_command))
-            application.add_handler(
-                CommandHandler("mcp_status", self.mcp_status_command)
-            )
             application.add_handler(
                 CommandHandler("genimg", self.generate_together_image)
             )

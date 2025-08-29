@@ -33,9 +33,6 @@ from src.services.model_handlers.model_configs import (
 # Import the new bot username helper
 from src.utils.bot_username_helper import BotUsernameHelper
 
-# Import enhanced agent for research capabilities
-from src.services.agent import EnhancedAgent, AgentDeps
-
 logger = logging.getLogger(__name__)
 
 
@@ -78,10 +75,6 @@ class MessageHandlers:
 
         # Initialize group chat integration
         self._group_chat_integration = None
-
-        # Initialize enhanced agent for research capabilities
-        self.enhanced_agent = EnhancedAgent()
-        self._agent_initialized = False
 
         # Initialize all available models from ModelConfigurations
         self.all_models = ModelConfigurations.get_all_models()
@@ -170,72 +163,6 @@ class MessageHandlers:
             # Fallback for unknown models
             self.logger.warning(f"Unknown model ID: {model_id}, using default")
             return "🤖 Unknown Model", None
-
-    async def initialize_enhanced_agent(self, preferred_model: str = None) -> bool:
-        """Initialize the enhanced agent for research capabilities."""
-        if self._agent_initialized and self.enhanced_agent:
-            return True
-            
-        try:
-            self.enhanced_agent = EnhancedAgent(preferred_model=preferred_model)
-            self._agent_initialized = True
-            self.logger.info(f"Enhanced agent initialized successfully with model: {preferred_model}")
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to initialize enhanced agent: {e}")
-            self.enhanced_agent = None
-            self._agent_initialized = False
-            return False
-
-    async def can_use_research_features(self, query: str) -> bool:
-        """Determine if a query should use research features."""
-        research_keywords = [
-            "search", "find", "research", "company", "what is", "who is", 
-            "when", "where", "why", "how", "latest", "current", "news",
-            "information", "details", "documentation", "docs", "learn",
-            "explain", "api", "library", "framework", "tutorial"
-        ]
-        
-        query_lower = query.lower()
-        return any(keyword in query_lower for keyword in research_keywords)
-
-    async def generate_research_response(
-        self, 
-        query: str, 
-        user_id: int, 
-        username: str = None,
-        preferred_model: str = None
-    ) -> str:
-        """Generate response using enhanced agent with research capabilities."""
-        try:
-            # Initialize agent if needed
-            if not await self.initialize_enhanced_agent(preferred_model):
-                return "Research features are temporarily unavailable. Please try again later."
-            
-            # Create agent dependencies
-            deps = AgentDeps(
-                user_id=user_id,
-                username=username,
-                preferred_model=preferred_model
-            )
-            
-            # Run the enhanced agent
-            result = await self.enhanced_agent.run(query, deps=deps)
-            
-            # Format the response
-            response_lines = [result.summary]
-            if result.sources:
-                response_lines.append("\n*Sources:*")
-                for i, url in enumerate(result.sources[:5], 1):
-                    response_lines.append(f"{i}. [Link]({url})")
-            
-            # Use response formatter for proper Telegram formatting
-            formatted_response = "\n".join(response_lines)
-            return await self.response_formatter.format_telegram_markdown(formatted_response)
-            
-        except Exception as e:
-            self.logger.error(f"Research response failed: {e}")
-            return f"Research failed: {str(e)}. Please try a different query."
 
     async def generate_ai_response(
         self,
@@ -353,7 +280,7 @@ class MessageHandlers:
                 await update.callback_query.answer()
             else:
                 user_id = update.effective_user.id
-                message_text = update.message.text if update.message else ""
+                message_text = update.message.text
 
             # Check if we're waiting for document content
             if update.message and await self.handle_awaiting_doc_text(update, context):
@@ -512,49 +439,6 @@ class MessageHandlers:
                 openrouter_api=self.openrouter_api,  # Pass the openrouter_api for models like llama4_maverick
                 deepseek_api=self.deepseek_api,  # Pass the deepseek_api for deepseek model
             )
-
-            # Check if this query should use research features
-            should_use_research = await self.can_use_research_features(enhanced_message_text)
-            
-            if should_use_research:
-                try:
-                    # Get user's preferred model
-                    preferred_model = await self.user_data_manager.get_user_preference(
-                        user_id, "preferred_model", "qwen3-14b"
-                    )
-                    
-                    self.logger.info(f"Using research features for query: {enhanced_message_text[:100]}...")
-                    
-                    # Generate research response
-                    research_response = await self.generate_research_response(
-                        enhanced_message_text,
-                        user_id,
-                        update.effective_user.username,
-                        preferred_model
-                    )
-                    
-                    # Send the research response
-                    try:
-                        await update.message.reply_text(
-                            research_response, 
-                            parse_mode="MarkdownV2",
-                            disable_web_page_preview=True
-                        )
-                    except Exception as format_error:
-                        # Fallback to plain text if markdown fails
-                        self.logger.warning(f"Markdown formatting failed: {format_error}")
-                        await update.message.reply_text(research_response)
-                    
-                    # Update stats and return (skip regular text handler)
-                    await self.user_data_manager.update_stats(
-                        user_id, {"text_messages": 1, "total_messages": 1, "research_queries": 1}
-                    )
-                    return
-                    
-                except Exception as research_error:
-                    self.logger.error(f"Research features failed: {research_error}")
-                    # Fall back to regular text handler
-                    self.logger.info("Falling back to regular text processing")
 
             # Process the message (use enhanced message for group chats)
             # Create a temporary update with enhanced message for group processing

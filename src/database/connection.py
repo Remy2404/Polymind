@@ -5,9 +5,8 @@ import logging
 from typing import Tuple, Optional
 from pymongo import MongoClient
 from pymongo.database import Database
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError, NetworkTimeout
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from pymongo.collection import Collection
-from pymongo.driver_info import DriverInfo
 from dotenv import load_dotenv
 
 # Make sure to load environment variables
@@ -16,15 +15,15 @@ logger = logging.getLogger(__name__)
 
 # Connection pool configuration with timeout improvements
 CONNECTION_POOL = {}
-MAX_POOL_SIZE = 20  
-MIN_POOL_SIZE = 2  
-CONNECTION_TIMEOUT = 60000  
-SERVER_SELECTION_TIMEOUT = 60000 
-SOCKET_TIMEOUT = 60000  
-MAX_IDLE_TIME_MS = 300000 
+MAX_POOL_SIZE = 20  # Reduced pool size for better stability
+MIN_POOL_SIZE = 2   # Reduced minimum connections
+CONNECTION_TIMEOUT = 30000  # Increased to 30 seconds
+SERVER_SELECTION_TIMEOUT = 30000  # Added server selection timeout
+SOCKET_TIMEOUT = 20000  # Added socket timeout for individual operations
+MAX_IDLE_TIME_MS = 300000  # Increased to 5 minutes
 RETRY_WRITES = True
-HEARTBEAT_FREQUENCY = 60000
-CONNECT_TIMEOUT = 60000  
+HEARTBEAT_FREQUENCY = 30000  # Added heartbeat frequency (30 seconds)
+CONNECT_TIMEOUT = 30000  # Added connection timeout
 
 
 # Mock database for development mode
@@ -94,39 +93,8 @@ class MockCollection:
         return type("DeleteResult", (), {"acknowledged": True, "deleted_count": 0})
 
 
-def _validate_connection_string(uri: str) -> bool:
-    """
-    Validate MongoDB connection string format
-    """
-    if not uri:
-        return False
-
-    # Check for Atlas srv format
-    if uri.startswith("mongodb+srv://"):
-        return True
-
-    # Check for standard format
-    if uri.startswith("mongodb://"):
-        return True
-
-    # Check for localhost/development format
-    if uri.startswith("mongodb://localhost") or uri.startswith("mongodb://127.0.0.1"):
-        return True
-
-    return False
-
-
-def log_network_timeout(e: Exception) -> None:
-    """Log details if a pymongo NetworkTimeout is detected."""
-    if isinstance(e, NetworkTimeout):
-        logger.error(
-            f"MongoDB NetworkTimeout detected: {str(e)}. "
-            "This usually means the MongoDB server is unreachable due to network issues, firewall, or Atlas connection limits."
-        )
-
-
 def get_database(
-    max_retries: int = 5, retry_interval: float = 2.0
+    max_retries: int = 3, retry_interval: float = 1.0
 ) -> Tuple[Optional[Database], Optional[MongoClient]]:
     """
     Get a MongoDB database connection with retry logic and connection pooling
@@ -140,11 +108,6 @@ def get_database(
     """
     mongodb_uri = os.getenv("MONGODB_URI")
     db_name = os.getenv("DB_NAME", "telegram_gemini_bot")
-
-    # Validate connection string format
-    if mongodb_uri and not _validate_connection_string(mongodb_uri):
-        logger.warning(f"Invalid MongoDB connection string format: {mongodb_uri[:50]}...")
-        mongodb_uri = None
 
     # Check if we're in development mode
     dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
@@ -197,46 +160,20 @@ def get_database(
                 retryReads=True,  # Enable retry reads for better resilience
                 compressors=compressors,  # Use available compressors
                 zlibCompressionLevel=6,  # Moderate compression level
-                # SSL/TLS configuration for Atlas
-                tls=True,
-                tlsAllowInvalidCertificates=False,
-                tlsAllowInvalidHostnames=False,
-                # Additional Atlas-specific settings
-                appname="PolymindBot",
-                driver=DriverInfo(name="pymongo", version="4.9.2"),
-                # Connection stability settings
-                maxConnecting=2,  # Limit concurrent connection attempts
-                waitQueueTimeoutMS=5000,  # 5 second queue timeout
             )
 
             # Force a connection to verify it works with proper timeout handling
             try:
                 # Use ping instead of ismaster (deprecated) with explicit timeout
-                client.admin.command("ping", maxTimeMS=30000)  # 30 second ping timeout
+                client.admin.command("ping", maxTimeMS=15000)  # 15 second ping timeout
                 logger.info("MongoDB connection verified successfully")
             except Exception as ping_error:
-                logger.warning(f"Connection verification failed: {ping_error}")
-                # For Atlas connections, sometimes ping fails but basic operations work
-                # Let's try a simple database operation instead
-                try:
-                    # Get the database first
-                    db_temp = client[db_name]
-                    db_temp.command("ping", maxTimeMS=30000)
-                    logger.info("Database ping verification successful")
-                except Exception as db_ping_error:
-                    logger.warning(f"Database ping also failed: {db_ping_error}")
-                    # Continue anyway as connection might still work for basic operations
+                logger.warning(f"Ping verification failed: {ping_error}")
+                # Continue anyway as connection might still work
 
             # Get the database
             db = client[db_name]
             logger.info(f"Successfully connected to MongoDB database: {db_name}")
-
-            # Test basic database operations
-            try:
-                collections = db.list_collection_names()
-                logger.info(f"Database access verified, found {len(collections)} collections")
-            except Exception as db_test_error:
-                logger.warning(f"Database access test failed: {db_test_error}")
 
             # Create indexes for common queries if they don't exist
             _ensure_indexes(db)
@@ -244,34 +181,30 @@ def get_database(
             return db, client
 
         except (ConnectionFailure, ServerSelectionTimeoutError, Exception) as e:
-            log_network_timeout(e)
             # Enhanced error handling with specific timeout error detection
             error_msg = str(e).lower()
-            is_timeout = any(keyword in error_msg for keyword in ['timeout', 'timed out', 'connection timeout', 'networktimeout'])
-            is_network = any(keyword in error_msg for keyword in ['network', 'connection failed', 'winerror 10060', 'connection attempt failed'])
-
+            is_timeout = any(keyword in error_msg for keyword in ['timeout', 'timed out', 'connection timeout'])
+            
             if attempt < max_retries - 1:
-                if is_timeout or is_network:
+                if is_timeout:
                     logger.warning(
-                        f"MongoDB network/timeout error on attempt {attempt + 1}: {str(e)[:200]}... "
+                        f"Database connection timeout on attempt {attempt + 1}: {str(e)[:200]}... "
                         f"This is likely due to network issues or MongoDB Atlas connection limits. "
                         f"Retrying in {current_retry_interval:.1f}s..."
                     )
                 else:
                     logger.warning(
-                        f"MongoDB connection attempt {attempt + 1} failed: {str(e)[:200]}... "
+                        f"Database connection attempt {attempt + 1} failed: {str(e)[:200]}... "
                         f"Retrying in {current_retry_interval:.1f}s..."
                     )
                 time.sleep(current_retry_interval)
-                current_retry_interval = min(current_retry_interval * 1.5, 60)  # Cap at 60 seconds, slower growth
+                current_retry_interval = min(current_retry_interval * 2, 30)  # Cap at 30 seconds
             else:
-                if is_timeout or is_network:
+                if is_timeout:
                     logger.error(
-                        f"Failed to connect to MongoDB after {max_retries} attempts due to persistent network/timeout issues. "
+                        f"Failed to connect to MongoDB after {max_retries} attempts due to persistent timeouts. "
                         f"This may be due to: 1) Network connectivity issues, 2) MongoDB Atlas connection limits, "
-                        f"3) Firewall blocking connections, 4) MongoDB server overload, or 5) DNS resolution issues. "
-                        f"Consider: - Checking network connectivity, - Verifying Atlas IP whitelist, "
-                        f"- Using a different network/VPN, - Contacting MongoDB Atlas support. "
+                        f"3) Firewall blocking connections, or 4) MongoDB server overload. "
                         f"Last error: {str(e)}"
                     )
                 else:
@@ -285,7 +218,6 @@ def get_database(
                     return mock_db, None
                 return None, None
         except Exception as e:
-            log_network_timeout(e)
             logger.error(f"Unexpected error connecting to MongoDB: {str(e)}")
             # Use mock DB as fallback if configured
             if os.getenv("IGNORE_DB_ERROR", "false").lower() == "true":

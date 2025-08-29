@@ -7,7 +7,6 @@ import os
 import platform
 from typing import List, Optional, Any
 from telegramify_markdown import convert, escape_markdown, markdownify, customize
-from pydantic import BaseModel
 
 
 class ResponseFormatter:
@@ -736,27 +735,10 @@ class ResponseFormatter:
             self.logger.error(f"All send attempts failed: {e}")
             return None
 
-    def format_structured_output(self, obj: BaseModel, model_name: str = None) -> str:
-        """
-        Format a Pydantic model instance as a Telegram-friendly Markdown message.
-        """
-        lines = []
-        if model_name:
-            lines.append(f"*Model:* `{model_name}`\n")
-        for field, value in obj.dict().items():
-            # Format each field as bold name and value
-            lines.append(f"*{field}*: {escape_markdown(str(value))}")
-        return "\n".join(lines)
-
     async def format_response(
         self, content: str, user_id: int = None, model_name: str = None
     ) -> str:
         try:
-            # If content is a Pydantic model, use structured output
-            if isinstance(content, BaseModel):
-                formatted = self.format_structured_output(content, model_name)
-                return await self.format_telegram_markdown(formatted)
-            # ...existing code...
             content = str(content) if content else ""
             if model_name:
                 model_badges = {

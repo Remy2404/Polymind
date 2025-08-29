@@ -6,10 +6,6 @@ Defines all available models in a centralized configuration.
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Any, List
 from enum import Enum
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 
 class Provider(Enum):
@@ -36,7 +32,6 @@ class ModelConfig:
     supports_audio: bool = False
     supports_video: bool = False
     supports_documents: bool = False
-    supports_tool_use: bool = True  # Critical for MCP integration
     description: str = ""
     type: str = "general_purpose"
     capabilities: List[str] = field(default_factory=list)
@@ -58,7 +53,6 @@ class ModelConfigurations:
                 system_message="You are Gemini, a helpful AI assistant created by Google. Be concise, helpful, and accurate.",
                 supports_images=True,
                 supports_documents=True,
-                supports_tool_use=True,  # Enable tool support for native Gemini
                 description="Google's latest multimodal AI model",
                 type="multimodal",
                 capabilities=[
@@ -68,20 +62,6 @@ class ModelConfigurations:
                     "general_purpose",
                 ],
             ),
-            # OpenRouter Gemini Models (for tool compatibility)
-            "gemini-flash": ModelConfig(
-                model_id="gemini-flash",
-                display_name="Gemini 2.0 Flash (OpenRouter)",
-                provider=Provider.OPENROUTER,
-                openrouter_model_key="google/gemini-2.0-flash-exp:free",
-                indicator_emoji="⚡",
-                system_message="You are Gemini 2.0 Flash, Google's fast and efficient AI model.",
-                supports_images=True,
-                supports_tool_use=True,  # OpenRouter version supports tools
-                description="Google's experimental Gemini 2.0 Flash via OpenRouter - Free",
-                type="multimodal",
-                capabilities=["supports_images", "general_purpose"],
-            ),
             # Venice Uncensored Dolphin Mistral 24B Venice Edition
             "dolphin-mistral-24b-venice-edition": ModelConfig(
                 model_id="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
@@ -90,7 +70,6 @@ class ModelConfigurations:
                 openrouter_model_key="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
                 indicator_emoji="🦩",
                 system_message="You are Venice Uncensored, a steerable and uncensored AI model.",
-                supports_tool_use=True,  # Based on Mistral architecture
                 description="Venice Uncensored Dolphin Mistral 24B Venice Edition is a fine-tuned variant of Mistral-Small-24B-Instruct-2501, designed for advanced and unrestricted use cases.",
                 type="general_purpose",
                 capabilities=["uncensored", "steerable"],
@@ -103,7 +82,6 @@ class ModelConfigurations:
                 openrouter_model_key="google/gemma-3n-e2b-it:free",
                 indicator_emoji="💎",
                 system_message="You are Gemma 3n 2B, a multimodal, instruction-tuned model by Google.",
-                supports_tool_use=True,  # Google models generally support tools
                 description="Gemma 3n E2B IT is a multimodal, instruction-tuned model designed for efficient operation at 2B parameters, supporting code, math, web, and multimodal data.",
                 type="multimodal",
                 capabilities=["multimodal", "efficient", "multilingual_support"],
@@ -174,7 +152,6 @@ class ModelConfigurations:
                 openrouter_model_key="mistralai/mistral-small-3.2-24b-instruct:free",
                 indicator_emoji="🌬️",
                 system_message="You are Mistral Small, a powerful and efficient AI assistant by Mistral AI.",
-                supports_tool_use=True,  # Mistral models support tool use
                 description="Mistral's latest small, powerful, and efficient model - Free",
                 type="general_purpose",
                 capabilities=["general_purpose", "multilingual_support"],
@@ -186,7 +163,6 @@ class ModelConfigurations:
                 openrouter_model_key="mistralai/mistral-small-3.1-24b-instruct:free",
                 indicator_emoji="🌬️",
                 system_message="You are Mistral Small 3.1, a powerful and efficient AI assistant.",
-                supports_tool_use=True,  # Mistral models support tool use
                 description="Mistral Small 3.1 model - Free",
                 type="general_purpose",
                 capabilities=["general_purpose", "multilingual_support"],
@@ -198,7 +174,6 @@ class ModelConfigurations:
                 openrouter_model_key="mistralai/mistral-small-24b-instruct-2501:free",
                 indicator_emoji="🌬️",
                 system_message="You are Mistral Small 2501, the latest efficient AI assistant.",
-                supports_tool_use=True,  # Mistral models support tool use
                 description="Latest Mistral Small 2501 model - Free",
                 type="general_purpose",
                 capabilities=["general_purpose", "multilingual_support"],
@@ -210,7 +185,6 @@ class ModelConfigurations:
                 openrouter_model_key="mistralai/mistral-nemo:free",
                 indicator_emoji="🌬️",
                 system_message="You are Mistral Nemo, a compact and efficient AI assistant.",
-                supports_tool_use=True,  # Mistral models support tool use
                 description="Compact Mistral model - Free",
             ),
             "mistral-7b-instruct": ModelConfig(
@@ -220,7 +194,6 @@ class ModelConfigurations:
                 openrouter_model_key="mistralai/mistral-7b-instruct:free",
                 indicator_emoji="🌬️",
                 system_message="You are Mistral 7B, a powerful and compact AI assistant.",
-                supports_tool_use=True,  # Mistral models support tool use
                 description="Classic Mistral 7B model - Free",
             ),
             "devstral-small": ModelConfig(
@@ -230,7 +203,6 @@ class ModelConfigurations:
                 openrouter_model_key="mistralai/devstral-small:free",
                 indicator_emoji="🐹",
                 system_message="You are Devstral, a small but powerful coding assistant.",
-                supports_tool_use=True,  # Mistral models support tool use
                 description="Small and efficient coding model - Free",
                 type="coding_specialist",
                 capabilities=["coding_specialist"],
@@ -442,7 +414,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen3-30b-a3b:free",
                 indicator_emoji="🌟",
                 system_message="You are Qwen3, a multilingual AI assistant created by Alibaba Cloud.",
-                supports_tool_use=False,  # Qwen models don't support tool use in OpenRouter
                 description="30B parameter Qwen model - Free",
             ),
             "qwen3-8b": ModelConfig(
@@ -452,7 +423,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen3-8b:free",
                 indicator_emoji="🌟",
                 system_message="You are Qwen3, a multilingual AI assistant created by Alibaba Cloud.",
-                supports_tool_use=False,  # Qwen models don't support tool use in OpenRouter
                 description="8B parameter Qwen model - Free",
             ),
             "qwen3-14b": ModelConfig(
@@ -462,7 +432,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen3-14b:free",
                 indicator_emoji="🌟",
                 system_message="You are Qwen3, a multilingual AI assistant created by Alibaba Cloud.",
-                supports_tool_use=False,  # Qwen models don't support tool use in OpenRouter
                 description="14B parameter Qwen model - Free",
             ),
             "qwen3-32b": ModelConfig(
@@ -472,7 +441,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen-2.5-coder-32b-instruct:free",
                 indicator_emoji="💻",
                 system_message="You are Qwen 2.5 Coder, specialized in programming and code generation.",
-                supports_tool_use=False,  # Qwen models don't support tool use in OpenRouter
                 description="Specialized coding model 32B - Free",
                 type="coding_specialist",
                 capabilities=["coding_specialist"],
@@ -484,7 +452,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen3-235b-a22b:free",
                 indicator_emoji="🌟",
                 system_message="You are Qwen3, a large-scale multilingual AI assistant created by Alibaba Cloud.",
-                supports_tool_use=False,  # Qwen models don't support tool use in OpenRouter
                 description="Massive 235B parameter Qwen model - Free",
                 type="multilingual",
                 capabilities=["multilingual_support", "reasoning_capable"],
@@ -496,7 +463,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen2.5-vl-32b-instruct:free",
                 indicator_emoji="👁️",
                 supports_images=True,
-                supports_tool_use=False,  # Qwen models don't support tool use in OpenRouter
                 system_message="You are Qwen2.5 Vision-Language, capable of understanding text and images.",
                 description="Vision-language model 32B - Free",
             ),
@@ -507,7 +473,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen2.5-vl-72b-instruct:free",
                 indicator_emoji="👁️",
                 supports_images=True,
-                supports_tool_use=False,  # Qwen models don't support tool use in OpenRouter
                 system_message="You are Qwen2.5 Vision-Language, capable of understanding text and images.",
                 description="Large vision-language model - Free",
                 type="vision",
@@ -520,7 +485,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen-2.5-coder-32b-instruct:free",
                 indicator_emoji="💻",
                 system_message="You are Qwen 2.5 Coder, specialized in programming and code generation.",
-                supports_tool_use=False,  # Qwen models don't support tool use in OpenRouter
                 description="Specialized coding model - Free",
                 type="coding_specialist",
                 capabilities=["coding_specialist"],
@@ -532,7 +496,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen-2.5-72b-instruct:free",
                 indicator_emoji="🌟",
                 system_message="You are Qwen 2.5, the latest series of Qwen large language models.",
-                supports_tool_use=False,  # Qwen models don't support tool use in OpenRouter
                 description="Latest 72B Qwen instruction model - Free",
                 type="general_purpose",
                 capabilities=["multilingual_support", "long_context"],
@@ -544,7 +507,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwq-32b:free",
                 indicator_emoji="🤔",
                 system_message="You are QwQ, a reasoning-focused AI model that thinks step by step.",
-                supports_tool_use=False,  # Qwen models don't support tool use in OpenRouter
                 description="Question-answering reasoning model - Free",
                 type="mathematical_reasoning",
                 capabilities=["mathematical_reasoning"],
@@ -769,15 +731,6 @@ class ModelConfigurations:
         return {k: v for k, v in all_models.items() if v.provider == provider}
 
     @staticmethod
-    def get_tool_compatible_models() -> Dict[str, ModelConfig]:
-        """Get all models that support tool use for MCP integration."""
-        all_models = ModelConfigurations.get_all_models()
-        return {
-            k: v for k, v in all_models.items() 
-            if getattr(v, 'supports_tool_use', True)  # Default True for backward compatibility
-        }
-
-    @staticmethod
     def get_free_models() -> Dict[str, ModelConfig]:
         """Get all free models (OpenRouter models with :free suffix)."""
         all_models = ModelConfigurations.get_all_models()
@@ -891,83 +844,15 @@ class ModelConfigurations:
         # If still not found, return the model_id as a last resort
         return model_id
 
-    @staticmethod
-    def get_reliable_tool_models_preferences() -> List[str]:
-        """Get the ordered list of reliable tool-compatible models for agent selection."""
-        return [
-            "gemini-flash",                     # OpenRouter Gemini - no rate limits, supports tools
-            "mistral-small-3.2-24b-instruct",  # Most reliable with tool support
-            "mistral-small-3.1-24b-instruct",  # Solid alternative
-            "mistral-small-24b-instruct-2501", # Latest Mistral
-            "mistral-nemo",                    # Compact but reliable
-            "gemma-3-12b",                     # Google's stable model with tools
-            "gemma-3-27b",                     # Larger Google model
-            "llama-3.3-70b",                   # Meta's latest stable
-            "dolphin-mistral-24b-venice-edition",  # Enhanced Mistral variant
-            "gemini",                          # Native Gemini (fallback)
-            "deepseek-r1",                     # Reasoning model fallback
-        ]
-
-    @staticmethod
-    def resolve_api_model_id(model_id: str) -> str:
-        """Resolve the API model identifier for a given model_id."""
-        all_models = ModelConfigurations.get_all_models()
-        
-        if model_id not in all_models:
-            # Fallback to most reliable model that avoids rate limits
-            return "google/gemini-2.0-flash-exp:free"
-        
-        cfg = all_models[model_id]
-        
-        # Special handling for native Gemini - use OpenRouter version to avoid HTTP client issues
-        if cfg.provider == Provider.GEMINI:
-            # Use OpenRouter Gemini instead of native API to avoid HTTP client configuration issues
-            return "google/gemini-2.0-flash-exp:free"
-        elif cfg.provider == Provider.DEEPSEEK:
-            # Use native DeepSeek API if available, otherwise OpenRouter
-            return getattr(cfg, "model_id", "deepseek/deepseek-r1:free")
-        elif cfg.provider == Provider.OPENROUTER and cfg.openrouter_model_key:
-            # Use OpenRouter models (preferred for compatibility)
-            return cfg.openrouter_model_key
-        else:
-            # Use model_id if set, otherwise fallback to OpenRouter Gemini
-            return getattr(cfg, "model_id", "google/gemini-2.0-flash-exp:free")
-
-
 def get_default_agent_model() -> ModelConfig:
     """
     Returns the recommended default model configuration for Pydantic AI Agent.
     This can be used to instantiate the Agent with the correct model and system prompt.
-    Prioritizes tool-compatible models for MCP integration.
     """
-    all_models = ModelConfigurations.get_all_models()
-    tool_compatible_models = ModelConfigurations.get_tool_compatible_models()
-    
-    # Use the centralized preferences list
-    tool_compatible_preferences = ModelConfigurations.get_reliable_tool_models_preferences()
-    
-    # First try tool-compatible models
-    for preferred in tool_compatible_preferences:
-        if preferred in tool_compatible_models:
-            return tool_compatible_models[preferred]
-    
-    # If no tool-compatible models found, warn and use general fallback
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.warning("No tool-compatible models found, falling back to general models")
-    
-    # General fallback (may not support tools)
-    general_preferences = [
-        "gemini",                          # Native Gemini
-        "deepseek-r1",                     # Avoid rate-limited models
-        "qwen3-14b",                       # User preference but no tools
-    ]
-    
-    for fallback in general_preferences:
-        if fallback in all_models:
-            logger.warning(f"Using non-tool-compatible model: {fallback}")
-            return all_models[fallback]
-    
-    # Ultimate fallback: return the first model in the dict
-    logger.error("No suitable models found, using first available model")
-    return next(iter(all_models.values()))
+    models = ModelConfigurations.get_all_models()
+    # Prefer Gemini if available, else fallback to DeepSeek or first available
+    for preferred in ["gemini", "deepseek"]:
+        if preferred in models:
+            return models[preferred]
+    # Fallback: return the first model in the dict
+    return next(iter(models.values()))
