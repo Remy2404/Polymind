@@ -72,4 +72,5 @@ dependencies = [
     "pydantic-ai-slim[mcp,openai]>=0.2.4",
     "ffmpeg-python>=0.2.0",
     "librosa>=0.11.0",
+    "griffe>=1.13.0",
 ]
