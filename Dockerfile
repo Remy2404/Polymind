@@ -51,6 +51,9 @@ RUN apt-get update && \
 COPY --from=builder /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/
 COPY --from=builder /app/.venv /app/.venv
 
+# Copy dependency files needed for uv sync
+COPY pyproject.toml uv.lock* ./
+
 # Ensure all dependencies are properly installed in the final image
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
