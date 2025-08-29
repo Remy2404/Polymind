@@ -65,9 +65,12 @@ dependencies = [
     "fastapi-msgspec>=0.1.0",
     "docxtpl>=0.20.0",
     "spire-doc>=13.4.6",
+    "ruff>=0.12.7",
+    "pydantic-ai>=0.0.5",
     "asyncio>=4.0.0",
     "pydantic-ai[logfire]>=0.0.5",
     "pydantic-ai-slim[mcp,openai]>=0.2.4",
     "ffmpeg-python>=0.2.0",
     "librosa>=0.11.0",
 ]
+

@@ -34,7 +34,6 @@ build-and-run.ps1
 models.json
 docs
 MiniWebApp/
-CLAUDE.md
 copilot-instructions.md
 call_tools.toolsets.jsonc
 Agent.md
