@@ -13,6 +13,7 @@ from src.services.model_handlers.model_configs import (
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
+from src.services.mcp import get_mcp_registry, MCPRegistry
 
 # Load environment variables
 load_dotenv()
@@ -41,6 +42,10 @@ class OpenRouterAPI:
         self.circuit_breaker_threshold = 5
         self.circuit_breaker_timeout = 300
 
+        # MCP integration
+        self.mcp_registry: Optional[MCPRegistry] = None
+        self._mcp_initialized = False
+
     def _load_openrouter_models_from_config(self):
         """Load available models from centralized configuration specific to OpenRouter."""
         openrouter_configs = ModelConfigurations.get_models_by_provider(
@@ -54,6 +59,56 @@ class OpenRouterAPI:
         self.logger.info(
             f"Loaded {len(self.available_models)} OpenRouter models from configuration."
         )
+
+    async def initialize_mcp(self) -> None:
+        """Initialize MCP integration."""
+        try:
+            if self._mcp_initialized:
+                return
+
+            self.mcp_registry = await get_mcp_registry()
+            self._mcp_initialized = True
+            self.logger.info("MCP integration initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize MCP: {e}")
+            # Don't raise - allow API to work without MCP
+
+    async def _create_enhanced_agent(self, model_id: str, system_message: str, 
+                                   use_mcp: bool = True) -> Agent:
+        """Create a Pydantic AI agent with optional MCP toolsets."""
+        # Get model with fallback support from centralized config
+        openrouter_model = ModelConfigurations.get_model_with_fallback(model_id)
+
+        # Create OpenAI provider with OpenRouter configuration
+        openai_provider = OpenAIProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=OPENROUTER_API_KEY
+        )
+
+        # Create model instance
+        request_model = OpenAIModel(
+            model_name=openrouter_model,
+            provider=openai_provider
+        )
+
+        # Get MCP toolsets if requested and available
+        toolsets = []
+        if use_mcp and self._mcp_initialized and self.mcp_registry:
+            try:
+                toolsets = self.mcp_registry.get_toolsets()
+                if toolsets:
+                    self.logger.info(f"Using {len(toolsets)} MCP toolsets with agent")
+            except Exception as e:
+                self.logger.warning(f"Failed to get MCP toolsets: {e}")
+
+        # Create agent with or without MCP toolsets
+        agent = Agent(
+            model=request_model,
+            system_prompt=system_message,
+            toolsets=toolsets if toolsets else None
+        )
+
+        return agent
 
     def get_available_models(self) -> Dict[str, str]:
         """Get the mapping of model IDs to OpenRouter model keys."""
@@ -97,38 +152,35 @@ class OpenRouterAPI:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         timeout: float = 300.0,
+        use_mcp: bool = True,
     ) -> Optional[str]:
         try:
-            # Get model with fallback support from centralized config
-            openrouter_model = ModelConfigurations.get_model_with_fallback(model)
+            # Initialize MCP if not already done
+            if not self._mcp_initialized:
+                await self.initialize_mcp()
 
             # Build system message with context included
             system_message = self._build_system_message(model, context)
 
-            # Create OpenAI provider with OpenRouter configuration
-            openai_provider = OpenAIProvider(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=OPENROUTER_API_KEY
-            )
+            # Get default OpenRouter model if none provided
+            if not model:
+                # Get the first available OpenRouter model as fallback
+                available_models = self.get_available_models()
+                if available_models:
+                    model = next(iter(available_models.keys()))
+                else:
+                    # Last resort fallback
+                    model = "qwen3-235b"
 
-            # Create a new agent instance with the specific model for this request
-            request_model = OpenAIModel(
-                model_name=openrouter_model,
-                provider=openai_provider
-            )
-
-            # Create agent with the specific model and system message (includes context)
-            request_agent = Agent(
-                model=request_model,
-                system_prompt=system_message
-            )
+            # Create enhanced agent with MCP tools
+            agent = await self._create_enhanced_agent(model, system_message, use_mcp)
 
             self.logger.info(
-                f"Sending request to OpenRouter via PydanticAI Agent with model {model} (mapped to {openrouter_model})"
+                f"Sending request to OpenRouter via PydanticAI Agent with model {model} (MCP: {use_mcp})"
             )
 
-            # Use PydanticAI Agent to generate response
-            result = await request_agent.run(
+            # Use PydanticAI Agent to generate response (with or without MCP tools)
+            result = await agent.run(
                 user_prompt=prompt,
                 temperature=temperature,
                 max_tokens=max_tokens
@@ -163,19 +215,12 @@ class OpenRouterAPI:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         timeout: float = 300.0,
+        use_mcp: bool = True,
     ) -> Optional[str]:
         try:
-            # Create OpenAI provider with OpenRouter configuration
-            openai_provider = OpenAIProvider(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=OPENROUTER_API_KEY
-            )
-
-            # Create a new agent instance with the specific model key
-            request_model = OpenAIModel(
-                model_name=openrouter_model_key,
-                provider=openai_provider
-            )
+            # Initialize MCP if not already done
+            if not self._mcp_initialized:
+                await self.initialize_mcp()
 
             # Build final system message with context included
             if system_message:
@@ -193,18 +238,15 @@ class OpenRouterAPI:
                         context_str += f"{role.title()}: {content}\n"
                 final_system_message += context_str + "\nPlease continue the conversation naturally, considering the history above."
 
-            # Create agent with the specific model and system message (includes context)
-            request_agent = Agent(
-                model=request_model,
-                system_prompt=final_system_message
-            )
+            # Create enhanced agent with MCP tools
+            agent = await self._create_enhanced_agent(openrouter_model_key, final_system_message, use_mcp)
 
             self.logger.info(
-                f"Sending request to OpenRouter via PydanticAI Agent with model key {openrouter_model_key}"
+                f"Sending request to OpenRouter via PydanticAI Agent with model key {openrouter_model_key} (MCP: {use_mcp})"
             )
 
-            # Use PydanticAI Agent to generate response
-            result = await request_agent.run(
+            # Use PydanticAI Agent to generate response (with or without MCP tools)
+            result = await agent.run(
                 user_prompt=prompt,
                 temperature=temperature,
                 max_tokens=max_tokens
@@ -231,3 +273,18 @@ class OpenRouterAPI:
         for model_id, openrouter_key in self.available_models.items():
             self.logger.info(f"  {model_id} -> {openrouter_key}")
         self.logger.info(f"Total models loaded: {len(self.available_models)}")
+
+    def get_mcp_status(self) -> Dict[str, str]:
+        """Get MCP integration status."""
+        if not self._mcp_initialized:
+            return {"status": "not_initialized", "servers": "0"}
+        
+        if not self.mcp_registry:
+            return {"status": "failed", "servers": "0"}
+            
+        server_count = len(self.mcp_registry.get_server_names())
+        return {
+            "status": "ready", 
+            "servers": str(server_count),
+            "server_names": ", ".join(self.mcp_registry.get_server_names())
+        }

@@ -68,4 +68,6 @@ dependencies = [
     "asyncio>=4.0.0",
     "pydantic-ai[logfire]>=0.0.5",
     "pydantic-ai-slim[google,mcp,openai]>=0.2.4",
+    "ffmpeg-python>=0.2.0",
+    "librosa>=0.11.0",
 ]

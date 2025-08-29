@@ -769,8 +769,8 @@ class ModelConfigurations:
     def get_model_with_fallback(model_id: str) -> str:
         """Get OpenRouter model key with fallback to reliable alternatives"""
         model_map = {
-            "gemini": "gemini",
-            "deepseek": "deepseek",
+            "gemini": "qwen/qwen3-235b-a22b:free",  # Fallback for gemini to valid OpenRouter model
+            "deepseek": "deepseek/deepseek-chat:free",  # Fallback for deepseek to valid OpenRouter model
             "cypher-alpha": "openrouter/cypher-alpha:free",
             "mistral-small-3.2-24b-instruct": "mistralai/mistral-small-3.2-24b-instruct:free",
             "mistral-small-3.1-24b-instruct": "mistralai/mistral-small-3.1-24b-instruct:free",
