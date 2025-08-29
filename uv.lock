@@ -1681,12 +1681,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/3f/435a5b3d10ae242a9d6c2b33175551173c3c61fe637dc893be05c4ed0aaf/mcp-1.10.1-py3-none-any.whl", hash = "sha256:4d08301aefe906dce0fa482289db55ce1db831e3e67212e65b5e23ad8454b3c5", size = 150878 },
 ]
 
-[package.optional-dependencies]
-cli = [
-    { name = "python-dotenv" },
-    { name = "typer" },
-]
-
 [[package]]
 name = "mdurl"
 version = "0.1.2"
@@ -3479,7 +3473,6 @@ dependencies = [
     { name = "lxml" },
     { name = "mangum" },
     { name = "markdown" },
-    { name = "mcp", extra = ["cli"] },
     { name = "msgspec" },
     { name = "networkx" },
     { name = "numpy" },
@@ -3550,7 +3543,6 @@ requires-dist = [
     { name = "lxml", specifier = "==5.3.0" },
     { name = "mangum", specifier = "==0.14.0" },
     { name = "markdown", specifier = "==3.7" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.10.1" },
     { name = "msgspec", specifier = ">=0.19.0" },
     { name = "networkx", specifier = "==3.4.2" },
     { name = "numpy", specifier = "==2.2.3" },
@@ -3562,7 +3554,7 @@ requires-dist = [
     { name = "pydantic", specifier = "==2.10.2" },
     { name = "pydantic-ai", specifier = ">=0.0.5" },
     { name = "pydantic-ai", extras = ["logfire"], specifier = ">=0.0.5" },
-    { name = "pydantic-ai-slim", extras = ["google", "mcp", "openai"], specifier = ">=0.2.4" },
+    { name = "pydantic-ai-slim", extras = ["mcp", "openai"], specifier = ">=0.2.4" },
     { name = "pydub", specifier = "==0.25.1" },
     { name = "pydyf", specifier = "==0.11.0" },
     { name = "pymongo", specifier = "==4.9.2" },
