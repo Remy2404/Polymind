@@ -48,9 +48,12 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
-COPY --from=builder /usr/local/bin/uvx /usr/local/bin/uvx
+COPY --from=builder /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/
 COPY --from=builder /app/.venv /app/.venv
+
+# Ensure all dependencies are properly installed in the final image
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PORT=8000 \
@@ -59,4 +62,4 @@ ENV PATH="/app/.venv/bin:$PATH" \
 COPY . .
 
 EXPOSE 8000
-CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "app.py"]
