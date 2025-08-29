@@ -514,6 +514,9 @@ class CommandHandlers:
                     CommandHandler("mcp_status", self.mcp_commands.mcp_status_command)
                 )
                 application.add_handler(
+                    CommandHandler("mcp_tools", self.mcp_commands.mcp_tools_command)
+                )
+                application.add_handler(
                     CommandHandler("mcp_help", self.mcp_commands.mcp_help_command)
                 )
                 self.logger.info("MCP command handlers registered successfully")

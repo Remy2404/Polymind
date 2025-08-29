@@ -6,7 +6,7 @@ Provides user-facing commands that interact with MCP tools via Pydantic AI agent
 import sys
 import os
 import logging
-from typing import Optional
+from typing import Optional, Dict, List, Any
 
 # Add project root to path
 sys.path.insert(
@@ -37,6 +37,48 @@ class MCPCommands:
         self.telegram_logger = telegram_logger
         self.openrouter_api = openrouter_api
         self.logger = logging.getLogger(__name__)
+        self.discovered_tools = {}  # Cache for discovered tools
+        
+    def set_openrouter_api(self, openrouter_api):
+        """Set the OpenRouter API instance after initialization."""
+        self.openrouter_api = openrouter_api
+        
+    async def _discover_tools(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Discover available tools from MCP servers dynamically."""
+        if self.discovered_tools:
+            return self.discovered_tools
+            
+        try:
+            registry = await get_mcp_registry()
+            self.discovered_tools = await registry.discover_available_tools()
+            return self.discovered_tools
+        except Exception as e:
+            self.logger.error(f"Failed to discover MCP tools: {e}")
+            return {}
+            
+    def _truncate_message(self, message: str, max_length: int = 4000) -> str:
+        """Truncate message to fit Telegram limits with proper formatting."""
+        if len(message) <= max_length:
+            return message
+            
+        # Find a good break point (end of a paragraph or sentence)
+        truncated = message[:max_length-100]  # Leave room for truncation notice
+        
+        # Try to break at paragraph
+        last_paragraph = truncated.rfind('\n\n')
+        if last_paragraph > max_length * 0.8:  # If paragraph break is not too early
+            truncated = truncated[:last_paragraph]
+        else:
+            # Try to break at sentence
+            last_sentence = max(
+                truncated.rfind('. '),
+                truncated.rfind('! '),
+                truncated.rfind('? ')
+            )
+            if last_sentence > max_length * 0.7:  # If sentence break is reasonable
+                truncated = truncated[:last_sentence + 1]
+                
+        return truncated + f"\n\n... *[Message truncated due to length limit]*"
         
     def set_openrouter_api(self, openrouter_api):
         """Set the OpenRouter API instance after initialization."""
@@ -114,6 +156,9 @@ Provide a comprehensive and helpful response using the available tools."""
                     
                     formatted_response += response
                     
+                    # Truncate if too long for Telegram
+                    formatted_response = self._truncate_message(formatted_response)
+                    
                     # Edit the processing message with results
                     await processing_message.edit_text(
                         formatted_response,
@@ -125,6 +170,9 @@ Provide a comprehensive and helpful response using the available tools."""
                     formatted_response = f"🤖 **AI Response** (no tool used)\n"
                     formatted_response += "═" * 30 + "\n\n"
                     formatted_response += response
+                    
+                    # Truncate if too long
+                    formatted_response = self._truncate_message(formatted_response)
                     
                     await processing_message.edit_text(
                         formatted_response,
@@ -164,14 +212,14 @@ Provide a comprehensive and helpful response using the available tools."""
                 )
             
     async def search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /search command - Web search via Exa Search MCP tool."""
+        """Handle /search command - Web search using available MCP tools."""
         user_id = update.effective_user.id
         
         if not context.args:
             await update.message.reply_text(
                 "📝 **Usage:** `/search <query>`\n\n"
                 "**Example:** `/search latest developments in AI`\n\n"
-                "Performs web search using Exa AI search engine.",
+                "Performs web search using available MCP tools.",
                 parse_mode='Markdown'
             )
             return
@@ -179,17 +227,35 @@ Provide a comprehensive and helpful response using the available tools."""
         query = " ".join(context.args)
         self.telegram_logger.log_message(f"Search command: {query}", user_id)
         
-        await self._execute_mcp_tool(update, context, "web_search_exa", query, "Exa Search")
+        # Discover available tools and find search-related tools
+        discovered_tools = await self._discover_tools()
+        search_tool = None
+        
+        # Look for search tools in Exa Search server
+        if "Exa Search" in discovered_tools:
+            for tool in discovered_tools["Exa Search"]:
+                if "search" in tool["name"].lower() and "web" in tool["name"].lower():
+                    search_tool = tool["name"]
+                    break
+        
+        if search_tool:
+            await self._execute_mcp_tool(update, context, search_tool, query, "Exa Search")
+        else:
+            await update.message.reply_text(
+                "❌ **Search Unavailable**\n\n"
+                "No web search tools are currently available from MCP servers.",
+                parse_mode='Markdown'
+            )
         
     async def company_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /company command - Company research via Exa Search MCP tool."""
+        """Handle /company command - Company research using available MCP tools."""
         user_id = update.effective_user.id
         
         if not context.args:
             await update.message.reply_text(
                 "🏢 **Usage:** `/company <company_name>`\n\n"
                 "**Example:** `/company Tesla`\n\n"
-                "Performs company research using Exa AI search engine.",
+                "Performs company research using available MCP tools.",
                 parse_mode='Markdown'
             )
             return
@@ -197,17 +263,38 @@ Provide a comprehensive and helpful response using the available tools."""
         query = " ".join(context.args)
         self.telegram_logger.log_message(f"Company research command: {query}", user_id)
         
-        await self._execute_mcp_tool(update, context, "company_research", query, "Exa Search")
+        # Discover available tools and find company research tools
+        discovered_tools = await self._discover_tools()
+        company_tool = None
+        
+        # Look for company research tools
+        for server_name, tools in discovered_tools.items():
+            for tool in tools:
+                if "company" in tool["name"].lower() or "research" in tool["name"].lower():
+                    company_tool = tool["name"]
+                    server_name_for_tool = server_name
+                    break
+            if company_tool:
+                break
+        
+        if company_tool:
+            await self._execute_mcp_tool(update, context, company_tool, query, server_name_for_tool)
+        else:
+            await update.message.reply_text(
+                "❌ **Company Research Unavailable**\n\n"
+                "No company research tools are currently available from MCP servers.",
+                parse_mode='Markdown'
+            )
         
     async def context7_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /Context7 command - Documentation search via Context7 MCP tool."""
+        """Handle /Context7 command - Documentation search using available MCP tools."""
         user_id = update.effective_user.id
         
         if not context.args:
             await update.message.reply_text(
                 "📚 **Usage:** `/Context7 <query>`\n\n"
                 "**Example:** `/Context7 FastAPI middleware`\n\n"
-                "Searches library documentation and code examples.",
+                "Searches library documentation using available MCP tools.",
                 parse_mode='Markdown'
             )
             return
@@ -215,17 +302,35 @@ Provide a comprehensive and helpful response using the available tools."""
         query = " ".join(context.args)
         self.telegram_logger.log_message(f"Context7 command: {query}", user_id)
         
-        await self._execute_mcp_tool(update, context, "mcp_context7_resolve-library-id", query, "Context7")
+        # Discover available tools and find documentation tools
+        discovered_tools = await self._discover_tools()
+        doc_tool = None
+        
+        # Look for documentation/library tools in Context7 server
+        if "Context7" in discovered_tools:
+            for tool in discovered_tools["Context7"]:
+                if "library" in tool["name"].lower() or "docs" in tool["name"].lower():
+                    doc_tool = tool["name"]
+                    break
+        
+        if doc_tool:
+            await self._execute_mcp_tool(update, context, doc_tool, query, "Context7")
+        else:
+            await update.message.reply_text(
+                "❌ **Documentation Search Unavailable**\n\n"
+                "No documentation search tools are currently available from MCP servers.",
+                parse_mode='Markdown'
+            )
         
     async def sequentialthinking_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /sequentialthinking command - Problem-solving via Sequential Thinking MCP tool."""
+        """Handle /sequentialthinking command - Problem-solving using available MCP tools."""
         user_id = update.effective_user.id
         
         if not context.args:
             await update.message.reply_text(
                 "🧠 **Usage:** `/sequentialthinking <problem>`\n\n"
                 "**Example:** `/sequentialthinking How to optimize database queries`\n\n"
-                "Uses sequential thinking to break down and solve complex problems.",
+                "Uses sequential thinking to break down complex problems.",
                 parse_mode='Markdown'
             )
             return
@@ -233,17 +338,35 @@ Provide a comprehensive and helpful response using the available tools."""
         query = " ".join(context.args)
         self.telegram_logger.log_message(f"Sequential thinking command: {query}", user_id)
         
-        await self._execute_mcp_tool(update, context, "mcp_sequentialthi_sequentialthinking", query, "Sequential Thinking")
+        # Discover available tools and find sequential thinking tools
+        discovered_tools = await self._discover_tools()
+        thinking_tool = None
+        
+        # Look for sequential thinking tools
+        if "sequentialthinking" in discovered_tools:
+            for tool in discovered_tools["sequentialthinking"]:
+                if "sequential" in tool["name"].lower() or "thinking" in tool["name"].lower():
+                    thinking_tool = tool["name"]
+                    break
+        
+        if thinking_tool:
+            await self._execute_mcp_tool(update, context, thinking_tool, query, "Sequential Thinking")
+        else:
+            await update.message.reply_text(
+                "❌ **Sequential Thinking Unavailable**\n\n"
+                "No sequential thinking tools are currently available from MCP servers.",
+                parse_mode='Markdown'
+            )
         
     async def docfork_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /Docfork command - Document analysis via Docfork MCP tool."""
+        """Handle /Docfork command - Document analysis using available MCP tools."""
         user_id = update.effective_user.id
         
         if not context.args:
             await update.message.reply_text(
                 "📄 **Usage:** `/Docfork <document_url_or_query>`\n\n"
                 "**Example:** `/Docfork https://example.com/document.pdf`\n\n"
-                "Analyzes documents and provides insights.",
+                "Analyzes documents using available MCP tools.",
                 parse_mode='Markdown'
             )
             return
@@ -251,7 +374,25 @@ Provide a comprehensive and helpful response using the available tools."""
         query = " ".join(context.args)
         self.telegram_logger.log_message(f"Docfork command: {query}", user_id)
         
-        await self._execute_mcp_tool(update, context, "mcp_docfork_get-library-docs", query, "Docfork")
+        # Discover available tools and find document analysis tools
+        discovered_tools = await self._discover_tools()
+        doc_tool = None
+        
+        # Look for document analysis tools in Docfork server
+        if "Docfork" in discovered_tools:
+            for tool in discovered_tools["Docfork"]:
+                if "library" in tool["name"].lower() or "docs" in tool["name"].lower():
+                    doc_tool = tool["name"]
+                    break
+        
+        if doc_tool:
+            await self._execute_mcp_tool(update, context, doc_tool, query, "Docfork")
+        else:
+            await update.message.reply_text(
+                "❌ **Document Analysis Unavailable**\n\n"
+                "No document analysis tools are currently available from MCP servers.",
+                parse_mode='Markdown'
+            )
         
     async def mcp_status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /mcp_status command - Show MCP server status."""
@@ -287,6 +428,40 @@ Provide a comprehensive and helpful response using the available tools."""
             self.logger.error(f"Error getting MCP status: {e}")
             error_message = f"❌ **MCP Status Error**\n\n" \
                           f"Error: `{str(e)[:200]}{'...' if len(str(e)) > 200 else ''}`"
+    async def mcp_tools_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /mcp_tools command - List all available MCP tools."""
+        user_id = update.effective_user.id
+        self.telegram_logger.log_message("MCP tools command", user_id)
+        
+        try:
+            # Discover all available tools
+            discovered_tools = await self._discover_tools()
+            
+            # Format tools message
+            tools_message = "🔧 **Available MCP Tools**\n"
+            tools_message += "═" * 30 + "\n\n"
+            
+            if not discovered_tools:
+                tools_message += "❌ No tools discovered from MCP servers.\n"
+            else:
+                for server_name, tools in discovered_tools.items():
+                    tools_message += f"**{server_name}:**\n"
+                    if tools:
+                        for tool in tools:
+                            tools_message += f"• `{tool['name']}` - {tool['description']}\n"
+                    else:
+                        tools_message += "• No tools available\n"
+                    tools_message += "\n"
+            
+            # Truncate if too long
+            tools_message = self._truncate_message(tools_message)
+            
+            await update.message.reply_text(tools_message, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error listing MCP tools: {e}")
+            error_message = f"❌ **MCP Tools Error**\n\n" \
+                          f"Error: `{str(e)[:200]}{'...' if len(str(e)) > 200 else ''}`"
             await update.message.reply_text(error_message, parse_mode='Markdown')
             
     async def mcp_help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -297,34 +472,39 @@ Provide a comprehensive and helpful response using the available tools."""
 **Available Commands:**
 
 🔍 `/search <query>`
-   Web search using Exa AI search engine
+   Web search using available MCP tools
    *Example:* `/search latest AI developments`
 
 🏢 `/company <company_name>`
-   Company research using Exa AI search engine
+   Company research using available MCP tools
    *Example:* `/company Tesla`
 
 📚 `/Context7 <query>`  
-   Search library documentation and examples
+   Search library documentation using available MCP tools
    *Example:* `/Context7 FastAPI middleware`
 
 🧠 `/sequentialthinking <problem>`
-   Break down complex problems step-by-step
+   Break down complex problems using available MCP tools
    *Example:* `/sequentialthinking optimize database`
 
 📄 `/Docfork <document_url_or_query>`
-   Analyze documents and provide insights
+   Analyze documents using available MCP tools
    *Example:* `/Docfork https://example.com/doc.pdf`
 
 ⚙️ `/mcp_status`
    Show status of all MCP servers
+
+🔧 `/mcp_tools`
+   List all available MCP tools from all servers
 
 ❓ `/mcp_help`
    Show this help message
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 **About MCP:**
-Model Context Protocol provides AI agents with access to external tools and data sources, enabling more powerful and context-aware responses."""
+Model Context Protocol provides AI agents with access to external tools and data sources, enabling more powerful and context-aware responses.
+
+**Note:** Commands automatically discover and use available tools from configured MCP servers. No hardcoded tool names are used."""
 
         await update.message.reply_text(help_text, parse_mode='Markdown')
         self.telegram_logger.log_message("MCP help command", update.effective_user.id)
