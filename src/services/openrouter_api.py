@@ -1,7 +1,4 @@
 import os
-import json
-import aiohttp
-import asyncio
 import logging
 import time
 from typing import Dict, List, Optional
@@ -13,6 +10,12 @@ from src.services.model_handlers.model_configs import (
     Provider,
     ModelConfig,
 )
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.openai import OpenAIProvider
+from src.services.mcp import get_mcp_registry, MCPRegistry
+from src.services.mcp_tool_logger import MCPToolLogger, ToolCall
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -33,11 +36,6 @@ class OpenRouterAPI:
         if not OPENROUTER_API_KEY:
             raise ValueError("OPENROUTER_API_KEY not found or empty")
 
-        self.api_url = "https://openrouter.ai/api/v1/chat/completions"
-        self.headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json",
-        }
         self._load_openrouter_models_from_config()
 
         # Circuit breaker properties
@@ -46,8 +44,10 @@ class OpenRouterAPI:
         self.circuit_breaker_threshold = 5
         self.circuit_breaker_timeout = 300
 
-        # Initialize session
-        self.session = None
+        # MCP integration
+        self.mcp_registry: Optional[MCPRegistry] = None
+        self._mcp_initialized = False
+        self.tool_logger = MCPToolLogger()
 
     def _load_openrouter_models_from_config(self):
         """Load available models from centralized configuration specific to OpenRouter."""
@@ -63,23 +63,59 @@ class OpenRouterAPI:
             f"Loaded {len(self.available_models)} OpenRouter models from configuration."
         )
 
+    async def initialize_mcp(self) -> None:
+        """Initialize MCP integration."""
+        try:
+            if self._mcp_initialized:
+                return
+
+            self.mcp_registry = await get_mcp_registry()
+            self._mcp_initialized = True
+            self.logger.info("MCP integration initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize MCP: {e}")
+            # Don't raise - allow API to work without MCP
+
+    async def _create_enhanced_agent(self, model_id: str, system_message: str, 
+                                   use_mcp: bool = True) -> Agent:
+        """Create a Pydantic AI agent with optional MCP toolsets."""
+        # Get model with fallback support from centralized config
+        openrouter_model = ModelConfigurations.get_model_with_fallback(model_id)
+
+        # Create OpenAI provider with OpenRouter configuration
+        openai_provider = OpenAIProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=OPENROUTER_API_KEY
+        )
+
+        # Create model instance
+        request_model = OpenAIModel(
+            model_name=openrouter_model,
+            provider=openai_provider
+        )
+
+        # Get MCP toolsets if requested and available
+        toolsets = []
+        if use_mcp and self._mcp_initialized and self.mcp_registry:
+            try:
+                toolsets = self.mcp_registry.get_toolsets()
+                if toolsets:
+                    self.logger.info(f"Using {len(toolsets)} MCP toolsets with agent")
+            except Exception as e:
+                self.logger.warning(f"Failed to get MCP toolsets: {e}")
+
+        # Create agent with or without MCP toolsets
+        agent = Agent(
+            model=request_model,
+            system_prompt=system_message,
+            toolsets=toolsets if toolsets else None
+        )
+
+        return agent
+
     def get_available_models(self) -> Dict[str, str]:
         """Get the mapping of model IDs to OpenRouter model keys."""
         return self.available_models.copy()
-
-    async def ensure_session(self):
-        """Create or reuse aiohttp session."""
-        if self.session is None or self.session.closed:
-            self.session = aiohttp.ClientSession()
-            self.logger.info("Created new OpenRouter API aiohttp session.")
-        return self.session
-
-    async def close(self):
-        """Close the aiohttp session."""
-        if self.session and not self.session.closed:
-            await self.session.close()
-            self.logger.info("Closed OpenRouter API aiohttp session.")
-            self.session = None
 
     def _build_system_message(
         self, model_id: str, context: Optional[List[Dict]] = None
@@ -95,112 +131,110 @@ class OpenRouterAPI:
                 "You are an advanced AI assistant that helps users with various tasks."
             )
 
-        context_hint = (
-            " Use conversation history/context when relevant." if context else ""
-        )
+        # Include conversation history in system message if context is provided
+        if context:
+            context_str = "\n\nConversation History:\n"
+            for msg in context:
+                if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                    role = msg["role"]
+                    content = msg["content"]
+                    context_str += f"{role.title()}: {content}\n"
+            base_message += context_str + "\nPlease continue the conversation naturally, considering the history above."
+
         if not context and not model_config:
             # If no context is provided and no specific model config, add a general helpfulness hint.
             return base_message + " Be concise, helpful, and accurate."
-        return base_message + context_hint
+        return base_message
 
-    async def _send_openrouter_request(self, session, payload, timeout):
-        async with session.post(
-            self.api_url, headers=self.headers, json=payload, timeout=timeout
-        ) as response:
-            response.raise_for_status()
-            return await response.json()
+    async def generate_response_with_tool_logging(
+        self,
+        prompt: str,
+        context: Optional[List[Dict]] = None,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        timeout: float = 300.0,
+        use_mcp: bool = True,
+    ) -> tuple[Optional[str], MCPToolLogger]:
+        """
+        Generate response with detailed MCP tool call logging.
+        Returns both the response and the tool logger for inspection.
+        """
+        # Clear previous tool calls
+        self.tool_logger.clear()
+        
+        try:
+            # Initialize MCP if not already done
+            if not self._mcp_initialized:
+                await self.initialize_mcp()
+
+            # Build system message with context included
+            system_message = self._build_system_message(model, context)
+
+            # Get default OpenRouter model if none provided
+            if not model:
+                available_models = self.get_available_models()
+                if available_models:
+                    model = next(iter(available_models.keys()))
+                else:
+                    # Import and use the proper default model from model configs
+                    from src.services.model_handlers.model_configs import get_default_agent_model
+                    model = get_default_agent_model()
+
+            # Create enhanced agent with MCP tools
+            agent = await self._create_enhanced_agent(model, system_message, use_mcp)
+
+            self.logger.info(
+                f"Sending request to OpenRouter via PydanticAI Agent with model {model} (MCP: {use_mcp})"
+            )
+
+            # Use PydanticAI Agent to generate response
+            start_time = datetime.now()
+            result = await agent.run(
+                user_prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            
+            # Log agent execution summary
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            self.logger.info(f"Agent execution completed in {execution_time:.0f}ms")
+
+            if result and result.output:
+                self.logger.info(
+                    f"OpenRouter response length: {len(result.output)} characters"
+                )
+                self.api_failures = 0
+                return result.output, self.tool_logger
+            else:
+                self.logger.warning("No valid response from OpenRouter API via PydanticAI")
+                self.api_failures += 1
+                return None, self.tool_logger
+
+        except Exception as e:
+            self.api_failures += 1
+            self.api_last_failure = time.time()
+            self.logger.error(
+                f"OpenRouter API error via PydanticAI for model {model}: {str(e)}", exc_info=True
+            )
+            return f"OpenRouter API error: {str(e)}", self.tool_logger
 
     @rate_limit
     async def generate_response(
         self,
         prompt: str,
         context: Optional[List[Dict]] = None,
-        model: str = "deepseek-chat",
+        model: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         timeout: float = 300.0,
+        use_mcp: bool = True,
     ) -> Optional[str]:
-        try:
-            session = await self.ensure_session()
-
-            # Get model with fallback support from centralized config
-            openrouter_model = ModelConfigurations.get_model_with_fallback(model)
-
-            system_message = self._build_system_message(model, context)
-            messages = [{"role": "system", "content": system_message}]
-            if context:
-                messages.extend(
-                    [msg for msg in context if "role" in msg and "content" in msg]
-                )
-            messages.append({"role": "user", "content": prompt})
-            payload = {
-                "model": openrouter_model,
-                "messages": messages,
-                "temperature": temperature,
-            }
-            if max_tokens is not None:
-                payload["max_tokens"] = max_tokens
-            self.logger.info(
-                f"Sending request to OpenRouter API with model {model} (mapped to {openrouter_model})"
-            )
-            data = await self._send_openrouter_request(session, payload, timeout)
-            if "choices" in data and data["choices"]:
-                choice = data["choices"][0]
-                message_content = choice["message"]["content"]
-                finish_reason = choice.get("finish_reason", "unknown")
-                if finish_reason != "stop":
-                    self.logger.warning(f"Finish reason: {finish_reason}")
-                self.logger.info(
-                    f"OpenRouter response length: {len(message_content) if message_content else 0} characters"
-                )
-                self.api_failures = 0  # Reset failures on successful response
-                return message_content
-            self.logger.warning("No valid response from OpenRouter API")
-            self.api_failures += 1
-            return None
-        except aiohttp.ClientResponseError as e:
-            self.api_failures += 1
-            self.api_last_failure = time.time()
-            error_message = f"Error {e.status}: {e.message}"
-            if e.status == 404:
-                error_message = (
-                    f"Model not found: {model}. Model may be temporarily unavailable."
-                )
-                self.logger.warning(
-                    f"Model {openrouter_model} not found on OpenRouter. This may be temporary."
-                )
-            elif e.status == 401:
-                error_message = (
-                    "Authentication error. Please check your OpenRouter API key."
-                )
-            elif e.status == 400:
-                error_message = f"Bad request for model {model}. The model may not support the current request format."
-            self.logger.error(
-                f"OpenRouter API error for model {model}: {error_message}"
-            )
-            return f"OpenRouter API error: {error_message}"
-        except asyncio.TimeoutError:
-            self.api_failures += 1
-            self.api_last_failure = time.time()
-            self.logger.error(f"OpenRouter API timeout for model {model}")
-            return None
-        except aiohttp.ClientError as e:
-            self.api_failures += 1
-            self.api_last_failure = time.time()
-            self.logger.error(f"OpenRouter API connection error: {str(e)}")
-            raise Exception(f"OpenRouter API connection error: {str(e)}")
-        except json.JSONDecodeError as e:
-            self.api_failures += 1
-            self.api_last_failure = time.time()
-            self.logger.error(f"OpenRouter API JSON decode error: {str(e)}")
-            raise Exception(f"Could not parse OpenRouter API response: {str(e)}")
-        except Exception as e:
-            self.api_failures += 1
-            self.api_last_failure = time.time()
-            self.logger.error(
-                f"OpenRouter API error: {str(e)}", exc_info=True
-            )  # Log full traceback
-            raise Exception(f"Unexpected error when calling OpenRouter API: {str(e)}")
+        """Legacy method - calls new tool logging method and returns only response."""
+        response, _ = await self.generate_response_with_tool_logging(
+            prompt, context, model, temperature, max_tokens, timeout, use_mcp
+        )
+        return response
 
     @rate_limit
     async def generate_response_with_model_key(
@@ -212,46 +246,56 @@ class OpenRouterAPI:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         timeout: float = 300.0,
+        use_mcp: bool = True,
     ) -> Optional[str]:
         try:
-            session = await self.ensure_session()
-            final_system_message = (
-                system_message
-                or "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."
-            )
-            messages = [{"role": "system", "content": final_system_message}]
+            # Initialize MCP if not already done
+            if not self._mcp_initialized:
+                await self.initialize_mcp()
+
+            # Build final system message with context included
+            if system_message:
+                final_system_message = system_message
+            else:
+                final_system_message = "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."
+
+            # Include conversation history in system message if context is provided
             if context:
-                messages.extend(context)
-            messages.append({"role": "user", "content": prompt})
-            data = {
-                "model": openrouter_model_key,
-                "messages": messages,
-                "temperature": temperature,
-            }
-            if max_tokens is not None:
-                data["max_tokens"] = max_tokens
+                context_str = "\n\nConversation History:\n"
+                for msg in context:
+                    if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                        role = msg["role"]
+                        content = msg["content"]
+                        context_str += f"{role.title()}: {content}\n"
+                final_system_message += context_str + "\nPlease continue the conversation naturally, considering the history above."
+
+            # Create enhanced agent with MCP tools
+            agent = await self._create_enhanced_agent(openrouter_model_key, final_system_message, use_mcp)
+
             self.logger.info(
-                f"Sending request to OpenRouter API with model key {openrouter_model_key}"
+                f"Sending request to OpenRouter via PydanticAI Agent with model key {openrouter_model_key} (MCP: {use_mcp})"
             )
-            response_data = await self._send_openrouter_request(
-                session, data, aiohttp.ClientTimeout(total=timeout)
+
+            # Use PydanticAI Agent to generate response (with or without MCP tools)
+            result = await agent.run(
+                user_prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens
             )
-            if "choices" in response_data and response_data["choices"]:
-                content = response_data["choices"][0]["message"]["content"]
+
+            if result and result.output:
                 self.api_failures = 0
-                return content
-            self.api_failures += 1
-            return None
-        except asyncio.TimeoutError:
+                return result.output
+            else:
+                self.api_failures += 1
+                return None
+
+        except Exception as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
             self.logger.error(
-                f"OpenRouter API timeout for model keys {openrouter_model_key}"
+                f"OpenRouter API error via PydanticAI for model key {openrouter_model_key}: {str(e)}"
             )
-            return None
-        except Exception:
-            self.api_failures += 1
-            self.api_last_failure = time.time()
             return None
 
     def debug_model_mapping(self):
@@ -260,3 +304,18 @@ class OpenRouterAPI:
         for model_id, openrouter_key in self.available_models.items():
             self.logger.info(f"  {model_id} -> {openrouter_key}")
         self.logger.info(f"Total models loaded: {len(self.available_models)}")
+
+    def get_mcp_status(self) -> Dict[str, str]:
+        """Get MCP integration status."""
+        if not self._mcp_initialized:
+            return {"status": "not_initialized", "servers": "0"}
+        
+        if not self.mcp_registry:
+            return {"status": "failed", "servers": "0"}
+            
+        server_count = len(self.mcp_registry.get_server_names())
+        return {
+            "status": "ready", 
+            "servers": str(server_count),
+            "server_names": ", ".join(self.mcp_registry.get_server_names())
+        }

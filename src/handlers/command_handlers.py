@@ -39,6 +39,7 @@ from .commands import (
     ExportCommands,
     CallbackHandlers,
     OpenWebAppCommands,
+    MCPCommands,
 )
 
 
@@ -123,6 +124,15 @@ class CommandHandlers:
         self.open_web_app_commands = OpenWebAppCommands(
             user_data_manager, telegram_logger
         )
+        
+        # Initialize MCP commands
+        self.mcp_commands = MCPCommands(
+            user_data_manager, telegram_logger, openrouter_api
+        )
+        
+        # Set OpenRouter API reference for MCP commands after initialization
+        if openrouter_api:
+            self.mcp_commands.set_openrouter_api(openrouter_api)
 
         # Initialize callback handlers
         self.callback_handlers = CallbackHandlers(
@@ -722,6 +732,13 @@ class CommandHandlers:
             application.add_handler(
                 CommandHandler("cleanthreads", self.clean_threads_command)
             )
+
+            # MCP integration is handled within text_handlers.py using unified workflow
+            # This maintains memory context and proper response formatting
+            if hasattr(self, 'mcp_commands') and self.mcp_commands:
+                self.logger.info("MCP integration available via text_handlers.py with unified conversation flow")
+            else:
+                self.logger.info("MCP integration available via /context in text conversations")
 
             # Specific callback handlers if needed
             self.response_cache = cache

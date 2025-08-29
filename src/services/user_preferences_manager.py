@@ -11,9 +11,17 @@ class UserPreferencesManager:
 
     async def get_user_model_preference(self, user_id: int) -> str:
         """Get the user's preferred AI model."""
-        return await self.user_data_manager.get_user_preference(
-            user_id, "preferred_model", default="gemini"
+        preferred_model = await self.user_data_manager.get_user_preference(
+            user_id, "preferred_model", default="qwen3-235b"
         )
+        
+        # For MCP/OpenRouter usage, ensure we return a valid OpenRouter model
+        # If user selected a non-OpenRouter model (like "gemini"), fallback to a valid one
+        if preferred_model in ["gemini", "deepseek"]:
+            # These are provider-specific models, not OpenRouter models
+            return "qwen3-235b"  # Use a reliable OpenRouter fallback
+            
+        return preferred_model
 
     async def set_user_model_preference(self, user_id: int, model_name: str) -> None:
         """Set the user's preferred AI model."""
