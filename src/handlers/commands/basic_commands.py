@@ -23,21 +23,29 @@ class BasicCommands:
 
         user_id = update.effective_user.id
         welcome_message = (
-            "👋 Welcome to DeepGem! I'm your AI assistant powered by Gemini-2.0-flash & Deepseek-R1 .\n\n"
-            "I can help you with:\n"
+            "👋 **Welcome to DeepGem!** I'm your AI assistant powered by Gemini-2.0-flash & Deepseek-R1.\n\n"
+            "**🎯 I can help you with:**\n"
             "🤖 General conversations\n"
             "📝 Code assistance\n"
             "🗣️ Voice to text conversion\n"
             "🖼️ Image generation and analysis\n"
             "📄 AI document generation\n"
             "📑 PDF analysis\n"
-            "📊 Statistics tracking\n\n"
-            "Available commands:\n"
-            "/genimg - Generate images with Together AI\n"
-            "/gendoc - Generate documents with Multi-Modal AI\n"
-            "/export - Export conversation history first message convert it to docx files\n"
-            "/reset - Reset conversation history\n"
-            "/switchmodel - Switch between AI models\n\n"
+            "📊 Statistics tracking\n"
+            "🔍 Real-time web search (NEW!)\n"
+            "🧠 Advanced problem solving (NEW!)\n\n"
+            "**🆕 Enhanced MCP Tools:**\n"
+            "I now have access to powerful tools with full transparency:\n"
+            "• Web search via Exa AI\n"
+            "• Library documentation search\n"
+            "• Sequential thinking for complex problems\n"
+            "• Document analysis\n"
+            "• All tool calls are now visible!\n\n"
+            "**🚀 Quick Start:**\n"
+            "/genimg - Generate images\n"
+            "/search - Web search\n"
+            "/gendoc - Generate documents\n"
+            "/mcp_help - Learn about advanced tools\n\n"
             "Feel free to start chatting or use /help to learn more!"
         )
 
@@ -53,7 +61,7 @@ class BasicCommands:
         # Use effective_message for reply
         if update.effective_message:
             await update.effective_message.reply_text(
-                welcome_message, reply_markup=reply_markup
+                welcome_message, reply_markup=reply_markup, parse_mode='Markdown'
             )
 
         await self.user_data_manager.initialize_user(user_id)
@@ -63,27 +71,46 @@ class BasicCommands:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         help_text = (
-            "🤖 Available Commands\n\n"
+            "🤖 **Available Commands**\n\n"
+            "**🎯 Basic Commands:**\n"
             "/start - Start the bot\n"
             "/help - Show this help message\n"
             "/reset - Reset conversation history\n"
             "/settings - Configure bot settings\n"
-            "/stats - Show bot statistics\n"
+            "/stats - Show bot statistics\n\n"
+            "**🎨 AI Features:**\n"
             "/genimg - Generate images with Together AI\n"
             "/switchmodel - Switch between AI models\n"
-            "/export - Export conversation history\n\n"
-            "💡 Features\n"
+            "/export - Export conversation history\n"
+            "/gendoc - Generate AI documents\n\n"
+            "**� MCP Tools (Advanced):**\n"
+            "/search <query> - Web search via Exa AI\n"
+            "/Context7 <query> - Search library docs\n"
+            "/sequentialthinking <problem> - Step-by-step problem solving\n"
+            "/Docfork <url> - Analyze documents\n"
+            "/mcp_status - Show MCP server status\n"
+            "/mcp_help - Detailed MCP help\n\n"
+            "**�💡 Features:**\n"
             "• General conversations with AI\n"
-            "• Code assistance\n"
+            "• Code assistance with multiple models\n"
             "• Voice to text conversion\n"
             "• Image generation and analysis\n"
+            "• Real-time web search and research\n"
+            "• Document analysis and generation\n"
             "• Statistics tracking\n"
+            "• Enhanced tool call visibility\n"
             "• Supports markdown formatting\n\n"
+            "**🆕 Enhanced MCP Integration:**\n"
+            "All MCP tool calls now show detailed execution logs, including:\n"
+            "• Tool invocation details\n"
+            "• Execution timing\n"
+            "• Success/failure status\n"
+            "• Source attribution\n\n"
             "Need help? Join our support channel @GemBotAI!"
         )
         # Use effective_message for reply
         if update.effective_message:
-            await update.effective_message.reply_text(help_text)
+            await update.effective_message.reply_text(help_text, parse_mode='Markdown')
         # Only log if effective_user exists
         if update.effective_user:
             self.telegram_logger.log_message(

@@ -64,7 +64,7 @@ class ModelConfigurations:
             ),
             # Venice Uncensored Dolphin Mistral 24B Venice Edition
             "dolphin-mistral-24b-venice-edition": ModelConfig(
-                model_id="dolphin-mistral-24b-venice-edition",
+                model_id="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
                 display_name="Venice: Uncensored",
                 provider=Provider.OPENROUTER,
                 openrouter_model_key="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
@@ -817,6 +817,7 @@ class ModelConfigurations:
             "llama-3.3-nemotron-super-49b": "nvidia/llama-3.3-nemotron-super-49b-v1:free",
             "llama-3.1-nemotron-ultra-253b": "nvidia/llama-3.1-nemotron-ultra-253b-v1:free",
             "llama4-maverick": "meta-llama/llama-4-maverick:free",
+            "dolphin-mistral-24b-venice-edition": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
             "llama4-scout": "meta-llama/llama-4-scout:free",
             "llama-3.3-70b": "meta-llama/llama-3.3-70b-instruct:free",
             "llama-3.2-11b-vision": "meta-llama/llama-3.2-11b-vision-instruct:free",

@@ -499,6 +499,9 @@ class CommandHandlers:
                     CommandHandler("search", self.mcp_commands.search_command)
                 )
                 application.add_handler(
+                    CommandHandler("company", self.mcp_commands.company_command)
+                )
+                application.add_handler(
                     CommandHandler("Context7", self.mcp_commands.context7_command)
                 )
                 application.add_handler(
@@ -506,6 +509,12 @@ class CommandHandlers:
                 )
                 application.add_handler(
                     CommandHandler("Docfork", self.mcp_commands.docfork_command)
+                )
+                application.add_handler(
+                    CommandHandler("mcp_status", self.mcp_commands.mcp_status_command)
+                )
+                application.add_handler(
+                    CommandHandler("mcp_help", self.mcp_commands.mcp_help_command)
                 )
                 self.logger.info("MCP command handlers registered successfully")
 

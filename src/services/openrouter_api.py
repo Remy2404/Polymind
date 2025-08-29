@@ -14,6 +14,8 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from src.services.mcp import get_mcp_registry, MCPRegistry
+from src.services.mcp_tool_logger import MCPToolLogger, ToolCall
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -45,6 +47,7 @@ class OpenRouterAPI:
         # MCP integration
         self.mcp_registry: Optional[MCPRegistry] = None
         self._mcp_initialized = False
+        self.tool_logger = MCPToolLogger()
 
     def _load_openrouter_models_from_config(self):
         """Load available models from centralized configuration specific to OpenRouter."""
@@ -143,6 +146,77 @@ class OpenRouterAPI:
             return base_message + " Be concise, helpful, and accurate."
         return base_message
 
+    async def generate_response_with_tool_logging(
+        self,
+        prompt: str,
+        context: Optional[List[Dict]] = None,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        timeout: float = 300.0,
+        use_mcp: bool = True,
+    ) -> tuple[Optional[str], MCPToolLogger]:
+        """
+        Generate response with detailed MCP tool call logging.
+        Returns both the response and the tool logger for inspection.
+        """
+        # Clear previous tool calls
+        self.tool_logger.clear()
+        
+        try:
+            # Initialize MCP if not already done
+            if not self._mcp_initialized:
+                await self.initialize_mcp()
+
+            # Build system message with context included
+            system_message = self._build_system_message(model, context)
+
+            # Get default OpenRouter model if none provided
+            if not model:
+                available_models = self.get_available_models()
+                if available_models:
+                    model = next(iter(available_models.keys()))
+                else:
+                    model = "qwen3-235b"
+
+            # Create enhanced agent with MCP tools
+            agent = await self._create_enhanced_agent(model, system_message, use_mcp)
+
+            self.logger.info(
+                f"Sending request to OpenRouter via PydanticAI Agent with model {model} (MCP: {use_mcp})"
+            )
+
+            # Use PydanticAI Agent to generate response
+            start_time = datetime.now()
+            result = await agent.run(
+                user_prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            
+            # Log agent execution summary
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            self.logger.info(f"Agent execution completed in {execution_time:.0f}ms")
+
+            if result and result.output:
+                self.logger.info(
+                    f"OpenRouter response length: {len(result.output)} characters"
+                )
+                self.api_failures = 0
+                return result.output, self.tool_logger
+            else:
+                self.logger.warning("No valid response from OpenRouter API via PydanticAI")
+                self.api_failures += 1
+                return None, self.tool_logger
+
+        except Exception as e:
+            self.api_failures += 1
+            self.api_last_failure = time.time()
+            self.logger.error(
+                f"OpenRouter API error via PydanticAI for model {model}: {str(e)}", exc_info=True
+            )
+            return f"OpenRouter API error: {str(e)}", self.tool_logger
+
     @rate_limit
     async def generate_response(
         self,
@@ -154,56 +228,11 @@ class OpenRouterAPI:
         timeout: float = 300.0,
         use_mcp: bool = True,
     ) -> Optional[str]:
-        try:
-            # Initialize MCP if not already done
-            if not self._mcp_initialized:
-                await self.initialize_mcp()
-
-            # Build system message with context included
-            system_message = self._build_system_message(model, context)
-
-            # Get default OpenRouter model if none provided
-            if not model:
-                # Get the first available OpenRouter model as fallback
-                available_models = self.get_available_models()
-                if available_models:
-                    model = next(iter(available_models.keys()))
-                else:
-                    # Last resort fallback
-                    model = "qwen3-235b"
-
-            # Create enhanced agent with MCP tools
-            agent = await self._create_enhanced_agent(model, system_message, use_mcp)
-
-            self.logger.info(
-                f"Sending request to OpenRouter via PydanticAI Agent with model {model} (MCP: {use_mcp})"
-            )
-
-            # Use PydanticAI Agent to generate response (with or without MCP tools)
-            result = await agent.run(
-                user_prompt=prompt,
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
-
-            if result and result.output:
-                self.logger.info(
-                    f"OpenRouter response length: {len(result.output)} characters"
-                )
-                self.api_failures = 0  # Reset failures on successful response
-                return result.output
-            else:
-                self.logger.warning("No valid response from OpenRouter API via PydanticAI")
-                self.api_failures += 1
-                return None
-
-        except Exception as e:
-            self.api_failures += 1
-            self.api_last_failure = time.time()
-            self.logger.error(
-                f"OpenRouter API error via PydanticAI for model {model}: {str(e)}", exc_info=True
-            )
-            return f"OpenRouter API error: {str(e)}"
+        """Legacy method - calls new tool logging method and returns only response."""
+        response, _ = await self.generate_response_with_tool_logging(
+            prompt, context, model, temperature, max_tokens, timeout, use_mcp
+        )
+        return response
 
     @rate_limit
     async def generate_response_with_model_key(

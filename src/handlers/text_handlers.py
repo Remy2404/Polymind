@@ -77,6 +77,7 @@ class TextHandler:
         """
         Main handler for text messages.
         Processes user messages, detects intent, and generates appropriate responses.
+        Includes integrated MCP command handling through the unified workflow.
         """
         if not update.message and not update.edited_message:
             return

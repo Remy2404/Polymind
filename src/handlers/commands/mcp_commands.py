@@ -62,7 +62,8 @@ class MCPCommands:
     async def _execute_mcp_tool(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                tool_name: str, query: str, server_name: Optional[str] = None) -> None:
         """
-        Execute an MCP tool via the Pydantic AI agent.
+        Execute MCP tool directly using OpenRouter API and existing response formatter.
+        This follows the workflow: openrouter_api.py -> existing response formatting
         
         Args:
             update: Telegram update object
@@ -74,80 +75,94 @@ class MCPCommands:
         user_id = update.effective_user.id
         
         try:
-            # Ensure MCP integration is available
-            if not await self._ensure_mcp_integration():
-                await update.message.reply_text(
-                    "❌ MCP integration is not available. Please try again later."
-                )
-                return
-                
-            # Show typing indicator
-            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+            # Log the MCP command request
+            self.telegram_logger.log_message(f"MCP {tool_name} command: {query[:100]}...", user_id)
             
-            # Log the request
-            self.telegram_logger.log_message(f"MCP {tool_name} request: {query[:100]}...", user_id)
-            
-            # Get user's preferred model
-            from services.user_preferences_manager import UserPreferencesManager
-            preferences_manager = UserPreferencesManager(self.user_data_manager)
-            user_id = update.effective_user.id
-            preferred_model = await preferences_manager.get_user_model_preference(user_id)
-            
-            # Create a specialized prompt for the MCP tool
-            mcp_prompt = f"""Please use the {tool_name} tool to help with this request: {query}
-
-Use the appropriate MCP tool to provide a comprehensive and helpful response. Format the response clearly for the user."""
-            
-            # Call the enhanced OpenRouter API with MCP tools (using user's preferred model)
-            response = await self.openrouter_api.generate_response(
-                prompt=mcp_prompt,
-                model=preferred_model,  # Use user's preferred model
-                temperature=0.7,
-                max_tokens=2000
+            # Send processing message
+            processing_message = await update.message.reply_text(
+                f"🔄 **Processing {tool_name}**\n"
+                f"Query: `{query[:100]}{'...' if len(query) > 100 else ''}`\n\n"
+                "⏳ Executing tool...",
+                parse_mode='Markdown'
             )
             
-            if response and response.strip():
-                # Format the response for Telegram
-                formatted_response = self._format_mcp_response(response, tool_name, server_name)
-                
-                # Send response
-                await update.message.reply_text(
-                    formatted_response,
-                    parse_mode='Markdown',
-                    disable_web_page_preview=True
+            # Create enhanced prompt for the AI that lets it choose the appropriate MCP tool
+            enhanced_prompt = f"""I need help with: {query}
+
+Please use the most appropriate available MCP tool to help answer this query. You have access to web search, company research, documentation search, and other specialized tools through the Model Context Protocol.
+
+Provide a comprehensive and helpful response using the available tools."""
+            
+            # Use OpenRouter API directly with MCP tools
+            if self.openrouter_api:
+                response, tool_logger = await self.openrouter_api.generate_response_with_tool_logging(
+                    prompt=enhanced_prompt,
+                    model="qwen3-235b",  # Use a reliable default model
+                    use_mcp=True,
+                    timeout=120.0
                 )
                 
-                # Log successful execution
-                self.telegram_logger.log_message(f"MCP {tool_name} response sent", user_id)
-                
+                # Format response with tool information
+                if response and tool_logger.tool_calls:
+                    formatted_response = f"🔧 **{tool_name} Results**\n"
+                    formatted_response += "═" * 30 + "\n\n"
+                    
+                    # Add tool execution summary
+                    for tool_call in tool_logger.tool_calls:
+                        if tool_call.duration_ms:
+                            formatted_response += f"✅ Tool executed in {tool_call.duration_ms:.0f}ms\n\n"
+                    
+                    formatted_response += response
+                    
+                    # Edit the processing message with results
+                    await processing_message.edit_text(
+                        formatted_response,
+                        parse_mode='Markdown',
+                        disable_web_page_preview=True
+                    )
+                elif response:
+                    # AI responded but no tools were called - still show the response
+                    formatted_response = f"🤖 **AI Response** (no tool used)\n"
+                    formatted_response += "═" * 30 + "\n\n"
+                    formatted_response += response
+                    
+                    await processing_message.edit_text(
+                        formatted_response,
+                        parse_mode='Markdown',
+                        disable_web_page_preview=True
+                    )
+                else:
+                    # No tool was called and no response
+                    await processing_message.edit_text(
+                        f"❌ **{tool_name} Failed**\n\n"
+                        f"No response generated. Please try rephrasing your query. #{server_name if server_name else 'MCP'}",
+                        parse_mode='Markdown'
+                    )
             else:
-                await update.message.reply_text(
-                    f"❌ No response received from {tool_name}. Please try again."
+                await processing_message.edit_text(
+                    "❌ OpenRouter API not available. Please try again later.",
+                    parse_mode='Markdown'
                 )
                 
         except Exception as e:
             self.logger.error(f"Error executing MCP tool {tool_name}: {e}")
-            await update.message.reply_text(
-                f"❌ Error executing {tool_name}: {str(e)[:200]}..."
-            )
+            # Edit processing message with error
+            try:
+                await processing_message.edit_text(
+                    f"❌ **{tool_name} Error**\n\n"
+                    f"Error: `{str(e)[:200]}{'...' if len(str(e)) > 200 else ''}`\n\n"
+                    "Please try again or contact support.",
+                    parse_mode='Markdown'
+                )
+            except:
+                # If editing fails, send new message
+                await update.message.reply_text(
+                    f"❌ **{tool_name} Error**\n\n"
+                    f"Error: `{str(e)[:200]}{'...' if len(str(e)) > 200 else ''}`\n\n"
+                    "Please try again or contact support.",
+                    parse_mode='Markdown'
+                )
             
-    def _format_mcp_response(self, response: str, tool_name: str, server_name: Optional[str] = None) -> str:
-        """Format MCP tool response for Telegram."""
-        # Add header with tool information
-        header = f"🔧 **{tool_name}**"
-        if server_name:
-            header += f" *({server_name})*"
-        header += "\n" + "─" * 40 + "\n\n"
-        
-        # Clean up response
-        cleaned_response = response.strip()
-        
-        # Ensure response isn't too long for Telegram
-        if len(cleaned_response) > 3500:
-            cleaned_response = cleaned_response[:3500] + "...\n\n*Response truncated*"
-            
-        return header + cleaned_response
-        
     async def search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /search command - Web search via Exa Search MCP tool."""
         user_id = update.effective_user.id
@@ -164,7 +179,25 @@ Use the appropriate MCP tool to provide a comprehensive and helpful response. Fo
         query = " ".join(context.args)
         self.telegram_logger.log_message(f"Search command: {query}", user_id)
         
-        await self._execute_mcp_tool(update, context, "exa_search_web_search_exa", query, "Exa Search")
+        await self._execute_mcp_tool(update, context, "web_search_exa", query, "Exa Search")
+        
+    async def company_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /company command - Company research via Exa Search MCP tool."""
+        user_id = update.effective_user.id
+        
+        if not context.args:
+            await update.message.reply_text(
+                "🏢 **Usage:** `/company <company_name>`\n\n"
+                "**Example:** `/company Tesla`\n\n"
+                "Performs company research using Exa AI search engine.",
+                parse_mode='Markdown'
+            )
+            return
+            
+        query = " ".join(context.args)
+        self.telegram_logger.log_message(f"Company research command: {query}", user_id)
+        
+        await self._execute_mcp_tool(update, context, "company_research", query, "Exa Search")
         
     async def context7_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /Context7 command - Documentation search via Context7 MCP tool."""
@@ -182,7 +215,7 @@ Use the appropriate MCP tool to provide a comprehensive and helpful response. Fo
         query = " ".join(context.args)
         self.telegram_logger.log_message(f"Context7 command: {query}", user_id)
         
-        await self._execute_mcp_tool(update, context, "resolve-library-id", query, "Context7")
+        await self._execute_mcp_tool(update, context, "mcp_context7_resolve-library-id", query, "Context7")
         
     async def sequentialthinking_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /sequentialthinking command - Problem-solving via Sequential Thinking MCP tool."""
@@ -200,7 +233,7 @@ Use the appropriate MCP tool to provide a comprehensive and helpful response. Fo
         query = " ".join(context.args)
         self.telegram_logger.log_message(f"Sequential thinking command: {query}", user_id)
         
-        await self._execute_mcp_tool(update, context, "sequentialthinking", query, "Sequential Thinking")
+        await self._execute_mcp_tool(update, context, "mcp_sequentialthi_sequentialthinking", query, "Sequential Thinking")
         
     async def docfork_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /Docfork command - Document analysis via Docfork MCP tool."""
@@ -218,7 +251,7 @@ Use the appropriate MCP tool to provide a comprehensive and helpful response. Fo
         query = " ".join(context.args)
         self.telegram_logger.log_message(f"Docfork command: {query}", user_id)
         
-        await self._execute_mcp_tool(update, context, "get-library-docs", query, "Docfork")
+        await self._execute_mcp_tool(update, context, "mcp_docfork_get-library-docs", query, "Docfork")
         
     async def mcp_status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /mcp_status command - Show MCP server status."""
@@ -232,36 +265,29 @@ Use the appropriate MCP tool to provide a comprehensive and helpful response. Fo
             # Get server information
             servers_info = registry.get_available_tools_info()
             
-            if not servers_info:
-                await update.message.reply_text("❌ No MCP servers configured.")
-                return
-                
-            # Format status message
-            status_message = "🔧 **MCP Server Status**\n" + "=" * 30 + "\n\n"
+            # Check integration status
+            integration_ready = await self._ensure_mcp_integration()
             
-            for server_name, info in servers_info.items():
-                status_icon = "✅" if info["status"] == "initialized" else "❌"
-                status_message += f"{status_icon} **{server_name}**\n"
-                status_message += f"   Status: `{info['status']}`\n"
-                
-                if info["status"] == "initialized":
-                    status_message += f"   Command: `{info['command']}`\n"
-                    if info.get("tool_prefix"):
-                        status_message += f"   Prefix: `{info['tool_prefix']}`\n"
-                        
-                status_message += "\n"
-                
-            # Add integration status
-            if await self._ensure_mcp_integration():
-                status_message += "✅ **Integration Status:** Ready\n"
+            # Format status message
+            status_message = "🔧 **MCP Status**\n"
+            status_message += "═" * 30 + "\n\n"
+            
+            if integration_ready:
+                status_message += "✅ **MCP Integration**: Ready\n\n"
             else:
-                status_message += "❌ **Integration Status:** Not Available\n"
+                status_message += "❌ **MCP Integration**: Not Available\n\n"
                 
+            status_message += "**Available Servers**:\n"
+            for server_name, info in servers_info.items():
+                status_message += f"• {server_name}: {len(info.get('tools', []))} tools\n"
+            
             await update.message.reply_text(status_message, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error getting MCP status: {e}")
-            await update.message.reply_text(f"❌ Error getting MCP status: {str(e)}")
+            error_message = f"❌ **MCP Status Error**\n\n" \
+                          f"Error: `{str(e)[:200]}{'...' if len(str(e)) > 200 else ''}`"
+            await update.message.reply_text(error_message, parse_mode='Markdown')
             
     async def mcp_help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /mcp_help command - Show MCP commands help."""
@@ -273,6 +299,10 @@ Use the appropriate MCP tool to provide a comprehensive and helpful response. Fo
 🔍 `/search <query>`
    Web search using Exa AI search engine
    *Example:* `/search latest AI developments`
+
+🏢 `/company <company_name>`
+   Company research using Exa AI search engine
+   *Example:* `/company Tesla`
 
 📚 `/Context7 <query>`  
    Search library documentation and examples
