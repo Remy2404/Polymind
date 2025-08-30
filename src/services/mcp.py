@@ -79,6 +79,7 @@ class MCPRegistry:
             for server_name, server_data in servers_config.items():
                 # Process environment variables in args
                 processed_args = []
+                missing_env_vars = []
                 for arg in server_data.get('args', []):
                     if isinstance(arg, str) and arg.startswith('${') and arg.endswith('}'):
                         env_var = arg[2:-1]  # Remove ${ and }
@@ -87,9 +88,16 @@ class MCPRegistry:
                             processed_args.append(env_value)
                         else:
                             self.logger.warning(f"Environment variable {env_var} not found for server {server_name}")
+                            missing_env_vars.append(env_var)
                             processed_args.append(arg)  # Keep original if env var not found
                     else:
                         processed_args.append(arg)
+                
+                # If there are missing environment variables, mark server as disabled
+                enabled = server_data.get('enabled', True)
+                if missing_env_vars:
+                    self.logger.warning(f"Server {server_name} has missing environment variables: {missing_env_vars}. Disabling server.")
+                    enabled = False
                 
                 config = MCPServerConfig(
                     name=server_name,
@@ -97,7 +105,7 @@ class MCPRegistry:
                     command=server_data.get('command', ''),
                     args=processed_args,
                     env=server_data.get('env'),
-                    enabled=server_data.get('enabled', True),
+                    enabled=enabled,
                     tool_prefix=server_data.get('tool_prefix')
                 )
                 
@@ -127,13 +135,18 @@ class MCPRegistry:
                 if config.env:
                     env.update(config.env)
                     
-                # Create MCPServerStdio instance
+                # Create MCPServerStdio instance with better error handling
                 server = MCPServerStdio(
                     command=config.command,
                     args=config.args,
-                    env=env
+                    env=env,
+                    tool_prefix=config.tool_prefix,
+                    timeout=15.0,  # 15 second timeout for initialization
+                    read_timeout=60.0,  # 1 minute read timeout for stability
+                    max_retries=1  # Single retry for tool calls
                 )
                 
+                # Add server to registry (connection is handled by Pydantic AI agent)
                 self.servers[server_name] = server
                 self.logger.info(f"Initialized MCP server: {server_name}")
                 
@@ -142,14 +155,6 @@ class MCPRegistry:
                 # Continue with other servers even if one fails
                 continue
                 
-    def get_server(self, server_name: str) -> Optional[MCPServerStdio]:
-        """Get a specific MCP server by name."""
-        return self.servers.get(server_name)
-        
-    def get_all_servers(self) -> Dict[str, MCPServerStdio]:
-        """Get all initialized MCP servers."""
-        return self.servers.copy()
-        
     def get_toolsets(self) -> List[MCPServerStdio]:
         """Get all MCP servers as toolsets for Pydantic AI agents."""
         return list(self.servers.values())
@@ -157,14 +162,6 @@ class MCPRegistry:
     def get_server_names(self) -> List[str]:
         """Get names of all initialized servers."""
         return list(self.servers.keys())
-        
-    def is_server_available(self, server_name: str) -> bool:
-        """Check if a specific server is available."""
-        return server_name in self.servers
-        
-    def get_server_config(self, server_name: str) -> Optional[MCPServerConfig]:
-        """Get configuration for a specific server."""
-        return self.server_configs.get(server_name)
         
     async def reload_config(self) -> None:
         """Reload configuration and reinitialize servers."""
@@ -180,13 +177,7 @@ class MCPRegistry:
         """Shutdown all MCP servers and clean up resources."""
         self.logger.info("Shutting down MCP Registry...")
         
-        for server_name, server in self.servers.items():
-            try:
-                # MCP servers will be cleaned up when the agent context exits
-                self.logger.info(f"Shutdown MCP server: {server_name}")
-            except Exception as e:
-                self.logger.error(f"Error shutting down MCP server {server_name}: {e}")
-                
+        # Clear servers (Pydantic AI handles disconnection)
         self.servers.clear()
         self.server_configs.clear()
         
@@ -224,28 +215,6 @@ class MCPRegistry:
         
         for server_name, server in self.servers.items():
             try:
-                # Create a temporary agent to discover tools
-                from pydantic_ai import Agent
-                from pydantic_ai.models.openai import OpenAIModel
-                from pydantic_ai.providers.openai import OpenAIProvider
-                
-                # Use a minimal model for tool discovery
-                provider = OpenAIProvider(
-                    base_url="https://openrouter.ai/api/v1",
-                    api_key="dummy_key"  # Won't be used for discovery
-                )
-                model = OpenAIModel(
-                    model_name="qwen/qwen3-235b-a22b:free",
-                    provider=provider
-                )
-                
-                # Create agent with this server only
-                agent = Agent(
-                    model=model,
-                    system_prompt="You are a tool discovery assistant.",
-                    toolsets=[server]
-                )
-                
                 # Try to get tool information by inspecting the agent
                 # This is a simplified approach - in practice, you might need
                 # to use MCP protocol directly to get tool schemas
@@ -299,12 +268,3 @@ async def get_mcp_registry() -> MCPRegistry:
         await _mcp_registry.initialize()
         
     return _mcp_registry
-
-
-async def shutdown_mcp_registry() -> None:
-    """Shutdown the global MCP registry."""
-    global _mcp_registry
-    
-    if _mcp_registry is not None:
-        await _mcp_registry.shutdown()
-        _mcp_registry = None

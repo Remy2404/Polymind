@@ -32,6 +32,7 @@ class ModelConfig:
     supports_audio: bool = False
     supports_video: bool = False
     supports_documents: bool = False
+    supports_tool_calling: bool = False
     description: str = ""
     type: str = "general_purpose"
     capabilities: List[str] = field(default_factory=list)
@@ -41,11 +42,109 @@ class ModelConfigurations:
     """Central configuration for all available models."""
 
     @staticmethod
+    def _create_tool_calling_model(**kwargs) -> ModelConfig:
+        """Create a model configuration with tool calling support."""
+        # Ensure supports_tool_calling is True
+        kwargs['supports_tool_calling'] = True
+        
+        # Add supports_tool_calling to capabilities if not present
+        capabilities = kwargs.get('capabilities', [])
+        if 'supports_tool_calling' not in capabilities:
+            capabilities.append('supports_tool_calling')
+        kwargs['capabilities'] = capabilities
+        
+        return ModelConfig(**kwargs)
+    
+    @staticmethod
+    def _create_multilingual_tool_model(**kwargs) -> ModelConfig:
+        """Create a multilingual model with tool calling support."""
+        # Ensure supports_tool_calling is True
+        kwargs['supports_tool_calling'] = True
+        
+        # Set default capabilities for multilingual + tool calling
+        default_capabilities = ['multilingual_support', 'supports_tool_calling']
+        capabilities = kwargs.get('capabilities', [])
+        
+        # Merge capabilities, avoiding duplicates
+        all_capabilities = list(set(default_capabilities + capabilities))
+        kwargs['capabilities'] = all_capabilities
+        
+        return ModelConfig(**kwargs)
+    
+    @staticmethod
+    def _create_qwen_model(**kwargs) -> ModelConfig:
+        """Create a Qwen model with standard capabilities."""
+        return ModelConfigurations._create_multilingual_tool_model(**kwargs)
+    
+    @staticmethod
+    def _create_deepseek_model(**kwargs) -> ModelConfig:
+        """Create a DeepSeek model with tool calling support."""
+        return ModelConfigurations._create_tool_calling_model(**kwargs)
+    
+    @staticmethod
+    def _create_gemini_model(**kwargs) -> ModelConfig:
+        """Create a Gemini model with tool calling support."""
+        return ModelConfigurations._create_tool_calling_model(**kwargs)
+    
+    @staticmethod
+    def _auto_configure_capabilities(model_config: ModelConfig) -> ModelConfig:
+        """Automatically configure capabilities based on model properties."""
+        capabilities = list(model_config.capabilities) if model_config.capabilities else []
+        
+        # Auto-add supports_tool_calling capability if the flag is set
+        if model_config.supports_tool_calling and 'supports_tool_calling' not in capabilities:
+            capabilities.append('supports_tool_calling')
+        
+        # Auto-add supports_images capability if the flag is set
+        if model_config.supports_images and 'supports_images' not in capabilities:
+            capabilities.append('supports_images')
+        
+        # Auto-add supports_documents capability if the flag is set  
+        if model_config.supports_documents and 'supports_documents' not in capabilities:
+            capabilities.append('supports_documents')
+        
+        # Create new model config with updated capabilities
+        return ModelConfig(
+            model_id=model_config.model_id,
+            display_name=model_config.display_name,
+            provider=model_config.provider,
+            openrouter_model_key=model_config.openrouter_model_key,
+            indicator_emoji=model_config.indicator_emoji,
+            system_message=model_config.system_message,
+            supports_images=model_config.supports_images,
+            supports_documents=model_config.supports_documents,
+            supports_tool_calling=model_config.supports_tool_calling,
+            description=model_config.description,
+            type=model_config.type,
+            capabilities=capabilities,
+        )
+    
+    @staticmethod
+    def _create_model_group(base_config: Dict[str, Any], variants: List[Dict[str, Any]]) -> Dict[str, ModelConfig]:
+        """Create multiple similar models with shared base configuration."""
+        models = {}
+        
+        for variant in variants:
+            # Merge base config with variant-specific config
+            model_config = {**base_config, **variant}
+            model_id = model_config['model_id']
+            
+            # Determine which factory method to use based on capabilities needed
+            if 'multilingual_tool' in model_config.get('factory_type', ''):
+                models[model_id] = ModelConfigurations._create_multilingual_tool_model(**model_config)
+            elif 'tool_calling' in model_config.get('factory_type', ''):
+                models[model_id] = ModelConfigurations._create_tool_calling_model(**model_config)
+            else:
+                models[model_id] = ModelConfig(**model_config)
+        
+        return models
+
+    @staticmethod
     def get_all_models() -> Dict[str, ModelConfig]:
         """Get all available model configurations."""
         models = {
             # Gemini Models
-            "gemini": ModelConfig(
+            "gemini": ModelConfigurations._create_tool_calling_model(
                 model_id="gemini",
                 display_name="Gemini 2.0 Flash",
                 provider=Provider.GEMINI,
@@ -57,10 +156,10 @@ class ModelConfigurations:
                 type="multimodal",
                 capabilities=[
                     "supports_images",
-                    "supports_documents",
+                    "supports_documents", 
                     "long_context",
                     "general_purpose",
-                ],
+                ],  # supports_tool_calling will be added automatically
             ),
             # Venice Uncensored Dolphin Mistral 24B Venice Edition
             "dolphin-mistral-24b-venice-edition": ModelConfig(
@@ -123,7 +222,7 @@ class ModelConfigurations:
                 capabilities=["multilingual_support", "reasoning_capable"],
             ),
             # DeepSeek Models
-            "deepseek": ModelConfig(
+            "deepseek": ModelConfigurations._create_tool_calling_model(
                 model_id="deepseek",
                 display_name="DeepSeek R1",
                 provider=Provider.DEEPSEEK,
@@ -131,7 +230,7 @@ class ModelConfigurations:
                 system_message="You are DeepSeek, an advanced reasoning AI model that excels at complex problem-solving.",
                 description="Advanced reasoning model with strong analytical capabilities",
                 type="reasoning",
-                capabilities=["reasoning_capable", "long_context", "general_purpose"],
+                capabilities=["reasoning_capable", "long_context", "general_purpose"],  # supports_tool_calling added automatically
             ),
             # === OPENROUTER MODELS ===
             # OpenRouter Cypher
@@ -275,7 +374,7 @@ class ModelConfigurations:
                 type="reasoning",
                 capabilities=["reasoning_capable"],
             ),
-            "deepseek-chat": ModelConfig(
+            "deepseek-chat": ModelConfigurations._create_tool_calling_model(
                 model_id="deepseek-chat",
                 display_name="DeepSeek Chat",
                 provider=Provider.OPENROUTER,
@@ -283,6 +382,7 @@ class ModelConfigurations:
                 indicator_emoji="💬",
                 system_message="You are DeepSeek Chat, optimized for conversational AI interactions.",
                 description="Conversational DeepSeek model - Free",
+                capabilities=["general_purpose"],  # supports_tool_calling added automatically
             ),
             "deepseek-v3-base": ModelConfig(
                 model_id="deepseek-v3-base",
@@ -394,7 +494,7 @@ class ModelConfigurations:
                 type="multimodal",
                 capabilities=["supports_images", "general_purpose"],
             ),
-            "gemini-2.0-flash-exp": ModelConfig(
+            "gemini-2.0-flash-exp": ModelConfigurations._create_tool_calling_model(
                 model_id="gemini-2.0-flash-exp",
                 display_name="Gemini 2.0 Flash Experimental",
                 provider=Provider.OPENROUTER,
@@ -404,10 +504,10 @@ class ModelConfigurations:
                 description="Google's experimental Gemini 2.0 Flash - Free",
                 supports_images=True,
                 type="multimodal",
-                capabilities=["supports_images", "general_purpose"],
+                capabilities=["supports_images", "general_purpose"],  # supports_tool_calling added automatically
             ),
             # Qwen Models
-            "qwen3-30b": ModelConfig(
+            "qwen3-30b": ModelConfigurations._create_qwen_model(
                 model_id="qwen3-30b",
                 display_name="Qwen3 30B A3B",
                 provider=Provider.OPENROUTER,
@@ -416,7 +516,7 @@ class ModelConfigurations:
                 system_message="You are Qwen3, a multilingual AI assistant created by Alibaba Cloud.",
                 description="30B parameter Qwen model - Free",
             ),
-            "qwen3-8b": ModelConfig(
+            "qwen3-8b": ModelConfigurations._create_qwen_model(
                 model_id="qwen3-8b",
                 display_name="Qwen3 8B",
                 provider=Provider.OPENROUTER,
@@ -425,7 +525,7 @@ class ModelConfigurations:
                 system_message="You are Qwen3, a multilingual AI assistant created by Alibaba Cloud.",
                 description="8B parameter Qwen model - Free",
             ),
-            "qwen3-14b": ModelConfig(
+            "qwen3-14b": ModelConfigurations._create_qwen_model(
                 model_id="qwen3-14b",
                 display_name="Qwen3 14B",
                 provider=Provider.OPENROUTER,
@@ -434,7 +534,7 @@ class ModelConfigurations:
                 system_message="You are Qwen3, a multilingual AI assistant created by Alibaba Cloud.",
                 description="14B parameter Qwen model - Free",
             ),
-            "qwen3-32b": ModelConfig(
+            "qwen3-32b": ModelConfigurations._create_tool_calling_model(
                 model_id="qwen3-32b",
                 display_name="Qwen 2.5 Coder 32B",
                 provider=Provider.OPENROUTER,
@@ -443,9 +543,9 @@ class ModelConfigurations:
                 system_message="You are Qwen 2.5 Coder, specialized in programming and code generation.",
                 description="Specialized coding model 32B - Free",
                 type="coding_specialist",
-                capabilities=["coding_specialist"],
+                capabilities=["coding_specialist"],  # supports_tool_calling will be added automatically
             ),
-            "qwen3-235b": ModelConfig(
+            "qwen3-235b": ModelConfigurations._create_qwen_model(
                 model_id="qwen3-235b",
                 display_name="Qwen3 235B A22B",
                 provider=Provider.OPENROUTER,
@@ -454,7 +554,7 @@ class ModelConfigurations:
                 system_message="You are Qwen3, a large-scale multilingual AI assistant created by Alibaba Cloud.",
                 description="Massive 235B parameter Qwen model - Free",
                 type="multilingual",
-                capabilities=["multilingual_support", "reasoning_capable"],
+                capabilities=["reasoning_capable"],  # multilingual_support and supports_tool_calling added automatically
             ),
             "qwen2.5-vl-32b": ModelConfig(
                 model_id="qwen2.5-vl-32b",
@@ -731,6 +831,16 @@ class ModelConfigurations:
         return {k: v for k, v in all_models.items() if v.provider == provider}
 
     @staticmethod
+    def get_tool_calling_models() -> Dict[str, ModelConfig]:
+        """Get all models that support tool calling/function calling."""
+        all_models = ModelConfigurations.get_all_models()
+        return {
+            k: v
+            for k, v in all_models.items()
+            if v.supports_tool_calling
+        }
+
+    @staticmethod
     def get_free_models() -> Dict[str, ModelConfig]:
         """Get all free models (OpenRouter models with :free suffix)."""
         all_models = ModelConfigurations.get_all_models()
@@ -856,3 +966,30 @@ def get_default_agent_model() -> ModelConfig:
             return models[preferred]
     # Fallback: return the first model in the dict
     return next(iter(models.values()))
+
+
+def get_default_tool_calling_model() -> str:
+    """
+    Returns the recommended default model ID for tool calling/MCP usage.
+    Prioritizes models known to support tool calling.
+    """
+    tool_calling_models = ModelConfigurations.get_tool_calling_models()
+    
+    # Preferred order for tool calling models
+    preferred_order = [
+        "gemini",
+        "deepseek", 
+        "gemini-2.0-flash-exp",
+        "deepseek-chat"
+    ]
+    
+    for model_id in preferred_order:
+        if model_id in tool_calling_models:
+            return model_id
+    
+    # Fallback: return the first tool calling model available
+    if tool_calling_models:
+        return next(iter(tool_calling_models.keys()))
+    
+    # Last resort: return default model
+    return "gemini"

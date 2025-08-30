@@ -9,6 +9,7 @@ from src.services.model_handlers.model_configs import (
     ModelConfigurations,
     Provider,
     ModelConfig,
+    get_default_tool_calling_model,
 )
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
@@ -71,45 +72,60 @@ class OpenRouterAPI:
 
             self.mcp_registry = await get_mcp_registry()
             self._mcp_initialized = True
-            self.logger.info("MCP integration initialized successfully")
+            
+            # Log MCP status
+            server_names = self.mcp_registry.get_server_names()
+            if server_names:
+                self.logger.info(f"MCP integration initialized successfully with servers: {', '.join(server_names)}")
+            else:
+                self.logger.warning("MCP integration initialized but no servers are available")
+                
         except Exception as e:
-            self.logger.error(f"Failed to initialize MCP: {e}")
+            self.logger.error(f"Failed to initialize MCP: {e}", exc_info=True)
             # Don't raise - allow API to work without MCP
+            self._mcp_initialized = False
 
     async def _create_enhanced_agent(
         self, model_id: str, system_message: str, use_mcp: bool = True
     ) -> Agent:
         """Create a Pydantic AI agent with optional MCP toolsets."""
-        # Get model with fallback support from centralized config
         openrouter_model = ModelConfigurations.get_model_with_fallback(model_id)
-
-        # Create OpenAI provider with OpenRouter configuration
+        
+        # Check if the model supports tool calling
+        model_configs = ModelConfigurations.get_all_models()
+        model_config = model_configs.get(model_id)
+        supports_tools = model_config and model_config.supports_tool_calling
+        
+        if not supports_tools and use_mcp:
+            self.logger.warning(f"Model {model_id} ({openrouter_model}) does not support tool calling. Disabling MCP toolsets.")
+            use_mcp = False
+        
         openai_provider = OpenAIProvider(
             base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY
         )
-
-        # Create model instance
         request_model = OpenAIModel(
             model_name=openrouter_model, provider=openai_provider
         )
 
-        # Get MCP toolsets if requested and available
         toolsets = []
         if use_mcp and self._mcp_initialized and self.mcp_registry:
             try:
-                toolsets = self.mcp_registry.get_toolsets()
+                available_toolsets = self.mcp_registry.get_toolsets()
+                # Filter out any None or invalid toolsets
+                toolsets = [ts for ts in available_toolsets if ts is not None]
                 if toolsets:
                     self.logger.info(f"Using {len(toolsets)} MCP toolsets with agent")
+                else:
+                    self.logger.info("No valid MCP toolsets available")
             except Exception as e:
                 self.logger.warning(f"Failed to get MCP toolsets: {e}")
+                toolsets = []  # fallback: no toolsets
 
-        # Create agent with or without MCP toolsets
         agent = Agent(
             model=request_model,
             system_prompt=system_message,
             toolsets=toolsets if toolsets else None,
         )
-
         return agent
 
     def get_available_models(self) -> Dict[str, str]:
@@ -162,58 +178,95 @@ class OpenRouterAPI:
         Generate response with detailed MCP tool call logging.
         Returns both the response and the tool logger for inspection.
         """
-        # Clear previous tool calls
         self.tool_logger.clear()
-
         try:
-            # Initialize MCP if not already done
             if not self._mcp_initialized:
                 await self.initialize_mcp()
-
-            # Build system message with context included
             system_message = self._build_system_message(model, context)
-
-            # Get default OpenRouter model if none provided
             if not model:
-                available_models = self.get_available_models()
-                if available_models:
-                    model = next(iter(available_models.keys()))
+                # Check if MCP is requested and prioritize tool-calling models
+                if use_mcp:
+                    model = get_default_tool_calling_model()
+                    self.logger.info(f"Auto-selected tool-calling compatible model: {model}")
                 else:
-                    # Import and use the proper default model from model configs
-                    from src.services.model_handlers.model_configs import (
-                        get_default_agent_model,
-                    )
-
-                    model = get_default_agent_model()
-
-            # Create enhanced agent with MCP tools
-            agent = await self._create_enhanced_agent(model, system_message, use_mcp)
-
-            self.logger.info(
-                f"Sending request to OpenRouter via PydanticAI Agent with model {model} (MCP: {use_mcp})"
-            )
-
-            # Use PydanticAI Agent to generate response
-            start_time = datetime.now()
-            result = await agent.run(user_prompt=prompt)
-
-            # Log agent execution summary
-            execution_time = (datetime.now() - start_time).total_seconds() * 1000
-            self.logger.info(f"Agent execution completed in {execution_time:.0f}ms")
-
-            if result and result.output:
+                    available_models = self.get_available_models()
+                    if available_models:
+                        model = next(iter(available_models.keys()))
+                    else:
+                        from src.services.model_handlers.model_configs import (
+                            get_default_agent_model,
+                        )
+                        model = get_default_agent_model()
+            
+            # Try agent with MCP toolsets
+            try:
+                agent = await self._create_enhanced_agent(model, system_message, use_mcp)
                 self.logger.info(
-                    f"OpenRouter response length: {len(result.output)} characters"
+                    f"Sending request to OpenRouter via PydanticAI Agent with model {model} (MCP: {use_mcp})"
                 )
-                self.api_failures = 0
-                return result.output, self.tool_logger
-            else:
-                self.logger.warning(
-                    "No valid response from OpenRouter API via PydanticAI"
-                )
-                self.api_failures += 1
-                return None, self.tool_logger
-
+                start_time = datetime.now()
+                
+                # Use async context manager to properly handle MCP server lifecycle
+                async with agent:
+                    result = await agent.run(user_prompt=prompt)
+                    
+                execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                self.logger.info(f"Agent execution completed in {execution_time:.0f}ms")
+                
+                if result and result.output:
+                    self.logger.info(
+                        f"OpenRouter response length: {len(result.output)} characters"
+                    )
+                    self.api_failures = 0
+                    return result.output, self.tool_logger
+                else:
+                    self.logger.warning(
+                        "No valid response from OpenRouter API via PydanticAI"
+                    )
+                    self.api_failures += 1
+                    return None, self.tool_logger
+                    
+            except Exception as mcp_exc:
+                # Log the specific error type for debugging
+                error_msg = str(mcp_exc)
+                if "TaskGroup" in error_msg or "unhandled errors" in error_msg:
+                    self.logger.error(f"TaskGroup/MCP toolset error: {error_msg}. This usually indicates an MCP server startup or communication issue.")
+                elif "No endpoints found that support tool use" in error_msg or "tool use" in error_msg.lower():
+                    self.logger.error(f"Model {model} does not support tool calling/MCP toolsets: {error_msg}")
+                    self.logger.info("Consider using a model that supports tool calling like Gemini, DeepSeek, or Claude models")
+                else:
+                    self.logger.error(f"MCP toolset error: {error_msg}")
+                
+                self.logger.info("Retrying without MCP toolsets as fallback")
+                
+                # Retry agent without MCP toolsets
+                agent = await self._create_enhanced_agent(model, system_message, use_mcp=False)
+                try:
+                    async with agent:
+                        result = await agent.run(user_prompt=prompt)
+                        
+                    if result and result.output:
+                        self.logger.info(
+                            f"OpenRouter response length (no MCP): {len(result.output)} characters"
+                        )
+                        self.api_failures = 0
+                        return result.output, self.tool_logger
+                    else:
+                        self.logger.warning(
+                            "No valid response from OpenRouter API via PydanticAI (no MCP)"
+                        )
+                        self.api_failures += 1
+                        return None, self.tool_logger
+                        
+                except Exception as agent_exc:
+                    self.api_failures += 1
+                    self.api_last_failure = time.time()
+                    self.logger.error(
+                        f"OpenRouter API error via PydanticAI for model {model} (no MCP): {str(agent_exc)}",
+                        exc_info=True,
+                    )
+                    return f"OpenRouter API error: {str(agent_exc)}", self.tool_logger
+                    
         except Exception as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
@@ -286,9 +339,10 @@ class OpenRouterAPI:
             )
 
             # Use PydanticAI Agent to generate response (with or without MCP tools)
-            result = await agent.run(
-                user_prompt=prompt, temperature=temperature, max_tokens=max_tokens
-            )
+            async with agent:
+                result = await agent.run(
+                    user_prompt=prompt, temperature=temperature, max_tokens=max_tokens
+                )
 
             if result and result.output:
                 self.api_failures = 0
