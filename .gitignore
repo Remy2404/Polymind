@@ -1,39 +1,44 @@
-# Python cache files
+# Python-generated files
 __pycache__/
 *.pyc
-.venv
-venv
-# Virtual environment
+*.pyo
+
+# Virtual environments
+.venv/
 venv/
-# Add .env to ignore
-.env
-.env
-# IDE config files
+
+# IDE files
 .vscode/
 .idea/
 
-# MacOS Finder settings
-.DS_Store
-logs
-docs/
+# Environment variables and secrets
 .env
-*.pyc
-__pycache__/
+
+# Logs and data
 logs/
 data/
-botlog
-your_log_file.log
-.vercel
 bot.log
-.cursorrules
-.cursor
-import_scan.txt
-data/memory/conversation_user_806762900.json
-build-and-run.sh
-build-and-run.ps1
-models.json
+
+# Build and distribution files
+build/
+dist/
+*.egg-info/
 docs
+# Operating system files
+.DS_Store
+
+# Temporary files and artifacts
+*.log
+*.txt
+*.json
 MiniWebApp/
 CLAUDE.md
 copilot-instructions.md
 call_tools.toolsets.jsonc
+build-and-run.sh
+build-and-run.ps1
+models.json
+.vercel
+.cursorrules
+.cursor
+test_*
