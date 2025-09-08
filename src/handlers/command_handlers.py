@@ -36,6 +36,8 @@ from .commands import (
     ExportCommands,
     CallbackHandlers,
     OpenWebAppCommands,
+    PollCommands,
+    GroupCommands,
 )
 
 
@@ -120,6 +122,10 @@ class CommandHandlers:
         self.open_web_app_commands = OpenWebAppCommands(
             user_data_manager, telegram_logger
         )
+        self.poll_commands = PollCommands(
+            self.api_manager, user_data_manager, telegram_logger
+        )
+        self.group_commands = GroupCommands()
 
         # Initialize callback handlers
         self.callback_handlers = CallbackHandlers(
@@ -232,214 +238,38 @@ class CommandHandlers:
             # Route to central callback handler for more complex routing
             await self.callback_handlers.handle_callback_query(update, context)
 
-    async def group_settings_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Handle /groupsettings command for group configuration."""
-        try:
-            if not update:
-                raise ValueError("The 'update' parameter is required but not provided.")
-
-            chat = update.effective_chat
-            if chat.type not in ["group", "supergroup"]:
-                await update.message.reply_text(
-                    "❌ This command is only available in group chats."
-                )
-                return
-
-            # Get group chat integration
-            group_integration = context.bot_data.get("group_chat_integration")
-            if not group_integration:
-                await update.message.reply_text(
-                    "❌ Group chat features are not available."
-                )
-                return
-
-            try:
-                # Get settings menu
-                settings_menu = await group_integration.ui_manager.create_settings_menu(
-                    chat.id
-                )
-
-                # Send without Markdown formatting to avoid escaping issues
-                await update.message.reply_text(settings_menu)
-
-            except AttributeError as e:
-                self.logger.error(f"Missing attribute in group_settings_command: {e}")
-                await update.message.reply_text(
-                    "❌ Settings feature is unavailable. Please contact the bot administrator."
-                )
-
-        except Exception as e:
-            self.logger.error(f"Error in group_settings_command: {e}")
-            await update.message.reply_text(
-                "❌ Error retrieving group settings. Please try again."
-            )
-
-    async def group_context_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Handle /groupcontext command to show shared memory."""
-        try:
-            chat = update.effective_chat
-            if chat.type not in ["group", "supergroup"]:
-                await update.message.reply_text(
-                    "❌ This command is only available in group chats."
-                )
-                return
-
-            # Get group chat integration
-            group_integration = context.bot_data.get("group_chat_integration")
-            if not group_integration:
-                await update.message.reply_text(
-                    "❌ Group chat features are not available."
-                )
-                return
-
-            try:
-                # Get group context
-                group_context = (
-                    await group_integration.group_manager._get_or_create_group_context(
-                        chat, update.effective_user
-                    )
-                )
-
-                # Format shared memory
-                if group_context.shared_memory:
-                    context_text = "🧠 Group Shared Memory:\n\n"
-                    for key, value in group_context.shared_memory.items():
-                        context_text += f"• {key}: {value}\n"
-                else:
-                    context_text = "🧠 Group Shared Memory is empty\n\nAs the conversation continues, important information will be automatically stored here for future reference."
-
-                # Send without Markdown formatting to avoid escaping issues
-                await update.message.reply_text(context_text)
-
-            except AttributeError as e:
-                self.logger.error(f"Missing attribute in group_context_command: {e}")
-                await update.message.reply_text(
-                    "❌ Memory feature is unavailable. Please contact the bot administrator."
-                )
-
-        except Exception as e:
-            self.logger.error(f"Error in group_context_command: {e}")
-            await update.message.reply_text(
-                "❌ Error retrieving group context. Please try again."
-            )
-
-    async def group_threads_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Handle /groupthreads command to list active conversation threads."""
-        try:
-            chat = update.effective_chat
-            if chat.type not in ["group", "supergroup"]:
-                await update.message.reply_text(
-                    "❌ This command is only available in group chats."
-                )
-                return
-
-            # Get group chat integration
-            group_integration = context.bot_data.get("group_chat_integration")
-            if not group_integration:
-                await update.message.reply_text(
-                    "❌ Group chat features are not available."
-                )
-                return
-
-            try:
-                # Get group context
-                group_context = (
-                    await group_integration.group_manager._get_or_create_group_context(
-                        chat, update.effective_user
-                    )
-                )
-
-                # Format threads
-                if group_context.threads:
-                    formatted_threads = (
-                        await group_integration.ui_manager.format_thread_list(
-                            group_context.threads
-                        )
-                    )
-                else:
-                    formatted_threads = "🧵 No active conversation threads\n\nThreads are created automatically when users reply to messages. Start a discussion by replying to a message!"
-
-                # Send without Markdown formatting to avoid escaping issues
-                await update.message.reply_text(formatted_threads)
-
-            except AttributeError as e:
-                self.logger.error(f"Missing attribute in group_threads_command: {e}")
-                await update.message.reply_text(
-                    "❌ Thread feature is unavailable. Please contact the bot administrator."
-                )
-
-        except Exception as e:
-            self.logger.error(f"Error in group_threads_command: {e}")
-            await update.message.reply_text(
-                "❌ Error retrieving conversation threads. Please try again."
-            )
-
-    async def clean_threads_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Handle /cleanthreads command to clean up inactive threads."""
-        try:
-            chat = update.effective_chat
-            if chat.type not in ["group", "supergroup"]:
-                await update.message.reply_text(
-                    "❌ This command is only available in group chats."
-                )
-                return
-
-            # Check if user is admin
-            user_member = await context.bot.get_chat_member(
-                chat.id, update.effective_user.id
-            )
-            if user_member.status not in ["administrator", "creator"]:
-                await update.message.reply_text(
-                    "❌ Only group administrators can clean conversation threads."
-                )
-                return
-
-            # Get group chat integration
-            group_integration = context.bot_data.get("group_chat_integration")
-            if not group_integration:
-                await update.message.reply_text(
-                    "❌ Group chat features are not available."
-                )
-                return
-
-            try:
-                # Clean threads
-                cleaned_count = (
-                    await group_integration.group_manager.cleanup_inactive_threads(
-                        chat.id
-                    )
-                )
-
-                # Send without Markdown formatting to avoid escaping issues
-                await update.message.reply_text(
-                    f"🧹 Thread Cleanup Complete\n\nRemoved {cleaned_count} inactive conversation threads."
-                )
-
-            except AttributeError as e:
-                self.logger.error(f"Missing attribute in clean_threads_command: {e}")
-                await update.message.reply_text(
-                    "❌ Thread cleanup feature is unavailable. Please contact the bot administrator."
-                )
-
-        except Exception as e:
-            self.logger.error(f"Error in clean_threads_command: {e}")
-            await update.message.reply_text(
-                "❌ Error cleaning conversation threads. Please try again."
-            )
-
     # Delegate web app commands
     async def open_web_app_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.open_web_app_commands.open_web_app_command(update, context)
+
+    # Delegate poll commands
+    async def create_poll_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.poll_commands.create_poll_command(update, context)
+
+    # Delegate group commands
+    async def group_settings_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.group_commands.group_settings_command(update, context)
+
+    async def group_context_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.group_commands.group_context_command(update, context)
+
+    async def group_threads_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.group_commands.group_threads_command(update, context)
+
+    async def clean_threads_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.group_commands.clean_threads_command(update, context)
 
     def register_handlers(self, application: Application, cache=None) -> None:
         try:
@@ -467,9 +297,15 @@ class CommandHandlers:
                 CommandHandler("gendoc", self.generate_ai_document_command)
             )
 
+            # Poll commands
+            application.add_handler(
+                CommandHandler("createpoll", self.create_poll_command)
+            )
+
             # Web App commands
             application.add_handler(CommandHandler("webapp", self.open_web_app_command))
 
+            # Group commands
             application.add_handler(
                 CommandHandler("groupsettings", self.group_settings_command)
             )

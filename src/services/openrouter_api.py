@@ -1,11 +1,9 @@
 import os
-import json
-import aiohttp
-import asyncio
 import logging
 import time
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
+from openai import AsyncOpenAI, AuthenticationError, RateLimitError, APIError
 from src.services.rate_limiter import RateLimiter, rate_limit
 from src.utils.log.telegramlog import telegram_logger
 from src.services.model_handlers.model_configs import (
@@ -33,11 +31,11 @@ class OpenRouterAPI:
         if not OPENROUTER_API_KEY:
             raise ValueError("OPENROUTER_API_KEY not found or empty")
 
-        self.api_url = "https://openrouter.ai/api/v1/chat/completions"
-        self.headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json",
-        }
+        # Initialize OpenAI client with OpenRouter base URL
+        self.client = AsyncOpenAI(
+            api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1"
+        )
+
         self._load_openrouter_models_from_config()
 
         # Circuit breaker properties
@@ -45,9 +43,6 @@ class OpenRouterAPI:
         self.api_last_failure = 0
         self.circuit_breaker_threshold = 5
         self.circuit_breaker_timeout = 300
-
-        # Initialize session
-        self.session = None
 
     def _load_openrouter_models_from_config(self):
         """Load available models from centralized configuration specific to OpenRouter."""
@@ -67,19 +62,10 @@ class OpenRouterAPI:
         """Get the mapping of model IDs to OpenRouter model keys."""
         return self.available_models.copy()
 
-    async def ensure_session(self):
-        """Create or reuse aiohttp session."""
-        if self.session is None or self.session.closed:
-            self.session = aiohttp.ClientSession()
-            self.logger.info("Created new OpenRouter API aiohttp session.")
-        return self.session
-
     async def close(self):
-        """Close the aiohttp session."""
-        if self.session and not self.session.closed:
-            await self.session.close()
-            self.logger.info("Closed OpenRouter API aiohttp session.")
-            self.session = None
+        """Close the OpenAI client."""
+        await self.client.close()
+        self.logger.info("Closed OpenRouter API OpenAI client.")
 
     def _build_system_message(
         self, model_id: str, context: Optional[List[Dict]] = None
@@ -103,13 +89,6 @@ class OpenRouterAPI:
             return base_message + " Be concise, helpful, and accurate."
         return base_message + context_hint
 
-    async def _send_openrouter_request(self, session, payload, timeout):
-        async with session.post(
-            self.api_url, headers=self.headers, json=payload, timeout=timeout
-        ) as response:
-            response.raise_for_status()
-            return await response.json()
-
     @rate_limit
     async def generate_response(
         self,
@@ -121,8 +100,6 @@ class OpenRouterAPI:
         timeout: float = 300.0,
     ) -> Optional[str]:
         try:
-            session = await self.ensure_session()
-
             # Get model with fallback support from centralized config
             openrouter_model = ModelConfigurations.get_model_with_fallback(model)
 
@@ -133,74 +110,74 @@ class OpenRouterAPI:
                     [msg for msg in context if "role" in msg and "content" in msg]
                 )
             messages.append({"role": "user", "content": prompt})
-            payload = {
-                "model": openrouter_model,
-                "messages": messages,
-                "temperature": temperature,
-            }
-            if max_tokens is not None:
-                payload["max_tokens"] = max_tokens
-            self.logger.info(
-                f"Sending request to OpenRouter API with model {model} (mapped to {openrouter_model})"
+
+            # Use OpenAI SDK to make the request
+            response = await self.client.chat.completions.create(
+                model=openrouter_model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
             )
-            data = await self._send_openrouter_request(session, payload, timeout)
-            if "choices" in data and data["choices"]:
-                choice = data["choices"][0]
-                message_content = choice["message"]["content"]
-                finish_reason = choice.get("finish_reason", "unknown")
+
+            if response.choices and len(response.choices) > 0:
+                message_content = response.choices[0].message.content
+                finish_reason = response.choices[0].finish_reason
+
                 if finish_reason != "stop":
                     self.logger.warning(f"Finish reason: {finish_reason}")
+
                 self.logger.info(
                     f"OpenRouter response length: {len(message_content) if message_content else 0} characters"
                 )
                 self.api_failures = 0  # Reset failures on successful response
                 return message_content
+
             self.logger.warning("No valid response from OpenRouter API")
             self.api_failures += 1
             return None
-        except aiohttp.ClientResponseError as e:
+
+        except AuthenticationError as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
-            error_message = f"Error {e.status}: {e.message}"
-            if e.status == 404:
+            error_message = (
+                "Authentication error. Please check your OpenRouter API key."
+            )
+            self.logger.error(f"OpenRouter API authentication error: {str(e)}")
+            return f"OpenRouter API error: {error_message}"
+
+        except RateLimitError as e:
+            self.api_failures += 1
+            self.api_last_failure = time.time()
+            error_message = "Rate limit exceeded. Please try again later."
+            self.logger.error(f"OpenRouter API rate limit error: {str(e)}")
+            return f"OpenRouter API error: {error_message}"
+
+        except APIError as e:
+            self.api_failures += 1
+            self.api_last_failure = time.time()
+            error_message = f"API error: {e.message}"
+            if hasattr(e, "status") and e.status == 404:
                 error_message = (
                     f"Model not found: {model}. Model may be temporarily unavailable."
                 )
                 self.logger.warning(
                     f"Model {openrouter_model} not found on OpenRouter. This may be temporary."
                 )
-            elif e.status == 401:
-                error_message = (
-                    "Authentication error. Please check your OpenRouter API key."
-                )
-            elif e.status == 400:
+            elif hasattr(e, "status") and e.status == 400:
                 error_message = f"Bad request for model {model}. The model may not support the current request format."
             self.logger.error(
                 f"OpenRouter API error for model {model}: {error_message}"
             )
             return f"OpenRouter API error: {error_message}"
-        except asyncio.TimeoutError:
-            self.api_failures += 1
-            self.api_last_failure = time.time()
-            self.logger.error(f"OpenRouter API timeout for model {model}")
-            return None
-        except aiohttp.ClientError as e:
-            self.api_failures += 1
-            self.api_last_failure = time.time()
-            self.logger.error(f"OpenRouter API connection error: {str(e)}")
-            raise Exception(f"OpenRouter API connection error: {str(e)}")
-        except json.JSONDecodeError as e:
-            self.api_failures += 1
-            self.api_last_failure = time.time()
-            self.logger.error(f"OpenRouter API JSON decode error: {str(e)}")
-            raise Exception(f"Could not parse OpenRouter API response: {str(e)}")
+
         except Exception as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
             self.logger.error(
                 f"OpenRouter API error: {str(e)}", exc_info=True
             )  # Log full traceback
-            raise Exception(f"Unexpected error when calling OpenRouter API: {str(e)}")
+            return f"Unexpected error when calling OpenRouter API: {str(e)}"
 
     @rate_limit
     async def generate_response_with_model_key(
@@ -214,7 +191,6 @@ class OpenRouterAPI:
         timeout: float = 300.0,
     ) -> Optional[str]:
         try:
-            session = await self.ensure_session()
             final_system_message = (
                 system_message
                 or "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."
@@ -223,36 +199,48 @@ class OpenRouterAPI:
             if context:
                 messages.extend(context)
             messages.append({"role": "user", "content": prompt})
-            data = {
-                "model": openrouter_model_key,
-                "messages": messages,
-                "temperature": temperature,
-            }
-            if max_tokens is not None:
-                data["max_tokens"] = max_tokens
-            self.logger.info(
-                f"Sending request to OpenRouter API with model key {openrouter_model_key}"
+
+            # Use OpenAI SDK to make the request
+            response = await self.client.chat.completions.create(
+                model=openrouter_model_key,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
             )
-            response_data = await self._send_openrouter_request(
-                session, data, aiohttp.ClientTimeout(total=timeout)
-            )
-            if "choices" in response_data and response_data["choices"]:
-                content = response_data["choices"][0]["message"]["content"]
+
+            if response.choices and len(response.choices) > 0:
+                content = response.choices[0].message.content
                 self.api_failures = 0
                 return content
+
             self.api_failures += 1
             return None
-        except asyncio.TimeoutError:
-            self.api_failures += 1
-            self.api_last_failure = time.time()
-            self.logger.error(
-                f"OpenRouter API timeout for model keys {openrouter_model_key}"
-            )
-            return None
-        except Exception:
+
+        except AuthenticationError as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
-            return None
+            self.logger.error(f"OpenRouter API authentication error: {str(e)}")
+            return "Authentication error. Please check your OpenRouter API key."
+
+        except RateLimitError as e:
+            self.api_failures += 1
+            self.api_last_failure = time.time()
+            self.logger.error(f"OpenRouter API rate limit error: {str(e)}")
+            return "Rate limit exceeded. Please try again later."
+
+        except APIError as e:
+            self.api_failures += 1
+            self.api_last_failure = time.time()
+            error_message = f"API error: {e.message}"
+            self.logger.error(f"OpenRouter API error: {error_message}")
+            return f"OpenRouter API error: {error_message}"
+
+        except Exception as e:
+            self.api_failures += 1
+            self.api_last_failure = time.time()
+            self.logger.error(f"OpenRouter API error: {str(e)}")
+            return f"Unexpected error when calling OpenRouter API: {str(e)}"
 
     def debug_model_mapping(self):
         """Debug method to log all available model mappings."""
@@ -260,3 +248,11 @@ class OpenRouterAPI:
         for model_id, openrouter_key in self.available_models.items():
             self.logger.info(f"  {model_id} -> {openrouter_key}")
         self.logger.info(f"Total models loaded: {len(self.available_models)}")
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
