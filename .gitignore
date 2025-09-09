@@ -15,7 +15,6 @@ venv/
 .env
 .env.local
 .env.*.local
-mcp.json
 mcp.local.json
 
 # Logs and data
