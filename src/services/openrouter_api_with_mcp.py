@@ -121,7 +121,7 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
     def _build_system_message(
         self, model_id: str, context: Optional[List[Dict]] = None, tools: Optional[List[Dict[str, Any]]] = None
     ) -> str:
-        """Return a system message based on model and context, with tool usage instructions."""
+        """Return a system message based on model and context, with dynamic tool usage instructions."""
         model_config = ModelConfigurations.get_all_models().get(model_id)
         if model_config and model_config.system_message:
             base_message = model_config.system_message
@@ -130,24 +130,88 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
 
         context_hint = " Use conversation history/context when relevant." if context else ""
 
-        # Add tool usage instructions if tools are available
+        # Add dynamic tool usage instructions if tools are available
         tool_instructions = ""
         if tools:
+            # Group tools by their functionality for better organization
+            tool_categories = self._categorize_tools(tools)
             tool_names = [tool["function"]["name"] for tool in tools]
+
             tool_instructions = f"""
 
 You have access to the following tools: {', '.join(tool_names)}
 
-When users ask for documentation, code examples, or information about libraries/frameworks, you should:
-1. Use 'resolve-library-id' to find the correct library identifier
-2. Use 'get-library-docs' to fetch comprehensive documentation with code examples
-3. Provide detailed, accurate information based on the tool results
+## Tool Usage Guidelines:
 
-Always use these tools when appropriate rather than giving generic responses or links.
+### When to Use Tools:
+- **Documentation & Code Examples**: Use documentation tools when users ask about libraries, frameworks, APIs, or need code examples
+- **Search & Research**: Use search tools for finding information, current data, or web content
+- **Analysis & Processing**: Use specialized tools for data analysis, file processing, or complex computations
+- **External Services**: Use tools that connect to external services or APIs
 
-IMPORTANT: Do not include your internal thinking process, <think> tags, or tool call details in your final response to the user. Only provide the final, clean answer that directly addresses their question."""
+### How to Use Tools Effectively:
+1. **Identify the Right Tool**: Choose the most appropriate tool based on the user's request
+2. **Provide Complete Arguments**: Ensure all required parameters are included in your tool calls
+3. **Handle Results**: Use the tool results to provide comprehensive, accurate responses
+4. **Combine Tools**: Use multiple tools when needed to provide complete answers
+
+### Available Tool Categories:
+{chr(10).join([f"- **{category}**: {', '.join(category_tools)}" for category, category_tools in tool_categories.items()])}
+
+### Important Notes:
+- Always use tools when they can provide more accurate or current information
+- Provide detailed, helpful responses based on tool results
+- If a tool fails, try alternative approaches or inform the user
+- Do not mention tool internal details or <think> tags in your final response
+
+Focus on providing the most helpful and accurate response possible using the available tools."""
 
         return base_message + context_hint + tool_instructions
+
+    def _categorize_tools(self, tools: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+        """
+        Categorize tools by their functionality for better organization.
+
+        Args:
+            tools: List of tool definitions
+
+        Returns:
+            Dictionary mapping categories to tool names
+        """
+        categories = {
+            "Documentation": [],
+            "Search & Research": [],
+            "Development": [],
+            "Analysis": [],
+            "Communication": [],
+            "Other": []
+        }
+
+        for tool in tools:
+            tool_name = tool["function"]["name"].lower()
+            description = tool["function"].get("description", "").lower()
+
+            # Categorize based on tool name and description
+            if any(keyword in tool_name or keyword in description for keyword in
+                   ["doc", "docs", "documentation", "library", "api", "guide", "tutorial", "reference"]):
+                categories["Documentation"].append(tool["function"]["name"])
+            elif any(keyword in tool_name or keyword in description for keyword in
+                    ["search", "find", "query", "lookup", "research", "web", "browse"]):
+                categories["Search & Research"].append(tool["function"]["name"])
+            elif any(keyword in tool_name or keyword in description for keyword in
+                    ["code", "dev", "build", "compile", "test", "debug", "git"]):
+                categories["Development"].append(tool["function"]["name"])
+            elif any(keyword in tool_name or keyword in description for keyword in
+                    ["analyze", "process", "calculate", "data", "metrics", "stats"]):
+                categories["Analysis"].append(tool["function"]["name"])
+            elif any(keyword in tool_name or keyword in description for keyword in
+                    ["chat", "message", "email", "notify", "communication"]):
+                categories["Communication"].append(tool["function"]["name"])
+            else:
+                categories["Other"].append(tool["function"]["name"])
+
+        # Remove empty categories
+        return {k: v for k, v in categories.items() if v}
 
     async def generate_response_with_tools(
         self,
