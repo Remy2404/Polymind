@@ -15,7 +15,6 @@ venv/
 .env
 .env.local
 .env.*.local
-mcp.local.json
 
 # Logs and data
 logs/
@@ -33,7 +32,6 @@ docs
 # Temporary files and artifacts
 *.log
 *.txt
-*.json
 MiniWebApp/
 CLAUDE.md
 copilot-instructions.md
