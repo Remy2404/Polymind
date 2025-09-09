@@ -347,8 +347,12 @@ class CommandHandlers:
             )
 
             # MCP commands
-            application.add_handler(CommandHandler("mcpstatus", self.mcp_status_command))
-            application.add_handler(CommandHandler("mcptoggle", self.mcp_toggle_command))
+            application.add_handler(
+                CommandHandler("mcpstatus", self.mcp_status_command)
+            )
+            application.add_handler(
+                CommandHandler("mcptoggle", self.mcp_toggle_command)
+            )
             application.add_handler(CommandHandler("mcptools", self.mcp_tools_command))
             application.add_handler(CommandHandler("mcphelp", self.mcp_help_command))
 

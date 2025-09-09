@@ -19,6 +19,7 @@ from src.services.model_handlers.simple_api_manager import (
     SuperSimpleAPIManager,
 )
 from src.services.user_data_manager import UserDataManager
+from support_tool_call import ToolCallSupportDetector
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class ModelCommands:
     ):
         self.api_manager = api_manager
         self.user_data_manager = user_data_manager
+        self.tool_call_detector = ToolCallSupportDetector(api_manager)
 
     async def switchmodel_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -41,7 +43,11 @@ class ModelCommands:
             user_id, "preferred_model", default="gemini"
         )
         current_config = self.api_manager.get_model_config(current_model)
-        current_name = current_config.display_name if current_config else current_model
+        current_name = (
+            getattr(current_config, "display_name", current_model)
+            if current_config
+            else current_model
+        )
 
         # Get categorized models
         categories = self.api_manager.get_models_by_category()
@@ -69,6 +75,15 @@ class ModelCommands:
         # Add remaining button if odd number
         if category_buttons:
             keyboard.append(category_buttons)
+        # Add tool-calling models button - ALWAYS add this button
+        tool_call_count = 0
+        try:
+            tool_call_stats = self.tool_call_detector.get_tool_call_statistics()
+            tool_call_count = tool_call_stats.get("tool_call_models", 0)
+        except Exception:
+            pass  # If stats fail, keep count as 0
+
+        button_text = f"🛠️ Tool-Calling Models ({tool_call_count})"
 
         # Add special buttons
         keyboard.append(
@@ -77,6 +92,7 @@ class ModelCommands:
                     "📊 All Models (A-Z)", callback_data="category_all"
                 ),
                 InlineKeyboardButton("ℹ️ Current Model", callback_data="current_model"),
+                InlineKeyboardButton(button_text, callback_data="category_tool_call"),
             ]
         )
 
@@ -84,7 +100,7 @@ class ModelCommands:
 
         message = (
             f"🤖 **Model Selection Center**\n\n"
-            f"Current Model: **{current_name}** {current_config.emoji if current_config else '🤖'}\n\n"
+            f"Current Model: **{current_name}** {getattr(current_config, 'emoji', getattr(current_config, 'indicator_emoji', '🤖')) if current_config else '🤖'}\n\n"
             f"📂 Choose a category to browse models:\n"
             f"• Select any category to see available models\n"
             f"• All OpenRouter models are **completely free** 🆓\n"
@@ -108,6 +124,8 @@ class ModelCommands:
             await self._show_all_models(query)
         elif category_id == "current":
             await self._show_current_model(query)
+        elif category_id == "tool_call":
+            await self._show_tool_call_models(query)
         else:
             await self._show_category_models(query, category_id)
 
@@ -127,7 +145,9 @@ class ModelCommands:
 
         for model_id, config in models.items():
             # Show model with OpenRouter key if available
-            display_text = f"{config.emoji} {config.display_name}"
+            emoji = getattr(config, "emoji", getattr(config, "indicator_emoji", "🤖"))
+            display_name = getattr(config, "display_name", model_id)
+            display_text = f"{emoji} {display_name}"
             if config.openrouter_key:
                 # Show the actual OpenRouter model key for transparency
                 display_text += f"\n({config.openrouter_key})"
@@ -167,13 +187,18 @@ class ModelCommands:
         all_models = self.api_manager.get_all_models()
 
         # Sort models alphabetically
-        sorted_models = sorted(all_models.items(), key=lambda x: x[1].display_name)
+        sorted_models = sorted(
+            all_models.items(),
+            key=lambda x: getattr(x[1], "display_name", x[0]) if x[1] else x[0],
+        )
 
         # Create model selection keyboard (1 per row for readability)
         keyboard = []
 
         for model_id, config in sorted_models:
-            display_text = f"{config.emoji} {config.display_name}"
+            emoji = getattr(config, "emoji", getattr(config, "indicator_emoji", "🤖"))
+            display_name = getattr(config, "display_name", model_id)
+            display_text = f"{emoji} {display_name}"
             if config.openrouter_key:
                 display_text += f"\n({config.openrouter_key})"
 
@@ -205,6 +230,72 @@ class ModelCommands:
             message, reply_markup=reply_markup, parse_mode="Markdown"
         )
 
+    async def _show_tool_call_models(self, query) -> None:
+        """Show only models that support tool calling"""
+        tool_call_models = self.tool_call_detector.get_tool_call_supported_models()
+
+        if not tool_call_models:
+            await query.edit_message_text(
+                "❌ No tool-calling models found in current configuration.",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "⬅️ Back to Categories",
+                                callback_data="back_to_categories",
+                            )
+                        ]
+                    ]
+                ),
+            )
+            return
+
+        # Sort models alphabetically
+        sorted_models = sorted(
+            tool_call_models.items(),
+            key=lambda x: getattr(x[1], "display_name", x[0]) if x[1] else x[0],
+        )
+
+        # Create model selection keyboard (1 per row for readability)
+        keyboard = []
+
+        for model_id, config in sorted_models:
+            emoji = getattr(config, "emoji", getattr(config, "indicator_emoji", "🤖"))
+            display_name = getattr(config, "display_name", model_id)
+            display_text = f"{emoji} {display_name}"
+            if config.openrouter_key:
+                display_text += f"\n({config.openrouter_key})"
+
+            button = InlineKeyboardButton(
+                display_text, callback_data=f"model_{model_id}"
+            )
+            keyboard.append([button])
+
+        # Add back button
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "⬅️ Back to Categories", callback_data="back_to_categories"
+                )
+            ]
+        )
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        stats = self.tool_call_detector.get_tool_call_statistics()
+        message = (
+            f"🛠️ **Tool-Calling Models Only**\n\n"
+            f"📋 Models with tool/function calling support:\n"
+            f"• **{stats['tool_call_models']}** out of **{stats['total_models']}** models\n"
+            f"• **{stats['percentage']}%** of all available models\n"
+            f"• Click any model to switch instantly\n\n"
+            f"🔄 Select a tool-calling model:"
+        )
+
+        await query.edit_message_text(
+            message, reply_markup=reply_markup, parse_mode="Markdown"
+        )
+
     async def _show_current_model(self, query) -> None:
         """Show current model information"""
         user_id = query.from_user.id
@@ -214,9 +305,15 @@ class ModelCommands:
         current_config = self.api_manager.get_model_config(current_model)
 
         if current_config:
+            emoji = getattr(
+                current_config,
+                "emoji",
+                getattr(current_config, "indicator_emoji", "🤖"),
+            )
+            display_name = getattr(current_config, "display_name", current_model)
             message = (
                 f"ℹ️ **Current Model Information**\n\n"
-                f"**Name:** {current_config.emoji} {current_config.display_name}\n"
+                f"**Name:** {emoji} {display_name}\n"
                 f"**Provider:** {current_config.provider.value.title()}\n"
                 f"**Description:** {current_config.description}\n"
             )
@@ -266,9 +363,13 @@ class ModelCommands:
         logger.info(f"User {user_id} switched to: {selected_model}")
 
         # Confirmation message
+        emoji = getattr(
+            model_config, "emoji", getattr(model_config, "indicator_emoji", "🤖")
+        )
+        display_name = getattr(model_config, "display_name", selected_model)
         message = (
             f"✅ **Successfully switched to:**\n\n"
-            f"**{model_config.emoji} {model_config.display_name}**\n\n"
+            f"**{emoji} {display_name}**\n\n"
             f"📝 {model_config.description}\n"
         )
 
@@ -306,7 +407,11 @@ class ModelCommands:
             user_id, "preferred_model", default="gemini"
         )
         current_config = self.api_manager.get_model_config(current_model)
-        current_name = current_config.display_name if current_config else current_model
+        current_name = (
+            getattr(current_config, "display_name", current_model)
+            if current_config
+            else current_model
+        )
 
         # Get categorized models
         categories = self.api_manager.get_models_by_category()
@@ -345,11 +450,24 @@ class ModelCommands:
             ]
         )
 
+        # Add tool-calling models button - ALWAYS add this button
+        tool_call_count = 0
+        try:
+            tool_call_stats = self.tool_call_detector.get_tool_call_statistics()
+            tool_call_count = tool_call_stats.get("tool_call_models", 0)
+        except Exception:
+            pass
+
+        button_text = f"🛠️ Tool-Calling Models ({tool_call_count})"
+        keyboard.append(
+            [InlineKeyboardButton(button_text, callback_data="category_tool_call")]
+        )
+
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         message = (
             f"🤖 **Model Selection Center**\n\n"
-            f"Current Model: **{current_name}** {current_config.emoji if current_config else '🤖'}\n\n"
+            f"Current Model: **{current_name}** {getattr(current_config, 'emoji', getattr(current_config, 'indicator_emoji', '🤖')) if current_config else '🤖'}\n\n"
             f"📂 Choose a category to browse models:\n"
             f"• Select any category to see available models\n"
             f"• All OpenRouter models are **completely free** 🆓\n"
@@ -371,9 +489,15 @@ class ModelCommands:
         current_config = self.api_manager.get_model_config(current_model)
 
         if current_config:
+            emoji = getattr(
+                current_config,
+                "emoji",
+                getattr(current_config, "indicator_emoji", "🤖"),
+            )
+            display_name = getattr(current_config, "display_name", current_model)
             message = (
                 f"ℹ️ **Current Active Model**\n\n"
-                f"**{current_config.emoji} {current_config.display_name}**\n\n"
+                f"**{emoji} {display_name}**\n\n"
                 f"**Provider:** {current_config.provider.value.title()}\n"
                 f"**Description:** {current_config.description}\n"
             )
@@ -401,8 +525,12 @@ class ModelCommands:
             )
 
             for model_id, config in category_info["models"].items():
-                model_line = f"• {config.emoji} {config.display_name}"
-                if config.openrouter_key:
+                emoji = getattr(
+                    config, "emoji", getattr(config, "indicator_emoji", "🤖")
+                )
+                display_name = getattr(config, "display_name", model_id)
+                model_line = f"• {emoji} {display_name}"
+                if config and config.openrouter_key:
                     model_line += f" (`{config.openrouter_key}`)"
                 message_parts.append(model_line)
 
