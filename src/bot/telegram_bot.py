@@ -25,6 +25,7 @@ from src.services.rate_limiter import RateLimiter
 from src.services.flux_lora_img import flux_lora_image_generator
 from src.utils.docgen.document_processor import DocumentProcessor
 from src.services.group_chat.integration import GroupChatIntegration
+from src.services.mcp_bot_integration import initialize_mcp_for_bot
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,10 @@ class TelegramBot:
     def _init_services(self):
         """Initialize bot services and API clients."""
         try:
+            # Initialize MCP integration first (will be initialized later when bot starts)
+            self.logger.info("MCP integration will be initialized when bot starts...")
+            # Note: MCP initialization moved to async startup to avoid event loop issues
+
             # Initialize model APIs
             self._init_model_apis()
 
@@ -408,6 +413,9 @@ class TelegramBot:
 
     async def setup_webhook(self):
         """Set up webhook with proper update processing."""
+        # Initialize MCP integration first
+        await initialize_mcp_for_bot()
+        
         webhook_path = f"/webhook/{self.token}"
         webhook_url = f"{os.getenv('WEBHOOK_URL')}{webhook_path}"
 

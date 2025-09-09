@@ -9,6 +9,7 @@ from .callback_handlers import CallbackHandlers
 from .open_web_app import OpenWebAppCommands
 from .telegram_poll import PollCommands
 from .group_commands import GroupCommands
+from .mcp_commands import MCPCommands
 
 __all__ = [
     "BasicCommands",
@@ -21,4 +22,5 @@ __all__ = [
     "OpenWebAppCommands",
     "PollCommands",
     "GroupCommands",
+    "MCPCommands",
 ]

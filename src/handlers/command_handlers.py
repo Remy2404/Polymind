@@ -34,10 +34,11 @@ from .commands import (
     ModelCommands,
     DocumentCommands,
     ExportCommands,
-    CallbackHandlers,
     OpenWebAppCommands,
     PollCommands,
     GroupCommands,
+    MCPCommands,
+    CallbackHandlers,
 )
 
 
@@ -127,9 +128,14 @@ class CommandHandlers:
         )
         self.group_commands = GroupCommands()
 
+        # Initialize MCP commands
+        self.mcp_commands = MCPCommands()
+
         # Initialize callback handlers
         self.callback_handlers = CallbackHandlers(
-            self.document_commands, self.model_commands, self.export_commands
+            self.document_commands,
+            self.model_commands,
+            self.export_commands,
         )
 
     # Delegate basic commands
@@ -271,6 +277,27 @@ class CommandHandlers:
     ) -> None:
         return await self.group_commands.clean_threads_command(update, context)
 
+    # Delegate MCP commands
+    async def mcp_status_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.mcp_commands.mcp_status_command(update, context)
+
+    async def mcp_toggle_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.mcp_commands.mcp_toggle_command(update, context)
+
+    async def mcp_tools_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.mcp_commands.mcp_tools_command(update, context)
+
+    async def mcp_help_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        return await self.mcp_commands.mcp_help_command(update, context)
+
     def register_handlers(self, application: Application, cache=None) -> None:
         try:
             # Command handlers
@@ -318,6 +345,12 @@ class CommandHandlers:
             application.add_handler(
                 CommandHandler("cleanthreads", self.clean_threads_command)
             )
+
+            # MCP commands
+            application.add_handler(CommandHandler("mcpstatus", self.mcp_status_command))
+            application.add_handler(CommandHandler("mcptoggle", self.mcp_toggle_command))
+            application.add_handler(CommandHandler("mcptools", self.mcp_tools_command))
+            application.add_handler(CommandHandler("mcphelp", self.mcp_help_command))
 
             # Specific callback handlers if needed
             self.response_cache = cache

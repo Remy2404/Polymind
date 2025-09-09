@@ -67,4 +67,5 @@ dependencies = [
     "spire-doc>=13.4.6",
     "ruff>=0.12.7",
     "openai>=1.106.1",
+    "mcp[cli]>=1.10.1",
 ]

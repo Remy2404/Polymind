@@ -20,6 +20,7 @@ from .text_processing.media_analyzer import MediaAnalyzer
 from .text_processing.utilities import MediaUtilities
 from .model_fallback_handler import ModelFallbackHandler
 from src.services.ai_command_router import EnhancedIntentDetector
+from src.services.mcp_bot_integration import generate_mcp_response
 
 # Import the bot username helper
 from src.utils.bot_username_helper import BotUsernameHelper
@@ -852,24 +853,43 @@ class TextHandler:
         )
 
         try:
-            # Use automatic fallback system to generate response
-            (
-                response,
-                actual_model_used,
-            ) = await self.model_fallback_handler.attempt_with_fallback(
-                primary_model=preferred_model,
-                model_handler_factory=ModelHandlerFactory,
-                enhanced_prompt=enhanced_prompt_with_guidelines,
-                history_context=history_context,
-                max_tokens=max_tokens,
-                model_timeout=model_timeout,
-                message=message,
-                is_complex_question=is_complex_question,
-                quoted_text=quoted_text,
-                gemini_api=self.gemini_api,
-                openrouter_api=self.openrouter_api,
-                deepseek_api=self.deepseek_api,
+            # Try MCP-enhanced response first if available and enabled
+            mcp_response = await generate_mcp_response(
+                prompt=enhanced_prompt_with_guidelines,
+                user_id=user_id,
+                model=preferred_model,
+                temperature=0.7,
+                max_tokens=max_tokens
             )
+
+            if mcp_response:
+                self.logger.info(f"Using MCP-enhanced response for user {user_id}")
+                response = mcp_response
+                actual_model_used = preferred_model  # Keep original model name
+            else:
+                # Fall back to regular model processing
+                self.logger.debug(f"MCP not available or failed for user {user_id}, using regular processing")
+                (
+                    response,
+                    actual_model_used,
+                ) = await self.model_fallback_handler.attempt_with_fallback(
+                    primary_model=preferred_model,
+                    model_handler_factory=ModelHandlerFactory,
+                    enhanced_prompt=enhanced_prompt_with_guidelines,
+                    history_context=history_context,
+                    max_tokens=max_tokens,
+                    model_timeout=model_timeout,
+                    message=message,
+                    is_complex_question=is_complex_question,
+                    quoted_text=quoted_text,
+                    gemini_api=self.gemini_api,
+                    openrouter_api=self.openrouter_api,
+                    deepseek_api=self.deepseek_api,
+                )
+
+            # Clean the response to remove thinking tags and tool calls
+            if response:
+                response = self._clean_response_content(response)
 
             # Log response length and first part for debugging
             if response:
@@ -1113,3 +1133,35 @@ class TextHandler:
         except Exception as e:
             self.logger.error(f"Error loading user context: {e}")
             return ""
+
+    def _clean_response_content(self, content: str) -> str:
+        """
+        Clean response content by removing thinking tags and tool calls.
+
+        Args:
+            content: Raw response content from the model
+
+        Returns:
+            Cleaned content suitable for user display
+        """
+        if not content:
+            return content
+
+        import re
+
+        # Remove thinking tags (common in reasoning models like DeepSeek)
+        content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
+
+        # Remove tool call tags
+        content = re.sub(r'<tool_call>.*?</tool_call>', '', content, flags=re.DOTALL)
+
+        # Remove any remaining XML-like tags that might be in the response
+        content = re.sub(r'<[^>]+>.*?</[^>]+>', '', content, flags=re.DOTALL)
+
+        # Clean up extra whitespace
+        content = content.strip()
+
+        # Remove multiple consecutive newlines
+        content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content)
+
+        return content

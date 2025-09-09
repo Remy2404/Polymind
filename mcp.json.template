@@ -1,0 +1,44 @@
+# MCP Configuration Template
+# Copy this to mcp.json and fill in your actual values
+{
+  "servers": {
+    "fetch-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "fetch-mcp"
+      ],
+      "type": "stdio",
+      "env": {
+        "MCP_API_KEY": "$MCP_API_KEY"
+      }
+    },
+    "Context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"]
+    },
+    "Exa Search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "exa"
+      ],
+      "type": "stdio",
+      "env": {
+        "MCP_API_KEY": "$MCP_API_KEY"
+      }
+    },
+    "sequentialthinking": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"],
+      "gallery": true
+    }
+  },
+  "inputs": []
+}

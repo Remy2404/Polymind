@@ -62,11 +62,20 @@ class ModelFallbackHandler:
                 "deepseek-r1-zero",
                 "llama4_maverick",
             ],
-            # Other models fallback to DeepSeek or high-quality alternatives
-            "llama4_maverick": ["deepseek-r1-0528", "deepseek-r1-zero", "gemini"],
-            "gemini": ["deepseek-r1-0528", "llama4_maverick", "deepseek-r1-zero"],
-            "mistral-small-3-1": ["deepseek-r1-0528", "llama4_maverick"],
-            "qwen3-32b-a3b": ["deepseek-r1-0528", "llama4_maverick"],
+            # Qwen models fallback to clean models
+            "qwen3-235b": [
+                "deepseek-chat-v3-0324",
+                "qwen3-32b-a3b",
+                "llama4_maverick",
+                "deepseek-r1-zero",
+                "mistral-small-3-1",
+            ],
+            "qwen3-32b-a3b": [
+                "deepseek-chat-v3-0324",
+                "qwen3-235b",
+                "llama4_maverick",
+                "deepseek-r1-zero",
+            ],
         }
 
     def get_fallback_models(self, primary_model: str) -> List[str]:

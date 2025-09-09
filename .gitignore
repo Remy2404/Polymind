@@ -13,6 +13,10 @@ venv/
 
 # Environment variables and secrets
 .env
+.env.local
+.env.*.local
+mcp.json
+mcp.local.json
 
 # Logs and data
 logs/
