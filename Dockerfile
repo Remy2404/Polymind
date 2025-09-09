@@ -13,7 +13,7 @@ RUN apt-get update && \
     gcc g++ libffi-dev ffmpeg curl ca-certificates && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
-    npm install -g @mermaid-js/mermaid-cli && \
+    npm install -g @mermaid-js/mermaid-cli @smithery/cli @upstash/context7-mcp @modelcontextprotocol/server-sequential-thinking && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -43,7 +43,7 @@ RUN apt-get update && \
     libatk1.0-0 libcups2 libnspr4 fonts-dejavu-core fonts-liberation chromium && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
-    npm install -g @mermaid-js/mermaid-cli puppeteer @smithery/cli && \
+    npm install -g @mermaid-js/mermaid-cli puppeteer @smithery/cli @upstash/context7-mcp @modelcontextprotocol/server-sequential-thinking && \
     npm cache clean --force && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
@@ -52,7 +52,7 @@ COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
 COPY --from=builder /usr/local/bin/uvx /usr/local/bin/uvx
 COPY --from=builder /app/.venv /app/.venv
 
-ENV PATH="/app/.venv/bin:$PATH" \
+ENV PATH="/app/.venv/bin:/usr/local/bin:$PATH" \
     PORT=8000 \
     INSIDE_DOCKER="true"
 

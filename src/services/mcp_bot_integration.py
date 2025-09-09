@@ -44,10 +44,12 @@ class MCPBotIntegration:
             
             # Load MCP servers with timeout to prevent hanging
             try:
-                async with asyncio.timeout(120.0):  # 2 minute timeout
+                # Increase timeout for Docker environments
+                load_timeout = 300.0 if os.getenv("INSIDE_DOCKER") else 120.0  # 5 minutes for Docker, 2 minutes for local
+                async with asyncio.timeout(load_timeout):  # Increased timeout for Docker
                     success = await self.mcp_manager.load_servers()
             except asyncio.TimeoutError:
-                self.logger.warning("MCP server loading timed out after 120 seconds - continuing without MCP")
+                self.logger.warning(f"MCP server loading timed out after {load_timeout} seconds - continuing without MCP")
                 self.mcp_manager = None
                 return False
 
@@ -67,13 +69,15 @@ class MCPBotIntegration:
 
                 # Initialize MCP tools with timeout
                 try:
-                    async with asyncio.timeout(30.0):
+                    # Increase timeout for Docker environments
+                    tools_timeout = 60.0 if os.getenv("INSIDE_DOCKER") else 30.0  # 1 minute for Docker, 30 seconds for local
+                    async with asyncio.timeout(tools_timeout):
                         mcp_success = await self.openrouter_with_mcp.initialize_mcp_tools()
                     if not mcp_success:
                         self.logger.warning("Failed to initialize MCP tools in OpenRouter")
                         return False
                 except asyncio.TimeoutError:
-                    self.logger.warning("Timeout initializing MCP tools in OpenRouter - continuing without MCP")
+                    self.logger.warning(f"Timeout initializing MCP tools in OpenRouter after {tools_timeout} seconds - continuing without MCP")
                     self.openrouter_with_mcp = None
                     return False
 

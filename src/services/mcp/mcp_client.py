@@ -174,73 +174,20 @@ class MCPServerClient:
         try:
             # Create server parameters based on config type
             if self.server_config.get("type") == "stdio":
-                server_params = StdioServerParameters(
-                    command=self.server_config["command"],
-                    args=self.server_config.get("args", []),
-                    env={**os.environ, **self.server_config.get("env", {})},
-                )
+                # Try primary command first
+                primary_success = await self._try_connect_with_config(self.server_config)
+                if primary_success:
+                    return True
 
-                # Use proper async context manager
-                try:
-                    async with asyncio.timeout(30.0):  # 30 second timeout
-                        async with stdio_client(server_params) as (stdio, write):
-                            self.stdio, self.write = stdio, write
+                # Try fallback command if available
+                fallback_config = self.server_config.get("fallback")
+                if fallback_config:
+                    self.logger.info(f"Trying fallback command for MCP server '{self.server_name}'")
+                    fallback_success = await self._try_connect_with_config(fallback_config)
+                    if fallback_success:
+                        return True
 
-                            # Create session within the same context
-                            async with ClientSession(self.stdio, self.write) as session:
-                                self.session = session
-
-                                # Initialize the session with timeout
-                                try:
-                                    async with asyncio.timeout(15.0):
-                                        await session.initialize()
-                                except asyncio.TimeoutError:
-                                    self.logger.warning(
-                                        f"Timeout initializing MCP server session '{self.server_name}' after 15 seconds"
-                                    )
-                                    return False
-
-                                # List available tools with timeout
-                                try:
-                                    async with asyncio.timeout(10.0):
-                                        response = await session.list_tools()
-                                        self.available_tools = response.tools
-                                except asyncio.TimeoutError:
-                                    self.logger.warning(
-                                        f"Timeout listing tools from MCP server '{self.server_name}' after 10 seconds"
-                                    )
-                                    return False
-
-                                # Convert to OpenAI format
-                                self.openai_tools = (
-                                    MCPToolConverter.convert_mcp_tools_to_openai(
-                                        self.available_tools
-                                    )
-                                )
-
-                                self.logger.info(
-                                    f"Connected to MCP server '{self.server_name}' with {len(self.available_tools)} tools"
-                                )
-                                telegram_logger.log_message(
-                                    f"Connected to MCP server '{self.server_name}' with {len(self.available_tools)} tools",
-                                    0,
-                                )
-
-                                # Store server config for later reconnection
-                                self._server_params = server_params
-
-                                return True
-
-                except asyncio.TimeoutError:
-                    self.logger.warning(
-                        f"Timeout connecting to MCP server '{self.server_name}' after 30 seconds"
-                    )
-                    return False
-                except Exception as conn_error:
-                    self.logger.error(
-                        f"Error establishing stdio connection to '{self.server_name}': {str(conn_error)}"
-                    )
-                    return False
+                return False
 
             elif self.server_config.get("type") == "sse":
                 # SSE connection would require different handling
@@ -255,6 +202,100 @@ class MCPServerClient:
             else:
                 self.logger.error(
                     f"Unsupported server type: {self.server_config.get('type')}"
+                )
+                return False
+
+        except Exception as e:
+            self.logger.error(
+                f"Failed to connect to MCP server '{self.server_name}': {str(e)}"
+            )
+            telegram_logger.log_error(
+                f"Failed to connect to MCP server '{self.server_name}': {str(e)}", 0
+            )
+            return False
+
+    async def _try_connect_with_config(self, config: Dict[str, Any]) -> bool:
+        """
+        Try to connect using a specific configuration.
+
+        Args:
+            config: Server configuration to try
+
+        Returns:
+            True if connection successful
+        """
+        try:
+            server_params = StdioServerParameters(
+                command=config["command"],
+                args=config.get("args", []),
+                env={**os.environ, **config.get("env", {})},
+            )
+
+            # Use proper async context manager
+            try:
+                # Increase timeout for Docker environments
+                conn_timeout = 60.0 if os.getenv("INSIDE_DOCKER") else 30.0
+                async with asyncio.timeout(conn_timeout):  # Increased timeout for Docker
+                    async with stdio_client(server_params) as (stdio, write):
+                        self.stdio, self.write = stdio, write
+
+                        # Create session within the same context
+                        async with ClientSession(self.stdio, self.write) as session:
+                            self.session = session
+
+                            # Initialize the session with timeout
+                            try:
+                                # Increase timeout for Docker environments
+                                init_timeout = 30.0 if os.getenv("INSIDE_DOCKER") else 15.0
+                                async with asyncio.timeout(init_timeout):
+                                    await session.initialize()
+                            except asyncio.TimeoutError:
+                                timeout_msg = f"Timeout initializing MCP server session '{self.server_name}' after {init_timeout} seconds"
+                                self.logger.warning(timeout_msg)
+                                telegram_logger.log_error(timeout_msg, 0)
+                                return False
+
+                            # List available tools with timeout
+                            try:
+                                # Increase timeout for Docker environments
+                                list_timeout = 20.0 if os.getenv("INSIDE_DOCKER") else 10.0
+                                async with asyncio.timeout(list_timeout):
+                                    response = await session.list_tools()
+                                    self.available_tools = response.tools
+                            except asyncio.TimeoutError:
+                                timeout_msg = f"Timeout listing tools from MCP server '{self.server_name}' after {list_timeout} seconds"
+                                self.logger.warning(timeout_msg)
+                                telegram_logger.log_error(timeout_msg, 0)
+                                return False
+
+                            # Convert to OpenAI format
+                            self.openai_tools = (
+                                MCPToolConverter.convert_mcp_tools_to_openai(
+                                    self.available_tools
+                                )
+                            )
+
+                            self.logger.info(
+                                f"Connected to MCP server '{self.server_name}' with {len(self.available_tools)} tools"
+                            )
+                            telegram_logger.log_message(
+                                f"Connected to MCP server '{self.server_name}' with {len(self.available_tools)} tools",
+                                0,
+                            )
+
+                            # Store server config for later reconnection
+                            self._server_params = server_params
+
+                            return True
+
+            except asyncio.TimeoutError:
+                timeout_msg = f"Timeout connecting to MCP server '{self.server_name}' after {conn_timeout} seconds"
+                self.logger.warning(timeout_msg)
+                telegram_logger.log_error(timeout_msg, 0)
+                return False
+            except Exception as conn_error:
+                self.logger.error(
+                    f"Error establishing stdio connection to '{self.server_name}': {str(conn_error)}"
                 )
                 return False
 
@@ -283,43 +324,24 @@ class MCPServerClient:
         try:
             self.logger.info(f"Calling tool '{tool_name}' on server '{self.server_name}' with arguments: {arguments}")
 
-            # Reconnect for each tool call to avoid connection persistence issues
-            if self.server_config.get("type") == "stdio":
-                server_params = StdioServerParameters(
-                    command=self.server_config["command"],
-                    args=self.server_config.get("args", []),
-                    env={**os.environ, **self.server_config.get("env", {})},
-                )
+            # Try primary configuration first
+            try:
+                return await self._call_tool_with_config(self.server_config, tool_name, arguments)
+            except Exception as primary_error:
+                self.logger.warning(f"Primary tool call failed for '{tool_name}': {str(primary_error)}")
 
-                # Use proper async context manager for tool call
-                try:
-                    async with asyncio.timeout(30.0):  # 30 second timeout for tool call
-                        async with stdio_client(server_params) as (stdio, write):
-                            async with ClientSession(stdio, write) as session:
-                                # Initialize session
-                                try:
-                                    async with asyncio.timeout(10.0):
-                                        await session.initialize()
-                                except asyncio.TimeoutError:
-                                    raise RuntimeError(f"Timeout initializing session for tool call '{tool_name}'")
+                # Try fallback configuration if available
+                fallback_config = self.server_config.get("fallback")
+                if fallback_config:
+                    self.logger.info(f"Trying fallback configuration for tool '{tool_name}'")
+                    try:
+                        return await self._call_tool_with_config(fallback_config, tool_name, arguments)
+                    except Exception as fallback_error:
+                        self.logger.error(f"Fallback tool call also failed for '{tool_name}': {str(fallback_error)}")
+                        raise RuntimeError(f"Both primary and fallback tool calls failed for '{tool_name}'")
 
-                                # Call the tool
-                                try:
-                                    async with asyncio.timeout(20.0):  # 20 second timeout for tool execution
-                                        result = await session.call_tool(tool_name, arguments)
-                                except asyncio.TimeoutError:
-                                    raise RuntimeError(f"Timeout executing tool '{tool_name}' after 20 seconds")
-
-                                self.logger.info(f"Tool '{tool_name}' executed successfully")
-                                return result.content
-
-                except asyncio.TimeoutError:
-                    raise RuntimeError(f"Timeout during tool call '{tool_name}' after 30 seconds")
-                except Exception as conn_error:
-                    raise RuntimeError(f"Connection error during tool call '{tool_name}': {str(conn_error)}")
-
-            else:
-                raise RuntimeError(f"Unsupported server type for tool calls: {self.server_config.get('type')}")
+                # Re-raise primary error if no fallback
+                raise primary_error
 
         except Exception as e:
             error_msg = f"Error calling tool '{tool_name}' on server '{self.server_name}': {str(e) or 'Unknown error'}"
@@ -327,6 +349,56 @@ class MCPServerClient:
             self.logger.error(f"Exception type: {type(e).__name__}")
             self.logger.error(f"Exception args: {e.args if hasattr(e, 'args') else 'No args'}")
             raise RuntimeError(error_msg) from e
+
+    async def _call_tool_with_config(self, config: Dict[str, Any], tool_name: str, arguments: Dict[str, Any]) -> Any:
+        """
+        Call a tool using a specific configuration.
+
+        Args:
+            config: Server configuration to use
+            tool_name: Name of the tool to call
+            arguments: Arguments to pass to the tool
+
+        Returns:
+            Tool execution result
+        """
+        # Reconnect for each tool call to avoid connection persistence issues
+        if config.get("type") == "stdio":
+            server_params = StdioServerParameters(
+                command=config["command"],
+                args=config.get("args", []),
+                env={**os.environ, **config.get("env", {})},
+            )
+
+            # Use proper async context manager for tool call
+            try:
+                async with asyncio.timeout(30.0):  # 30 second timeout for tool call
+                    async with stdio_client(server_params) as (stdio, write):
+                        async with ClientSession(stdio, write) as session:
+                            # Initialize session
+                            try:
+                                async with asyncio.timeout(10.0):
+                                    await session.initialize()
+                            except asyncio.TimeoutError:
+                                raise RuntimeError(f"Timeout initializing session for tool call '{tool_name}'")
+
+                            # Call the tool
+                            try:
+                                async with asyncio.timeout(20.0):  # 20 second timeout for tool execution
+                                    result = await session.call_tool(tool_name, arguments)
+                            except asyncio.TimeoutError:
+                                raise RuntimeError(f"Timeout executing tool '{tool_name}' after 20 seconds")
+
+                            self.logger.info(f"Tool '{tool_name}' executed successfully")
+                            return result.content
+
+            except asyncio.TimeoutError:
+                raise RuntimeError(f"Timeout during tool call '{tool_name}' after 30 seconds")
+            except Exception as conn_error:
+                raise RuntimeError(f"Connection error during tool call '{tool_name}': {str(conn_error)}")
+
+        else:
+            raise RuntimeError(f"Unsupported server type for tool calls: {config.get('type')}")
 
     async def disconnect(self):
         """Disconnect from the MCP server."""
@@ -415,9 +487,10 @@ class MCPManager:
             if connection_tasks:
                 try:
                     # Use asyncio.wait instead of gather to handle exceptions better
+                    global_timeout = 300.0 if os.getenv("INSIDE_DOCKER") else 120.0  # 5 minutes for Docker, 2 minutes for local
                     done, pending = await asyncio.wait(
                         connection_tasks,
-                        timeout=120,  # 2 minute total timeout
+                        timeout=global_timeout,  # Increased timeout for Docker
                         return_when=asyncio.ALL_COMPLETED,
                     )
 
@@ -492,12 +565,14 @@ class MCPManager:
 
             # Connect with timeout
             try:
-                async with asyncio.timeout(60.0):  # 60 second timeout per server
+                # Increase timeout for Docker environments
+                server_timeout = 120.0 if os.getenv("INSIDE_DOCKER") else 60.0
+                async with asyncio.timeout(server_timeout):  # Increased timeout for Docker
                     success = await client.connect()
             except asyncio.TimeoutError:
-                self.logger.warning(
-                    f"Timeout connecting to MCP server '{server_name}' after 60 seconds"
-                )
+                timeout_msg = f"Timeout connecting to MCP server '{server_name}' after {server_timeout} seconds"
+                self.logger.warning(timeout_msg)
+                telegram_logger.log_error(timeout_msg, 0)
                 return False
             except Exception as conn_error:
                 self.logger.error(

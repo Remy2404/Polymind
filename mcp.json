@@ -1,42 +1,65 @@
 {
   "servers": {
     "fetch-mcp": {
-      "command": "npx",
+      "command": "smithery",
       "args": [
-        "-y",
-        "@smithery/cli@latest",
         "run",
         "fetch-mcp",
         "--key",
         "$MCP_API_KEY"
       ],
       "type": "stdio",
-      "enabled": true
+      "enabled": true,
+      "fallback": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@smithery/cli@latest",
+          "run",
+          "fetch-mcp",
+          "--key",
+          "$MCP_API_KEY"
+        ]
+      }
     },
     "Context7": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp@latest"]
+      "command": "context7-mcp",
+      "fallback": {
+        "command": "npx",
+        "args": ["-y", "@upstash/context7-mcp@latest"]
+      }
     },
     "Exa Search": {
-      "command": "npx",
+      "command": "smithery",
       "args": [
-        "-y",
-        "@smithery/cli@latest",
         "run",
         "exa",
         "--key",
         "$MCP_API_KEY"
       ],
       "type": "stdio",
-      "enabled": true
+      "enabled": true,
+      "fallback": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@smithery/cli@latest",
+          "run",
+          "exa",
+          "--key",
+          "$MCP_API_KEY"
+        ]
+      }
     },
     "sequentialthinking": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"],
-      "gallery": true,
-      "enabled": true
+      "command": "mcp-server-sequential-thinking",
+      "enabled": true,
+      "fallback": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"]
+      }
     }
   },
   "inputs": []
