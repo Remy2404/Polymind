@@ -10,7 +10,8 @@
         "--key",
         "$MCP_API_KEY"
       ],
-      "type": "stdio"
+      "type": "stdio",
+      "enabled": true
     },
     "Context7": {
       "type": "stdio",
@@ -27,13 +28,15 @@
         "--key",
         "$MCP_API_KEY"
       ],
-      "type": "stdio"
+      "type": "stdio",
+      "enabled": true
     },
     "sequentialthinking": {
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"],
-      "gallery": true
+      "gallery": true,
+      "enabled": true
     }
   },
   "inputs": []

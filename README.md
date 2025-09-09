@@ -1,6 +1,6 @@
 # 🤖 Polymind Bot
 
-A powerful, multi-modal Telegram bot leveraging cutting-edge AI technologies including Google's Gemini 2.0 Flash, DeepSeek, OpenRouter, and 50+ AI models for comprehensive conversational assistance, media processing, and collaborative features.
+A powerful, multi-modal Telegram bot leveraging cutting-edge AI technologies including Gemini, DeepSeek, OpenRouter, and 50+ AI models for comprehensive conversational assistance, media processing, and collaborative features with MCP (Model Context Protocol) integration.
 
 <div align="center">
   <img src="assets/templates/Project_report_group5.png" alt="Telegram Gemini Bot Project Report" width="400" />
@@ -25,10 +25,19 @@ A powerful, multi-modal Telegram bot leveraging cutting-edge AI technologies inc
 
 ### 🧠 **AI & Language Models**
 - **54+ AI Models**: Hierarchical model selection across Gemini, DeepSeek, OpenRouter (Llama, Claude, GPT, Qwen, Mistral, etc.)
+- **Tool-Calling Models**: Specialized models with function calling capabilities for enhanced interactions
 - **Intelligent Model Switching**: Context-aware automatic model selection based on task type
 - **Multi-Modal AI**: Combined text, image, document, and voice processing in single requests
 - **Conversation Memory**: Persistent context across sessions with model-specific history
 - **Smart Fallback System**: Automatic failover between AI providers for reliability
+
+### 🔧 **MCP (Model Context Protocol) Integration**
+- **External Tool Integration**: Connect to various MCP servers for enhanced capabilities
+- **Context7 Documentation**: Access to up-to-date documentation and code examples
+- **Exa Search**: Web search capabilities for real-time information
+- **Sequential Thinking**: Advanced reasoning and problem-solving tools
+- **Fetch MCP**: Web content fetching and analysis
+- **Dynamic Tool Discovery**: Automatic discovery and loading of available tools
 
 ### 🎨 **Visual & Media Processing**
 - **Mermaid Diagram Rendering**: Automatic detection and conversion of text-based diagrams to images
@@ -62,13 +71,14 @@ A powerful, multi-modal Telegram bot leveraging cutting-edge AI technologies inc
 - **Python 3.11+** with asyncio support
 - **Node.js 20.x+** for Mermaid diagram rendering
 - **MongoDB** instance (local or MongoDB Atlas)
-- **Required APIs**: 
+- **Required APIs**:
   - Telegram Bot Token (via @BotFather)
   - Google Gemini API key
   - OpenRouter API key (optional, for 50+ additional models)
+  - DeepSeek API key (optional, for DeepSeek models)
   - Together AI API key (for image/video generation)
-  - HuggingFace API keys (for specialized models)
-- **System Dependencies**: 
+  - MCP API keys (for external tool integration)
+- **System Dependencies**:
   - FFmpeg (for audio/video processing)
   - @mermaid-js/mermaid-cli (auto-installed in Docker)
 
@@ -77,17 +87,14 @@ A powerful, multi-modal Telegram bot leveraging cutting-edge AI technologies inc
 ### 🛠️ Development Setup
 ```bash
 # Clone the repository
-git clone https://github.com/Remy2404/Telegram-Gemini-Bot.git
-cd Telegram-Gemini-Bot
+git clone https://github.com/Remy2404/Polymind.git
+cd Polymind
 
-# Create and activate Python virtual environment
-python -m venv venv
-source venv/bin/activate     # macOS/Linux  
-venv\Scripts\activate        # Windows
-
-# Install Python dependencies
+# Install Python dependencies using uv (recommended)
 uv sync
-# or: pip install -r requirements.txt
+
+# Alternative: Install with pip
+# pip install -r requirements.txt
 
 # Install Node.js dependencies for Mermaid rendering
 npm install -g @mermaid-js/mermaid-cli
@@ -99,9 +106,12 @@ mmdc --version  # Should show Mermaid CLI version
 ### ⚡ Quick Start
 ```bash
 # Start development server with hot reload
+uv run python app.py
+
+# Or start with uvicorn directly
 uv run uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 
-# Or start with production optimizations
+# Start with production optimizations
 uv run python app.py
 ```
 
@@ -112,22 +122,41 @@ Create a comprehensive `.env` file in the project root:
 ```env
 # 🤖 Core Bot Configuration
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-MONGODB_URI=mongodb://localhost:27017  # or MongoDB Atlas URI
+MONGODB_URI=mongodb://localhost:27017  # or MongoDB Atlas URI
+
 # 🧠 AI Model APIs
+# Links to get your API keys:
+# - Gemini: https://aistudio.google.com/
+# - Together AI: https://www.together.ai/
+# - OpenRouter: https://openrouter.ai/
+
 GEMINI_API_KEY=your_gemini_api_key
-OPENROUTER_API_KEY=your_openrouter_api_key  # Access to 50+ models
-DEEPSEEK_API_KEY=your_deepseek_api_key      # Optional, for DeepSeek models
+OPENROUTER_API_KEY=your_openrouter_api_key
 TOGETHER_API_KEY=your_together_api_key
+
+# 🔧 MCP Integration (Micro-service Control Protocol)
+# - Smithery: https://smithery.ai/
+MCP_API_KEY=your_mcp_api_key
+
+# 🌐 Web Configuration
 WEBHOOK_URL=https://your-domain.com
 PORT=8000
-```
 
+```
+>[!IMPORTANT]
+
+> for WEBHOOK_URL use ngrok for local testing:
+```bash
+# https://ngrok.com/
+ngrok http 8000
+```
 ## 💡 Usage
 
 ### 🚀 Starting the Bot
-
-#### Local Development
 ```bash
+# Start the bot
+uv run python app.py
+
 # Start with hot reload for development
 uv run uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 
@@ -140,8 +169,11 @@ uv run python app.py
 # Using Gunicorn with multiple workers
 gunicorn app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 
-# Using Docker (recommended)
+# Using Docker (recommended for production)
 docker-compose up -d
+
+# Using uv for production
+uv run python app.py
 ```
 
 ### 🌟 Key Features in Action
@@ -244,6 +276,14 @@ Upload any PDF or DOCX file:
 | `/groupthreads`   | Manage discussion topics            | `/groupthreads` |
 | `/cleanthreads`   | Clean up inactive conversation threads | `/cleanthreads` |
 
+### 🔧 **MCP (Model Context Protocol) Commands**
+| Command           | Description                          | Usage Example |
+|-------------------|--------------------------------------|---------------|
+| `/mcpstatus`      | Show MCP integration status          | `/mcpstatus` |
+| `/mcptoggle`      | Enable/disable MCP for your account  | `/mcptoggle` |
+| `/mcptools`       | List available MCP tools             | `/mcptools` |
+| `/mcphelp`        | Show MCP help and usage guide        | `/mcphelp` |
+
 ### 🌟 **Special Features**
 - **🎨 Automatic Mermaid Rendering**: Just ask for diagrams and they'll be rendered as images
 - **🎙️ Voice Messages**: Send voice notes for transcription and response
@@ -251,17 +291,8 @@ Upload any PDF or DOCX file:
 - **💬 Group Chat**: Add bot to groups with @mention support
 - **🔄 Model Memory**: Each AI model maintains separate conversation history
 - **📄 Rich Export**: Export conversations with formatting, images, and metadata
-
-## Project Structure
-```
-src/
-├── database/        # Database schemas and connections
-├── handlers/        # Message & callback handlers
-├── services/        # AI model wrappers & business logic
-├── utils/           # Logging, config, utilities
-└── main.py          # Entry point
-app.py               # FastAPI server setup
-```
+- **🛠️ Tool-Calling Models**: Access to AI models with function calling capabilities
+- **🔧 MCP Integration**: Connect to external tools and services for enhanced functionality
 
 ## Docker Deployment
 Build and run:
