@@ -148,6 +148,24 @@ class MCPBotIntegration:
         status = "enabled" if enabled else "disabled"
         self.logger.info(f"MCP {status} for user {user_id}")
 
+    def is_model_mcp_compatible(self, model: str) -> bool:
+        """
+        Check if a model is compatible with MCP (tool calling via OpenRouter).
+        
+        Args:
+            model: Model identifier
+            
+        Returns:
+            True if model supports MCP integration, False otherwise
+        """
+        if not model:
+            return False
+            
+        from src.services.model_handlers.model_configs import ModelConfigurations
+        
+        # Use the static method that implements the logic
+        return ModelConfigurations.model_supports_tool_calls(model)
+
     async def generate_response_with_mcp(
         self,
         prompt: str,
@@ -179,12 +197,10 @@ class MCPBotIntegration:
             self.logger.debug("OpenRouter with MCP not initialized")
             return None
 
-        # Check if the model supports tool calls
-        if model:
-            from src.services.model_handlers.model_configs import ModelConfigurations
-            if not ModelConfigurations.model_supports_tool_calls(model):
-                self.logger.debug(f"Model {model} does not support tool calls, skipping MCP")
-                return None
+        # Enhanced model validation for MCP compatibility
+        if model and not self.is_model_mcp_compatible(model):
+            self.logger.debug(f"Model {model} is not MCP compatible, skipping MCP")
+            return None
 
         try:
             self.logger.info(f"Generating MCP-enhanced response for user {user_id} with model {model}")
@@ -206,6 +222,9 @@ class MCPBotIntegration:
 
         except Exception as e:
             self.logger.error(f"Error generating MCP response for user {user_id}: {str(e)}")
+            # Check if it's a model compatibility error
+            if "not a valid model ID" in str(e) or "400" in str(e):
+                self.logger.warning(f"Model {model} appears incompatible with OpenRouter MCP integration")
             return None
 
     async def get_mcp_status(self) -> Dict[str, Any]:
@@ -272,3 +291,16 @@ async def generate_mcp_response(
         model=model,
         **kwargs
     )
+
+
+def is_model_mcp_compatible(model: str) -> bool:
+    """
+    Check if a model is compatible with MCP integration.
+    
+    Args:
+        model: Model identifier
+        
+    Returns:
+        True if model supports MCP, False otherwise
+    """
+    return mcp_integration.is_model_mcp_compatible(model)

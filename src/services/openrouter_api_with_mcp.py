@@ -9,7 +9,7 @@ import logging
 from typing import Dict, List, Optional, Any
 from src.services.openrouter_api import OpenRouterAPI
 from src.services.mcp import MCPManager
-from src.services.model_handlers.model_configs import ModelConfigurations
+from src.services.model_handlers.model_configs import ModelConfigurations, Provider
 from src.utils.log.telegramlog import telegram_logger
 
 
@@ -92,6 +92,23 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
 
         # Use provided model or default
         actual_model = model if model is not None else "gemini"
+        
+        # Validate model compatibility with OpenRouter
+        if model:
+            model_config = ModelConfigurations.get_all_models().get(model)
+            if model_config:
+                # If it's a non-OpenRouter model, check for OpenRouter equivalent
+                if model_config.provider != Provider.OPENROUTER:
+                    if model_config.openrouter_model_key:
+                        actual_model = model_config.openrouter_model_key
+                        self.logger.info(f"Using OpenRouter equivalent {actual_model} for model {model}")
+                    else:
+                        self.logger.warning(f"Model {model} has no OpenRouter equivalent, cannot use MCP tools")
+                        return None
+                else:
+                    # It's already an OpenRouter model, use the openrouter_model_key if available
+                    if model_config.openrouter_model_key:
+                        actual_model = model_config.openrouter_model_key
 
         # Get available MCP tools in OpenAI format
         mcp_tools = await self.mcp_manager.get_all_tools() if self.mcp_tools_loaded else []
@@ -328,6 +345,15 @@ Focus on providing the most helpful and accurate response possible using the ava
 
         except Exception as e:
             self.logger.error(f"Error in generate_response_with_tools: {str(e)}")
+            
+            # Check if it's a model compatibility error and provide more specific logging
+            if "not a valid model ID" in str(e):
+                self.logger.warning(f"Model '{openrouter_model}' is not a valid OpenRouter model ID")
+            elif "400" in str(e):
+                self.logger.warning(f"Bad request error for model '{openrouter_model}' - likely tool calling not supported")
+            elif "does not support tool calling" in str(e):
+                self.logger.warning(f"Model '{openrouter_model}' does not support tool calling")
+            
             return f"Error generating response with tools: {str(e)}"
 
     def _clean_response_content(self, content: str) -> str:

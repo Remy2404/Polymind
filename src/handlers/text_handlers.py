@@ -20,7 +20,7 @@ from .text_processing.media_analyzer import MediaAnalyzer
 from .text_processing.utilities import MediaUtilities
 from .model_fallback_handler import ModelFallbackHandler
 from src.services.ai_command_router import EnhancedIntentDetector
-from src.services.mcp_bot_integration import generate_mcp_response
+from src.services.mcp_bot_integration import generate_mcp_response, is_model_mcp_compatible
 
 # Import the bot username helper
 from src.utils.bot_username_helper import BotUsernameHelper
@@ -853,22 +853,46 @@ class TextHandler:
         )
 
         try:
-            # Try MCP-enhanced response first if available and enabled
-            mcp_response = await generate_mcp_response(
-                prompt=enhanced_prompt_with_guidelines,
-                user_id=user_id,
-                model=preferred_model,
-                temperature=0.7,
-                max_tokens=max_tokens
-            )
+            # Check MCP compatibility before attempting MCP-enhanced response
+            mcp_compatible = is_model_mcp_compatible(preferred_model) if preferred_model else False
+            
+            if mcp_compatible:
+                # Try MCP-enhanced response if model supports it
+                mcp_response = await generate_mcp_response(
+                    prompt=enhanced_prompt_with_guidelines,
+                    user_id=user_id,
+                    model=preferred_model,
+                    temperature=0.7,
+                    max_tokens=max_tokens
+                )
 
-            if mcp_response:
-                self.logger.info(f"Using MCP-enhanced response for user {user_id}")
-                response = mcp_response
-                actual_model_used = preferred_model  # Keep original model name
+                if mcp_response:
+                    self.logger.info(f"Using MCP-enhanced response for user {user_id}")
+                    response = mcp_response
+                    actual_model_used = preferred_model  # Keep original model name
+                else:
+                    # MCP failed, fall back to regular processing
+                    self.logger.debug(f"MCP response failed for user {user_id}, using regular processing")
+                    (
+                        response,
+                        actual_model_used,
+                    ) = await self.model_fallback_handler.attempt_with_fallback(
+                        primary_model=preferred_model,
+                        model_handler_factory=ModelHandlerFactory,
+                        enhanced_prompt=enhanced_prompt_with_guidelines,
+                        history_context=history_context,
+                        max_tokens=max_tokens,
+                        model_timeout=model_timeout,
+                        message=message,
+                        is_complex_question=is_complex_question,
+                        quoted_text=quoted_text,
+                        gemini_api=self.gemini_api,
+                        openrouter_api=self.openrouter_api,
+                        deepseek_api=self.deepseek_api,
+                    )
             else:
-                # Fall back to regular model processing
-                self.logger.debug(f"MCP not available or failed for user {user_id}, using regular processing")
+                # Model doesn't support MCP, use regular processing directly
+                self.logger.debug(f"Model {preferred_model} not MCP compatible, using regular processing")
                 (
                     response,
                     actual_model_used,

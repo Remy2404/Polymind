@@ -32,7 +32,6 @@ class ModelConfig:
     supports_audio: bool = False
     supports_video: bool = False
     supports_documents: bool = False
-    supports_tool_calls: bool = False
     description: str = ""
     type: str = "general_purpose"
     capabilities: List[str] = field(default_factory=list)
@@ -54,7 +53,6 @@ class ModelConfigurations:
                 system_message="You are Gemini, a helpful AI assistant created by Google. Be concise, helpful, and accurate.",
                 supports_images=True,
                 supports_documents=True,
-                supports_tool_calls=True,
                 description="Google's latest multimodal AI model",
                 type="multimodal",
                 capabilities=[
@@ -62,7 +60,6 @@ class ModelConfigurations:
                     "supports_documents",
                     "long_context",
                     "general_purpose",
-                    "tool_calling",
                 ],
             ),
             # Venice Uncensored Dolphin Mistral 24B Venice Edition
@@ -132,7 +129,6 @@ class ModelConfigurations:
                 provider=Provider.DEEPSEEK,
                 indicator_emoji="🧠",
                 system_message="You are DeepSeek, an advanced reasoning AI model that excels at complex problem-solving.",
-                supports_tool_calls=True,
                 description="Advanced reasoning model with strong analytical capabilities",
                 type="reasoning",
                 capabilities=["reasoning_capable", "long_context", "general_purpose", "tool_calling"],
@@ -253,7 +249,6 @@ class ModelConfigurations:
                 openrouter_model_key="deepseek/deepseek-r1-0528-qwen3-8b:free",
                 indicator_emoji="🧠",
                 system_message="You are DeepSeek R1, an advanced reasoning AI with Qwen3 architecture.",
-                supports_tool_calls=True,
                 description="Latest DeepSeek R1 model with Qwen3 base - Free",
                 type="reasoning",
                 capabilities=["reasoning_capable", "multilingual_support", "tool_calling"],
@@ -265,7 +260,6 @@ class ModelConfigurations:
                 openrouter_model_key="deepseek/deepseek-r1-0528:free",
                 indicator_emoji="🧠",
                 system_message="You are DeepSeek R1, an advanced reasoning AI model.",
-                supports_tool_calls=True,
                 description="DeepSeek R1 May 2024 version - Free",
                 type="reasoning",
                 capabilities=["reasoning_capable", "tool_calling"],
@@ -277,7 +271,6 @@ class ModelConfigurations:
                 openrouter_model_key="deepseek/deepseek-r1:free",
                 indicator_emoji="🧠",
                 system_message="You are DeepSeek R1, an advanced reasoning AI model.",
-                supports_tool_calls=False,  # CORRECTED: No endpoints support tool use
                 description="Latest DeepSeek R1 model - Free",
                 type="reasoning",
                 capabilities=["reasoning_capable", "tool_calling"],
@@ -307,7 +300,6 @@ class ModelConfigurations:
                 openrouter_model_key="deepseek/deepseek-chat-v3-0324:free",
                 indicator_emoji="💬",
                 system_message="You are DeepSeek Chat V3, optimized for conversational AI interactions.",
-                supports_tool_calls=True,
                 description="Latest DeepSeek Chat V3 model - Free",
                 type="reasoning",
                 capabilities=["reasoning_capable", "general_purpose", "tool_calling"],
@@ -398,7 +390,6 @@ class ModelConfigurations:
                 indicator_emoji="✨",
                 system_message="You are Gemini 2.5 Pro Experimental, Google's latest experimental AI model.",
                 supports_images=True,
-                supports_tool_calls=True,
                 description="Google's experimental Gemini 2.5 Pro - Paid",
                 type="multimodal",
                 capabilities=["supports_images", "general_purpose", "tool_calling"],
@@ -423,7 +414,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen3-30b-a3b:free",
                 indicator_emoji="🌟",
                 system_message="You are Qwen3, a multilingual AI assistant created by Alibaba Cloud.",
-                supports_tool_calls=True,
                 description="30B parameter Qwen model - Free",
                 capabilities=["tool_calling"],
             ),
@@ -434,7 +424,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen3-8b:free",
                 indicator_emoji="🌟",
                 system_message="You are Qwen3, a multilingual AI assistant created by Alibaba Cloud.",
-                supports_tool_calls=True,
                 description="8B parameter Qwen model - Free",
                 capabilities=["tool_calling"],
             ),
@@ -445,7 +434,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen3-14b:free",
                 indicator_emoji="🌟",
                 system_message="You are Qwen3, a multilingual AI assistant created by Alibaba Cloud.",
-                supports_tool_calls=True,
                 description="14B parameter Qwen model - Free",
                 capabilities=["tool_calling"],
             ),
@@ -467,7 +455,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen3-235b-a22b:free",
                 indicator_emoji="🌟",
                 system_message="You are Qwen3, a large-scale multilingual AI assistant created by Alibaba Cloud.",
-                supports_tool_calls=True,
                 description="Massive 235B parameter Qwen model - Free",
                 type="multilingual",
                 capabilities=["multilingual_support", "reasoning_capable", "tool_calling"],
@@ -512,7 +499,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwen-2.5-72b-instruct:free",
                 indicator_emoji="🌟",
                 system_message="You are Qwen 2.5, the latest series of Qwen large language models.",
-                supports_tool_calls=True,
                 description="Latest 72B Qwen instruction model - Free",
                 type="general_purpose",
                 capabilities=["multilingual_support", "long_context", "tool_calling"],
@@ -524,7 +510,6 @@ class ModelConfigurations:
                 openrouter_model_key="qwen/qwq-32b:free",
                 indicator_emoji="🤔",
                 system_message="You are QwQ, a reasoning-focused AI model that thinks step by step.",
-                supports_tool_calls=True,
                 description="Question-answering reasoning model - Free",
                 type="mathematical_reasoning",
                 capabilities=["mathematical_reasoning", "tool_calling"],
@@ -537,7 +522,6 @@ class ModelConfigurations:
                 openrouter_model_key="deepseek/deepseek-r1-0528-qwen3-8b:free",
                 indicator_emoji="🧠",
                 system_message="You are DeepSeek R1, an advanced reasoning AI with Qwen3 architecture.",
-                supports_tool_calls=True,
                 description="Latest DeepSeek R1 model with Qwen3 base - Free",
                 type="reasoning",
                 capabilities=["reasoning_capable", "multilingual_support", "tool_calling"],
@@ -550,7 +534,6 @@ class ModelConfigurations:
                 openrouter_model_key="deepseek/deepseek-r1-0528:free",
                 indicator_emoji="🧠",
                 system_message="You are DeepSeek R1, an advanced reasoning AI model.",
-                supports_tool_calls=True,
                 description="DeepSeek R1 May 2024 version - Free",
                 type="reasoning",
                 capabilities=["reasoning_capable", "tool_calling"],
@@ -598,7 +581,6 @@ class ModelConfigurations:
                 openrouter_model_key="arliai/qwq-32b-arliai-rpr-v1:free",
                 indicator_emoji="🤔",
                 system_message="You are QwQ ARLIAI, an enhanced reasoning-focused AI model.",
-                supports_tool_calls=True,
                 description="Enhanced QwQ reasoning model by ARLIAI - Free",
                 type="mathematical_reasoning",
                 capabilities=["mathematical_reasoning", "tool_calling"],
@@ -660,7 +642,6 @@ class ModelConfigurations:
                 openrouter_model_key="meta-llama/llama-3.3-70b-instruct:free",
                 indicator_emoji="🦙",
                 system_message="You are Llama 3.3, an advanced AI assistant by Meta.",
-                supports_tool_calls=True,
                 description="Latest Llama 3.3 70B model - Free",
                 capabilities=["tool_calling"],
             ),
@@ -755,9 +736,51 @@ class ModelConfigurations:
 
     @staticmethod
     def get_models_with_tool_calls() -> Dict[str, ModelConfig]:
-        """Get all models that support tool calls."""
+        """Get all models that support tool calls based on logic rather than configuration."""
         all_models = ModelConfigurations.get_all_models()
-        return {k: v for k, v in all_models.items() if v.supports_tool_calls}
+        return {k: v for k, v in all_models.items() if ModelConfigurations._model_supports_tool_calls_logic(k, v)}
+
+    @staticmethod
+    def _model_supports_tool_calls_logic(model_id: str, model_config: ModelConfig) -> bool:
+        """
+        Determine if a model supports tool calls based on logic.
+        
+        Logic:
+        - OpenRouter models: Support tool calls if they have known tool call capability patterns
+        - DeepSeek models: Support tool calls
+        - Gemini models: Only if they have OpenRouter equivalent (not native API)
+        """
+        # OpenRouter models
+        if model_config.provider == Provider.OPENROUTER:
+            # Most OpenRouter models support tool calls, except some specific ones
+            non_tool_call_models = [
+                "gemma",  # Gemma models typically don't support tool calls well
+                "hunyuan",  # Hunyuan models may not support tool calls
+                "dolphin",  # Some dolphin models might not support tool calls
+            ]
+            
+            model_name_lower = model_id.lower()
+            openrouter_key_lower = (model_config.openrouter_model_key or "").lower()
+            
+            # Check if it's a known non-tool-call model
+            for non_tool_model in non_tool_call_models:
+                if non_tool_model in model_name_lower or non_tool_model in openrouter_key_lower:
+                    return False
+            
+            # Most other OpenRouter models support tool calls
+            return True
+        
+        # DeepSeek models support tool calls
+        elif model_config.provider == Provider.DEEPSEEK:
+            return True
+        
+        # Native Gemini models don't support tool calls through MCP
+        elif model_config.provider == Provider.GEMINI:
+            # Only if they have OpenRouter equivalent
+            return bool(model_config.openrouter_model_key)
+        
+        # Default to False for unknown providers
+        return False
 
     @staticmethod
     def get_models_with_tool_calls_by_provider(provider: Provider) -> Dict[str, ModelConfig]:
@@ -770,7 +793,9 @@ class ModelConfigurations:
         """Check if a specific model supports tool calls."""
         all_models = ModelConfigurations.get_all_models()
         model = all_models.get(model_id)
-        return model.supports_tool_calls if model else False
+        if not model:
+            return False 
+        return ModelConfigurations._model_supports_tool_calls_logic(model_id, model)
 
     @staticmethod
     def get_free_models() -> Dict[str, ModelConfig]:
