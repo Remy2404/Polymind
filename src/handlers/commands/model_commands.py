@@ -19,7 +19,7 @@ from src.services.model_handlers.simple_api_manager import (
     SuperSimpleAPIManager,
 )
 from src.services.user_data_manager import UserDataManager
-from support_tool_call import ToolCallSupportDetector
+from src.handlers.support_tool_call import ToolCallSupportDetector
 
 logger = logging.getLogger(__name__)
 
