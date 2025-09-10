@@ -14,6 +14,7 @@ RUN apt-get update && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
     npm install -g @mermaid-js/mermaid-cli @smithery/cli @upstash/context7-mcp @modelcontextprotocol/server-sequential-thinking && \
+    npm cache clean --force && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -44,6 +45,10 @@ RUN apt-get update && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     npm install -g @mermaid-js/mermaid-cli puppeteer @smithery/cli @upstash/context7-mcp @modelcontextprotocol/server-sequential-thinking && \
+    # Verify MCP packages are installed correctly
+    npx @smithery/cli --version && \
+    npx @upstash/context7-mcp --version && \
+    npx @modelcontextprotocol/server-sequential-thinking --version && \
     npm cache clean --force && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
@@ -58,5 +63,12 @@ ENV PATH="/app/.venv/bin:/usr/local/bin:$PATH" \
 
 COPY . .
 
+# Make scripts executable
+RUN chmod +x scripts/init-mcp.sh scripts/health-check-mcp.sh
+
+# Add health check
+HEALTHCHECK --interval=60s --timeout=30s --start-period=120s --retries=3 \
+    CMD ./scripts/health-check-mcp.sh || exit 1
+
 EXPOSE 8000
-CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["./scripts/init-mcp.sh", "--start-app", "uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

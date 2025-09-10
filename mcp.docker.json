@@ -1,0 +1,90 @@
+{
+  "servers": {
+    "Context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "type": "stdio",
+      "enabled": true,
+      "timeout": 90,
+      "retryAttempts": 2,
+      "retryDelay": 5,
+      "env": {
+        "NODE_ENV": "production",
+        "NODE_OPTIONS": "--max-old-space-size=512"
+      },
+      "fallback": {
+        "enabled": false
+      }
+    },
+    "sequentialthinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"],
+      "type": "stdio",
+      "enabled": true,
+      "timeout": 90,
+      "retryAttempts": 2,
+      "retryDelay": 5,
+      "env": {
+        "NODE_ENV": "production",
+        "NODE_OPTIONS": "--max-old-space-size=512"
+      },
+      "fallback": {
+        "enabled": false
+      }
+    },
+    "fetch-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "fetch-mcp",
+        "--key",
+        "$MCP_API_KEY"
+      ],
+      "type": "stdio",
+      "enabled": true,
+      "timeout": 90,
+      "retryAttempts": 2,
+      "retryDelay": 5,
+      "env": {
+        "NODE_ENV": "production",
+        "MCP_API_KEY": "$MCP_API_KEY",
+        "NODE_OPTIONS": "--max-old-space-size=512"
+      },
+      "fallback": {
+        "enabled": false
+      }
+    },
+    "Exa Search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "exa",
+        "--key",
+        "$MCP_API_KEY"
+      ],
+      "type": "stdio",
+      "enabled": true,
+      "timeout": 90,
+      "retryAttempts": 2,
+      "retryDelay": 5,
+      "env": {
+        "NODE_ENV": "production",
+        "MCP_API_KEY": "$MCP_API_KEY",
+        "NODE_OPTIONS": "--max-old-space-size=512"
+      },
+      "fallback": {
+        "enabled": false
+      }
+    }
+  },
+  "inputs": [],
+  "globalSettings": {
+    "defaultTimeout": 90,
+    "maxConcurrentInitializations": 2,
+    "initializationDelay": 2
+  }
+}

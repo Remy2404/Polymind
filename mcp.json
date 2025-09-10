@@ -12,6 +12,11 @@
       ],
       "type": "stdio",
       "enabled": true,
+      "timeout": 60,
+      "env": {
+        "NODE_ENV": "production",
+        "MCP_API_KEY": "$MCP_API_KEY"
+      },
       "fallback": {
         "command": "npx",
         "args": [
@@ -28,6 +33,11 @@
       "command": "npx",
       "args": ["-y", "@upstash/context7-mcp@latest"],
       "type": "stdio",
+      "enabled": true,
+      "timeout": 60,
+      "env": {
+        "NODE_ENV": "production"
+      },
       "fallback": {
         "command": "npx",
         "args": ["-y", "@upstash/context7-mcp@latest"]
@@ -45,6 +55,11 @@
       ],
       "type": "stdio",
       "enabled": true,
+      "timeout": 60,
+      "env": {
+        "NODE_ENV": "production",
+        "MCP_API_KEY": "$MCP_API_KEY"
+      },
       "fallback": {
         "command": "npx",
         "args": [
@@ -62,6 +77,10 @@
       "args": ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"],
       "type": "stdio",
       "enabled": true,
+      "timeout": 60,
+      "env": {
+        "NODE_ENV": "production"
+      },
       "fallback": {
         "command": "npx",
         "args": [
