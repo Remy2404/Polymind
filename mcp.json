@@ -4,61 +4,36 @@
       "command": "npx",
       "args": [
         "-y",
-        "@smithery/cli",
+        "@smithery/cli@latest",
         "run",
         "fetch-mcp",
         "--key",
         "$MCP_API_KEY"
       ],
-      "type": "stdio",
-      "fallback": {
-        "command": "node",
-        "args": [
-          "/usr/local/lib/node_modules/@smithery/cli/bin/fetch-mcp.js",
-          "--key",
-          "$MCP_API_KEY"
-        ],
-        "type": "stdio"
-      }
+      "type": "stdio"
     },
     "Context7": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"],
-      "fallback": {
-        "command": "node",
-        "args": [
-          "/usr/local/lib/node_modules/@upstash/context7-mcp/bin/context7.js"
-        ],
-        "type": "stdio"
-      }
+      "args": ["-y", "@upstash/context7-mcp@latest"]
     },
     "Exa Search": {
       "command": "npx",
-      "args": ["-y", "@smithery/cli", "run", "exa", "--key", "$MCP_API_KEY"],
-      "type": "stdio",
-      "fallback": {
-        "command": "node",
-        "args": [
-          "/usr/local/lib/node_modules/@smithery/cli/bin/exa.js",
-          "--key",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "exa",
+        "--key",
           "$MCP_API_KEY"
-        ],
-        "type": "stdio"
-      }
+      ],
+      "type": "stdio"
     },
     "sequentialthinking": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
-      "gallery": true,
-      "fallback": {
-        "command": "node",
-        "args": [
-          "/usr/local/lib/node_modules/@modelcontextprotocol/server-sequential-thinking/bin/sequential-thinking.js"
-        ],
-        "type": "stdio"
-      }
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"],
+      "gallery": true
     }
   },
   "inputs": []
