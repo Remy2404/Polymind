@@ -45,10 +45,6 @@ RUN apt-get update && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     npm install -g @mermaid-js/mermaid-cli puppeteer @smithery/cli @upstash/context7-mcp @modelcontextprotocol/server-sequential-thinking && \
-    # Verify MCP packages are installed correctly
-    npx @smithery/cli --version && \
-    npx @upstash/context7-mcp --version && \
-    npx @modelcontextprotocol/server-sequential-thinking --version && \
     npm cache clean --force && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
