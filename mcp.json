@@ -4,70 +4,60 @@
       "command": "npx",
       "args": [
         "-y",
-        "@smithery/cli@latest",
+        "@smithery/cli",
         "run",
         "fetch-mcp",
         "--key",
         "$MCP_API_KEY"
       ],
       "type": "stdio",
-      "enabled": true,
       "fallback": {
-        "command": "npx",
+        "command": "node",
         "args": [
-          "-y",
-          "@smithery/cli@latest",
-          "run",
-          "fetch-mcp",
+          "/usr/local/lib/node_modules/@smithery/cli/bin/fetch-mcp.js",
           "--key",
           "$MCP_API_KEY"
-        ]
+        ],
+        "type": "stdio"
       }
     },
     "Context7": {
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp@latest"],
       "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
       "fallback": {
-        "command": "npx",
-        "args": ["-y", "@upstash/context7-mcp@latest"]
+        "command": "node",
+        "args": [
+          "/usr/local/lib/node_modules/@upstash/context7-mcp/bin/context7.js"
+        ],
+        "type": "stdio"
       }
     },
     "Exa Search": {
       "command": "npx",
-      "args": [
-        "-y",
-        "@smithery/cli@latest",
-        "run",
-        "exa",
-        "--key",
-        "$MCP_API_KEY"
-      ],
+      "args": ["-y", "@smithery/cli", "run", "exa", "--key", "$MCP_API_KEY"],
       "type": "stdio",
-      "enabled": true,
       "fallback": {
-        "command": "npx",
+        "command": "node",
         "args": [
-          "-y",
-          "@smithery/cli@latest",
-          "run",
-          "exa",
+          "/usr/local/lib/node_modules/@smithery/cli/bin/exa.js",
           "--key",
           "$MCP_API_KEY"
-        ]
+        ],
+        "type": "stdio"
       }
     },
     "sequentialthinking": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"],
       "type": "stdio",
-      "enabled": true,
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "gallery": true,
       "fallback": {
-        "command": "npx",
+        "command": "node",
         "args": [
-          "-y",
-          "@modelcontextprotocol/server-sequential-thinking@latest"
-        ]
+          "/usr/local/lib/node_modules/@modelcontextprotocol/server-sequential-thinking/bin/sequential-thinking.js"
+        ],
+        "type": "stdio"
       }
     }
   },
