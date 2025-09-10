@@ -47,7 +47,7 @@ class ModelConfigurations:
             # Gemini Models
             "gemini": ModelConfig(
                 model_id="gemini",
-                display_name="Gemini 2.0 Flash",
+                display_name="Gemini 2.5 Flash",
                 provider=Provider.GEMINI,
                 indicator_emoji="✨",
                 system_message="You are Gemini, a helpful AI assistant created by Google. Be concise, helpful, and accurate.",
@@ -382,18 +382,6 @@ class ModelConfigurations:
                 system_message="You are Gemma 2, Google's lightweight AI assistant.",
                 description="Gemma 2 9B model - Free",
             ),
-            "gemini-2.5-pro-exp": ModelConfig(
-                model_id="gemini-2.5-pro-exp",
-                display_name="Gemini 2.5 Pro Experimental",
-                provider=Provider.OPENROUTER,
-                openrouter_model_key="google/gemini-2.5-pro-exp-03-25",
-                indicator_emoji="✨",
-                system_message="You are Gemini 2.5 Pro Experimental, Google's latest experimental AI model.",
-                supports_images=True,
-                description="Google's experimental Gemini 2.5 Pro - Paid",
-                type="multimodal",
-                capabilities=["supports_images", "general_purpose", "tool_calling"],
-            ),
             "gemini-2.0-flash-exp": ModelConfig(
                 model_id="gemini-2.0-flash-exp",
                 display_name="Gemini 2.0 Flash Experimental",
@@ -725,6 +713,135 @@ class ModelConfigurations:
                 type="creative_writing",
                 capabilities=["creative_writing"],
             ),
+            # === NEW MODELS FROM TOOLS.JSON ===
+            # NVIDIA
+            "nemotron-nano-9b-v2": ModelConfig(
+                model_id="nemotron-nano-9b-v2",
+                display_name="NVIDIA Nemotron Nano 9B V2",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="nvidia/nemotron-nano-9b-v2",
+                indicator_emoji="🔥",
+                system_message="You are NVIDIA Nemotron Nano 9B V2, a unified model for reasoning and non-reasoning tasks.",
+                description="NVIDIA-Nemotron-Nano-9B-v2 is a large language model designed as a unified model for both reasoning and non-reasoning tasks.",
+                type="reasoning",
+                capabilities=["reasoning_capable", "general_purpose"],
+            ),
+            # OpenRouter Sonoma Models
+            "sonoma-dusk-alpha": ModelConfig(
+                model_id="sonoma-dusk-alpha",
+                display_name="Sonoma Dusk Alpha",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="openrouter/sonoma-dusk-alpha",
+                indicator_emoji="🌅",
+                system_message="You are Sonoma Dusk Alpha, a fast and intelligent general-purpose frontier model.",
+                description="A fast and intelligent general-purpose frontier model with a 2 million token context window. Supports image inputs and parallel tool calling.",
+                max_tokens=2000000,
+                type="general_purpose",
+                supports_images=True,
+                capabilities=["supports_images", "general_purpose", "tool_calling", "long_context"],
+            ),
+            "sonoma-sky-alpha": ModelConfig(
+                model_id="sonoma-sky-alpha",
+                display_name="Sonoma Sky Alpha",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="openrouter/sonoma-sky-alpha",
+                indicator_emoji="🌌",
+                system_message="You are Sonoma Sky Alpha, a maximally intelligent general-purpose frontier model.",
+                description="A maximally intelligent general-purpose frontier model with a 2 million token context window. Supports image inputs and parallel tool calling.",
+                max_tokens=2000000,
+                type="reasoning",
+                supports_images=True,
+                capabilities=["supports_images", "reasoning_capable", "tool_calling", "long_context"],
+            ),
+            # DeepSeek V3.1
+            "deepseek-chat-v3-1": ModelConfig(
+                model_id="deepseek-chat-v3-1",
+                display_name="DeepSeek Chat V3.1",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="deepseek/deepseek-chat-v3.1:free",
+                indicator_emoji="🧠",
+                system_message="You are DeepSeek V3.1, a large hybrid reasoning model that supports both thinking and non-thinking modes.",
+                description="DeepSeek-V3.1 is a large hybrid reasoning model (671B parameters, 37B active) that improves tool use, code generation, and reasoning efficiency.",
+                max_tokens=64000,
+                type="reasoning",
+                capabilities=["reasoning_capable", "tool_calling", "coding_specialist"],
+            ),
+            # Z.AI GLM Models
+            "glm-4-5-air": ModelConfig(
+                model_id="glm-4-5-air",
+                display_name="GLM 4.5 Air",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="z-ai/glm-4.5-air:free",
+                indicator_emoji="🌬️",
+                system_message="You are GLM 4.5 Air, a lightweight agent-centric AI model with hybrid inference modes.",
+                description="GLM-4.5-Air is the lightweight variant purpose-built for agent-centric applications with thinking and non-thinking modes.",
+                max_tokens=131072,
+                type="reasoning",
+                capabilities=["reasoning_capable", "tool_calling"],
+            ),
+            # Qwen3 Models
+            "qwen3-coder": ModelConfig(
+                model_id="qwen3-coder",
+                display_name="Qwen3 Coder 480B",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="qwen/qwen3-coder:free",
+                indicator_emoji="💻",
+                system_message="You are Qwen3 Coder, optimized for agentic coding tasks such as function calling, tool use, and long-context reasoning.",
+                description="Qwen3-Coder-480B-A35B-Instruct is a MoE code generation model optimized for agentic coding tasks.",
+                max_tokens=262144,
+                type="coding_specialist",
+                capabilities=["coding_specialist", "tool_calling", "long_context"],
+            ),
+            "qwen3-4b": ModelConfig(
+                model_id="qwen3-4b",
+                display_name="Qwen3 4B",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="qwen/qwen3-4b:free",
+                indicator_emoji="🔄",
+                system_message="You are Qwen3 4B, designed to support both general-purpose and reasoning-intensive tasks with dual-mode architecture.",
+                description="Qwen3-4B is a 4 billion parameter dense language model with thinking and non-thinking modes for dynamic reasoning.",
+                max_tokens=40960,
+                type="reasoning",
+                capabilities=["reasoning_capable", "general_purpose", "tool_calling"],
+            ),
+            "qwen3-235b-a22b": ModelConfig(
+                model_id="qwen3-235b-a22b",
+                display_name="Qwen3 235B A22B",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="qwen/qwen3-235b-a22b:free",
+                indicator_emoji="🚀",
+                system_message="You are Qwen3 235B A22B, a mixture-of-experts model with seamless switching between thinking and non-thinking modes.",
+                description="Qwen3-235B-A22B is a 235B parameter MoE model with strong reasoning ability and multilingual support (100+ languages).",
+                max_tokens=131072,
+                type="reasoning",
+                capabilities=["reasoning_capable", "multilingual_support", "tool_calling", "long_context"],
+            ),
+            # Mistral Devstral
+            "devstral-small-2505": ModelConfig(
+                model_id="devstral-small-2505",
+                display_name="Devstral Small 2505",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="mistralai/devstral-small-2505:free",
+                indicator_emoji="🛠️",
+                system_message="You are Devstral Small 2505, an agentic LLM fine-tuned for advanced software engineering tasks.",
+                description="Devstral-Small-2505 is a 24B parameter agentic LLM optimized for codebase exploration, multi-file editing, and coding agents.",
+                max_tokens=32768,
+                type="coding_specialist",
+                capabilities=["coding_specialist", "tool_calling"],
+            ),
+            # Meta Llama 3.3 8B
+            "llama-3-3-8b-instruct": ModelConfig(
+                model_id="llama-3-3-8b-instruct",
+                display_name="Llama 3.3 8B Instruct",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="meta-llama/llama-3.3-8b-instruct:free",
+                indicator_emoji="🦙",
+                system_message="You are Llama 3.3 8B Instruct, a lightweight and ultra-fast variant of Llama 3.3 70B.",
+                description="A lightweight and ultra-fast variant of Llama 3.3 70B, for use when quick response times are needed most.",
+                max_tokens=128000,
+                type="general_purpose",
+                capabilities=["general_purpose", "tool_calling"],
+            ),
         }
         return models
 
@@ -754,9 +871,9 @@ class ModelConfigurations:
         if model_config.provider == Provider.OPENROUTER:
             # Most OpenRouter models support tool calls, except some specific ones
             non_tool_call_models = [
-                "gemma",  # Gemma models typically don't support tool calls well
-                "hunyuan",  # Hunyuan models may not support tool calls
-                "dolphin",  # Some dolphin models might not support tool calls
+                "gemma",  
+                "hunyuan",  
+                "dolphin",
             ]
             
             model_name_lower = model_id.lower()
@@ -816,7 +933,7 @@ class ModelConfigurations:
 
         Args:
             additional_models: List of model dictionaries with keys:
-                - model_id, display_name, openrouter_model_key, indicator_emoji, etc.
+                - model_id, display_name, op enrouter_model_key, indicator_emoji, etc.
         """
         current_models = ModelConfigurations.get_all_models()
 
@@ -842,7 +959,7 @@ class ModelConfigurations:
 
         # Fallback mapping for specific models
         fallback_map = {
-            "moonshotai/kimi-dev-72b:free": "deepseek/deepseek-chat:free",  # Add fallback for kimi-dev-72b
+            "moonshotai/kimi-dev-72b:free": "deepseek/deepseek-chat:free",
         }
 
         # First, try to get the model from the primary map

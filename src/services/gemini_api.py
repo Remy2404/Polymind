@@ -247,7 +247,7 @@ class GeminiAPI:
             "max_output_tokens": 8192,
         }
 
-        self.logger.info("Gemini 2.0 Flash API initialized successfully")
+        self.logger.info("Gemini 2.5 Flash API initialized successfully")
 
     async def process_multimodal_input(
         self,

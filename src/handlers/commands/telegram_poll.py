@@ -187,14 +187,6 @@ class PollCommands:
                 reply_to_message_id=update.message.message_id
             )
 
-            # Send success confirmation
-            await update.message.reply_text(
-                f"✅ *Poll created successfully!*\n\n"
-                f"**Question:** {poll_data['question']}\n"
-                f"**Options:** {', '.join(poll_data['options'])}",
-                parse_mode=ParseMode.MARKDOWN
-            )
-
         except Exception as e:
             logger.error(f"Error sending poll: {e}")
             await update.message.reply_text(

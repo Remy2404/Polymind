@@ -11,7 +11,7 @@ from typing import Dict, Optional
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
-from src.services.model_handlers.model_configs import Provider
+from src.services.model_handlers.model_configs import ModelConfigurations
 
 logger = logging.getLogger(__name__)
 
@@ -68,69 +68,8 @@ class ToolCallSupportDetector:
         if config is None:
             return False
 
-        # Check by provider - certain providers are known to support tool calling
-        provider_supports_tools = self._provider_supports_tools(config.provider)
-
-        # Check by model name patterns - certain model families are known to support tools
-        name_supports_tools = self._model_name_supports_tools(model_id, config)
-
-        # Check explicit configuration flags if available
-        config_supports_tools = getattr(config, 'supports_tool_calls', None)
-
-        # Return True if any of the checks pass
-        return provider_supports_tools or name_supports_tools or (config_supports_tools is True)
-
-    def _provider_supports_tools(self, provider: Provider) -> bool:
-        """
-        Check if a provider generally supports tool calling.
-
-        Args:
-            provider: The model provider
-
-        Returns:
-            True if the provider supports tool calling
-        """
-        # Providers known to support tool calling
-        tool_call_providers = {
-            Provider.OPENROUTER,
-            Provider.DEEPSEEK,
-            Provider.GEMINI
-          
-        }
-
-        return provider in tool_call_providers
-
-    def _model_name_supports_tools(self, model_id: str, config) -> bool:
-        """
-        Check if a model name indicates tool calling support.
-
-        Args:
-            model_id: The model identifier
-            config: Model configuration
-
-        Returns:
-            True if the model name suggests tool calling support
-        """
-        # Get the display name and OpenRouter key for checking
-        display_name = getattr(config, 'display_name', '').lower() if config else ''
-        openrouter_key = str(getattr(config, 'openrouter_key', '') or '').lower() if config else ''
-        model_id_lower = model_id.lower()
-
-        # Keywords that indicate tool calling support
-        tool_call_keywords = [
-            'gpt-4', 'gpt-3.5', 'claude', 'gemini-1.5', 'gemini-pro',
-            'tool', 'function', 'assistant', 'turbo', 'haiku', 'sonnet',
-            'deepseek', 'mixtral', 'llama-3.1', 'qwen'
-        ]
-
-        # Check if any keyword is in the model identifiers
-        for keyword in tool_call_keywords:
-            if (keyword in display_name or
-                keyword in openrouter_key or
-                keyword in model_id_lower):
-                return True
-
-        return False
+        # Use the centralized logic from ModelConfigurations
+        return ModelConfigurations.model_supports_tool_calls(model_id)
 
     def get_tool_call_models_by_category(self) -> Dict[str, Dict]:
         """
