@@ -20,6 +20,7 @@ from src.services.model_handlers.simple_api_manager import (
 )
 from src.services.user_data_manager import UserDataManager
 from src.handlers.support_tool_call import ToolCallSupportDetector
+from src.handlers.commands.callback_data_mapper import callback_mapper
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +154,7 @@ class ModelCommands:
                 display_text += f"\n({config.openrouter_key})"
 
             button = InlineKeyboardButton(
-                display_text, callback_data=f"model_{model_id}"
+                display_text, callback_data=callback_mapper.get_callback_data(model_id, "model")
             )
 
             # Add row (each model gets its own row for better readability)
@@ -203,7 +204,7 @@ class ModelCommands:
                 display_text += f"\n({config.openrouter_key})"
 
             button = InlineKeyboardButton(
-                display_text, callback_data=f"model_{model_id}"
+                display_text, callback_data=callback_mapper.get_callback_data(model_id, "model")
             )
             keyboard.append([button])
 
@@ -267,7 +268,7 @@ class ModelCommands:
                 display_text += f"\n({config.openrouter_key})"
 
             button = InlineKeyboardButton(
-                display_text, callback_data=f"model_{model_id}"
+                display_text, callback_data=callback_mapper.get_callback_data(model_id, "model")
             )
             keyboard.append([button])
 
@@ -347,8 +348,11 @@ class ModelCommands:
         user_id = query.from_user.id
         await query.answer()
 
-        # Extract model ID
-        selected_model = query.data.replace("model_", "")
+        # Extract model ID using callback mapper
+        selected_model = callback_mapper.get_model_id(query.data)
+        if not selected_model:
+            # Fallback to old method for backward compatibility
+            selected_model = query.data.replace("model_", "")
         model_config = self.api_manager.get_model_config(selected_model)
 
         if not model_config:

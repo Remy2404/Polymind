@@ -33,6 +33,8 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         self.mcp_manager = MCPManager(mcp_config_path)
         self.mcp_tools_loaded = False
         self.logger = logging.getLogger(__name__)
+        # Cache models that don't support tool calling to avoid repeated 404s
+        self._tool_unsupported_models = set()
 
     async def initialize_mcp_tools(self) -> bool:
         """
@@ -114,6 +116,18 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         mcp_tools = await self.mcp_manager.get_all_tools() if self.mcp_tools_loaded else []
 
         if mcp_tools:
+            # Check if this model is known to not support tools
+            if actual_model in self._tool_unsupported_models:
+                self.logger.info(f"Model {actual_model} is known to not support tools, using standard generation")
+                return await self.generate_response(
+                    prompt=prompt,
+                    context=context,
+                    model=actual_model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    timeout=timeout
+                )
+
             self.logger.info(f"Using {len(mcp_tools)} MCP tools for generation with model {actual_model}")
             return await self.generate_response_with_tools(
                 prompt=prompt,
@@ -344,17 +358,55 @@ Focus on providing the most helpful and accurate response possible using the ava
                 return cleaned_content
 
         except Exception as e:
-            self.logger.error(f"Error in generate_response_with_tools: {str(e)}")
+            error_str = str(e)
+            self.logger.error(f"Error in generate_response_with_tools: {error_str}")
             
-            # Check if it's a model compatibility error and provide more specific logging
-            if "not a valid model ID" in str(e):
+            # Smart fallback: Try without tools if it's a tool-related error
+            should_fallback = any(phrase in error_str.lower() for phrase in [
+                "no endpoints found that support tool use",
+                "does not support tool calling",
+                "tool use not supported",
+                "tool calling not supported",
+                "404"
+            ])
+            
+            if should_fallback:
+                self.logger.info(f"Tool calling failed for model {openrouter_model}, attempting fallback without tools...")
+                telegram_logger.log_message(f"Falling back to non-tool mode for {model}", 0)
+                
+                # Cache this model as not supporting tools to avoid future 404s
+                self._tool_unsupported_models.add(openrouter_model)
+                self.logger.info(f"Added {openrouter_model} to tool-unsupported cache")
+                
+                try:
+                    # Fallback: Generate response without tools
+                    fallback_response = await self.generate_response(
+                        prompt=prompt,
+                        context=context,
+                        model=model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        timeout=timeout
+                    )
+                    
+                    if fallback_response:
+                        self.logger.info(f"Successfully generated fallback response for model {openrouter_model}")
+                        return fallback_response
+                    else:
+                        self.logger.error(f"Fallback generation also failed for model {openrouter_model}")
+                        return "I apologize, but I'm having trouble processing your request right now. Please try again or use a different model."
+                        
+                except Exception as fallback_error:
+                    self.logger.error(f"Fallback generation failed: {str(fallback_error)}")
+                    return "I apologize, but I'm having trouble processing your request right now. Please try again or use a different model."
+            
+            # For non-tool related errors, provide more specific logging
+            if "not a valid model ID" in error_str:
                 self.logger.warning(f"Model '{openrouter_model}' is not a valid OpenRouter model ID")
-            elif "400" in str(e):
+            elif "400" in error_str:
                 self.logger.warning(f"Bad request error for model '{openrouter_model}' - likely tool calling not supported")
-            elif "does not support tool calling" in str(e):
-                self.logger.warning(f"Model '{openrouter_model}' does not support tool calling")
             
-            return f"Error generating response with tools: {str(e)}"
+            return "I encountered an error while processing your request. Please try again or use a different model."
 
     def _clean_response_content(self, content: str) -> str:
         """
