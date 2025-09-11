@@ -555,11 +555,17 @@ Focus on providing the most helpful and accurate response possible using the ava
             self.logger.error("Gemini API not available")
             return None
 
+        # Translate generic "gemini" alias to actual Google model name
+        actual_model = model
+        if model == "gemini":
+            actual_model = "gemini-2.5-flash"
+            self.logger.debug(f"Translated model alias '{model}' to '{actual_model}'")
+
         # Use GeminiAPI's method for MCP tool integration
         return await self.gemini_api.generate_response_with_mcp_tools(
             prompt=prompt,
             context=context,
-            model=model,
+            model=actual_model,
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout

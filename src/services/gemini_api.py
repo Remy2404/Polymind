@@ -422,8 +422,12 @@ class GeminiAPI:
         try:
             await self.rate_limiter.acquire()
 
-            # Build content parts
-            content_parts = [prompt]
+            # Build system message with tool instructions
+            system_message = self._build_system_message(model, context, tools)
+            self.logger.info(f"📋 System message for tool usage: {system_message[:300]}...")
+
+            # Build content parts with system message
+            content_parts = [system_message, prompt]
 
             # Build generation config with tools
             config = types.GenerateContentConfig(
@@ -576,6 +580,14 @@ class GeminiAPI:
         self, model_id: str, context: Optional[List[Dict]] = None, tools: Optional[List[Any]] = None
     ) -> str:
         """Build system message with dynamic tool usage instructions for Gemini."""
+        self.logger.info(f"🔧 Building system message for model {model_id} with {len(tools) if tools else 0} tools")
+        if tools:
+            tool_names = []
+            for tool in tools:
+                if hasattr(tool, 'function_declarations') and tool.function_declarations:
+                    tool_names.extend([decl.name for decl in tool.function_declarations])
+            self.logger.info(f"🔧 Available tool names: {tool_names}")
+        
         model_config = ModelConfigurations.get_all_models().get(model_id)
         if model_config and model_config.system_message:
             base_message = model_config.system_message
@@ -597,26 +609,50 @@ You have access to the following tools: {', '.join(tool_names)}
 
 ## Tool Usage Guidelines for Gemini:
 
-### When to Use Tools:
-- **Documentation & Code Examples**: Use documentation tools when users ask about libraries, frameworks, APIs, or need code examples
-- **Search & Research**: Use search tools for finding information, current data, or web content
-- **Analysis & Processing**: Use specialized tools for data analysis, file processing, or complex computations
-- **External Services**: Use tools that connect to external services or APIs
+### CRITICAL: When to Use Specific Tools:
+
+#### For URL/Link Processing:
+- **When user asks to "summary this link", "analyze this URL", "get content from", "fetch this page"**:
+  - **MUST use fetch_html** to get the webpage content first
+  - Then provide summary/analysis based on the fetched content
+  - DO NOT use sequentialthinking for URL fetching
+
+#### For Web Search:
+- **When user asks to "search for", "find information about", "look up"**:
+  - Use web_search_exa or other search tools
+
+#### For Documentation & Code:
+- **When user asks about libraries, frameworks, APIs, or needs code examples**:
+  - Use resolve-library-id and get-library-docs from Context7
+
+#### For Complex Reasoning:
+- **When user asks complex analytical questions requiring step-by-step thinking**:
+  - Use sequentialthinking for multi-step reasoning
+  - NOT for content fetching or web access
 
 ### How to Use Tools Effectively:
-1. **Identify the Right Tool**: Choose the most appropriate tool based on the user's request
-2. **Provide Complete Arguments**: Ensure all required parameters are included in your function calls
-3. **Handle Results**: Use the tool results to provide comprehensive, accurate responses
-4. **Combine Tools**: Use multiple tools when needed to provide complete answers
+1. **URL/Link Requests = fetch_html FIRST** - This is the most important rule
+2. **Identify the Right Tool**: Choose the most appropriate tool based on the user's request
+3. **Provide Complete Arguments**: Ensure all required parameters are included in your function calls
+4. **Handle Results**: Use the tool results to provide comprehensive, accurate responses
+5. **Combine Tools**: Use multiple tools when needed to provide complete answers
 
 ### Available Tool Categories:
 {chr(10).join([f"- **{category}**: {', '.join(category_tools)}" for category, category_tools in tool_categories.items()])}
 
+### IMPORTANT TOOL SELECTION RULES:
+- **URLs/Links → fetch_html** (ALWAYS for web content)
+- **Search queries → web_search_exa**
+- **Library docs → resolve-library-id + get-library-docs**
+- **Complex reasoning → sequentialthinking**
+- **Company research → company_research_exa**
+
 ### Important Notes:
 - Always use tools when they can provide more accurate or current information
+- For URLs, ALWAYS use fetch_html to get actual content before summarizing
 - Provide detailed, helpful responses based on tool results
 - If a tool fails, try alternative approaches or inform the user
-- Do not mention tool internal details or <think> tags in your final response
+- Do not mention tool internal details in your final response
 
 Focus on providing the most helpful and accurate response possible using the available tools."""
 
@@ -633,6 +669,7 @@ Focus on providing the most helpful and accurate response possible using the ava
             Dictionary mapping categories to tool names
         """
         categories = {
+            "Content Fetching": [],
             "Documentation": [],
             "Search & Research": [],
             "Development": [],
@@ -647,7 +684,11 @@ Focus on providing the most helpful and accurate response possible using the ava
                 description = tool.function_declarations[0].description.lower() if tool.function_declarations[0].description else ""
 
                 # Categorize based on tool name and description
+                # Content fetching tools (highest priority for URL/link processing)
                 if any(keyword in tool_name or keyword in description for keyword in
+                       ["fetch", "html", "markdown", "txt", "json", "url", "webpage", "content", "crawl"]):
+                    categories["Content Fetching"].append(tool.function_declarations[0].name)
+                elif any(keyword in tool_name or keyword in description for keyword in
                        ["doc", "docs", "documentation", "library", "api", "guide", "tutorial", "reference"]):
                     categories["Documentation"].append(tool.function_declarations[0].name)
                 elif any(keyword in tool_name or keyword in description for keyword in
@@ -657,7 +698,7 @@ Focus on providing the most helpful and accurate response possible using the ava
                         ["code", "dev", "build", "compile", "test", "debug", "git"]):
                     categories["Development"].append(tool.function_declarations[0].name)
                 elif any(keyword in tool_name or keyword in description for keyword in
-                        ["analyze", "process", "calculate", "data", "metrics", "stats"]):
+                        ["analyze", "process", "calculate", "data", "metrics", "stats", "thinking", "sequential"]):
                     categories["Analysis"].append(tool.function_declarations[0].name)
                 elif any(keyword in tool_name or keyword in description for keyword in
                         ["chat", "message", "email", "notify", "communication"]):

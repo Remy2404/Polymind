@@ -211,7 +211,7 @@ class OpenRouterAPI:
         try:
             # Set default max_tokens if not provided
             if max_tokens is None:
-                max_tokens = 32768  # Default high value for OpenRouter models
+                max_tokens = 32768
                 
             final_system_message = (
                 system_message
@@ -280,3 +280,10 @@ class OpenRouterAPI:
             "You are an advanced AI assistant that helps users with various tasks. "
             "Be concise, helpful, and accurate."
         )
+
+    def get_model_indicator(self) -> str:
+        """
+        Return the model indicator for OpenRouter models.
+        This is used by text handlers for response formatting.
+        """
+        return "🔗"

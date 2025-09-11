@@ -220,6 +220,7 @@ class ModelFallbackHandler:
                         max_tokens,
                         quoted_text,
                         current_timeout,
+                        model_name,  # Pass the model name
                     )
                 else:
                     # Standard response generation
@@ -227,6 +228,7 @@ class ModelFallbackHandler:
                         model_handler.generate_response(
                             prompt=enhanced_prompt,
                             context=history_context,
+                            model=model_name,
                             temperature=0.7,
                             max_tokens=max_tokens,
                         ),
@@ -281,6 +283,7 @@ class ModelFallbackHandler:
         max_tokens,
         quoted_text,
         timeout_seconds,
+        model_name,  # Add model_name parameter
     ) -> str:
         """
         Handle complex questions with progress updates to prevent timeout appearance.
@@ -293,6 +296,7 @@ class ModelFallbackHandler:
             max_tokens: Maximum tokens for response
             quoted_text: Quoted text if replying
             timeout_seconds: Timeout in seconds
+            model_name: The name of the model to use
 
         Returns:
             The generated response text
@@ -338,6 +342,7 @@ class ModelFallbackHandler:
             response = await model_handler.generate_response(
                 prompt=enhanced_prompt_with_guidelines,
                 context=history_context,
+                model=model_name,  # Add the model parameter
                 temperature=0.7,
                 max_tokens=max_tokens,
                 quoted_message=quoted_text,
