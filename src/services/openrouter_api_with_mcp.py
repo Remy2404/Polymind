@@ -11,6 +11,7 @@ from src.services.openrouter_api import OpenRouterAPI
 from src.services.mcp import MCPManager
 from src.services.model_handlers.model_configs import ModelConfigurations, Provider
 from src.utils.log.telegramlog import telegram_logger
+from src.services.gemini_api import GeminiAPI
 
 
 class OpenRouterAPIWithMCP(OpenRouterAPI):
@@ -23,7 +24,7 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
 
     def __init__(self, rate_limiter, mcp_config_path: str = "mcp.json"):
         """
-        Initialize the enhanced OpenRouter API with MCP support.
+        Initialize the enhanced OpenRouter API with MCP support and Gemini integration.
 
         Args:
             rate_limiter: Rate limiter instance
@@ -35,6 +36,45 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         self.logger = logging.getLogger(__name__)
         # Cache models that don't support tool calling to avoid repeated 404s
         self._tool_unsupported_models = set()
+
+        # Initialize Gemini API instance
+        try:
+            self.gemini_api = GeminiAPI(rate_limiter, mcp_config_path)
+            self.logger.info("Gemini API initialized successfully")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize Gemini API: {e}")
+            self.gemini_api = None
+
+    def _get_model_provider(self, model: str) -> Provider:
+        """
+        Determine which provider to use for a given model.
+
+        Args:
+            model: Model identifier
+
+        Returns:
+            Provider enum indicating which API to use
+        """
+        model_config = ModelConfigurations.get_all_models().get(model)
+        if model_config:
+            return model_config.provider
+        return Provider.OPENROUTER  # Default fallback
+
+    def _should_use_gemini(self, model: str) -> bool:
+        """
+        Check if we should use Gemini for the given model.
+
+        Args:
+            model: Model identifier
+
+        Returns:
+            True if Gemini should be used, False otherwise
+        """
+        if not self.gemini_api:
+            return False
+
+        provider = self._get_model_provider(model)
+        return provider == Provider.GEMINI
 
     async def initialize_mcp_tools(self) -> bool:
         """
@@ -92,8 +132,21 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         if not self.mcp_tools_loaded:
             await self.initialize_mcp_tools()
 
-        # Use provided model or default
-        actual_model = model if model is not None else "gemini"
+        # Determine which API to use based on model
+        if self._should_use_gemini(model):
+            self.logger.info(f"Using Gemini API for model {model}")
+            return await self._generate_gemini_with_mcp_tools(
+                prompt=prompt,
+                context=context,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout
+            )
+        else:
+            self.logger.info(f"Using OpenRouter API for model {model}")
+            # Use provided model or default
+            actual_model = model if model is not None else "gemini"
         
         # Validate model compatibility with OpenRouter
         if model:
@@ -472,3 +525,42 @@ Focus on providing the most helpful and accurate response possible using the ava
         await super().close()
         if self.mcp_tools_loaded:
             await self.mcp_manager.disconnect_all()
+        if self.gemini_api:
+            await self.gemini_api.close()
+
+    async def _generate_gemini_with_mcp_tools(
+        self,
+        prompt: str,
+        context: Optional[List[Dict]] = None,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        timeout: float = 300.0,
+    ) -> Optional[str]:
+        """
+        Generate a response using Gemini with MCP tools available.
+
+        Args:
+            prompt: The user prompt
+            context: Conversation context
+            model: Optional model override
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            timeout: Request timeout
+
+        Returns:
+            Generated response or None if failed
+        """
+        if not self.gemini_api:
+            self.logger.error("Gemini API not available")
+            return None
+
+        # Use GeminiAPI's method for MCP tool integration
+        return await self.gemini_api.generate_response_with_mcp_tools(
+            prompt=prompt,
+            context=context,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout
+        )

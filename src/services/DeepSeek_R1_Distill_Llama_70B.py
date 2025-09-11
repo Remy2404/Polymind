@@ -267,6 +267,12 @@ class DeepSeekLLM:
         """Get the model indicator emoji and name for DeepSeek models."""
         return "🧠 DeepSeek"
 
-
-# Initialize the DeepSeekLLM instance
-deepseek_llm = DeepSeekLLM()
+    def get_system_message(self) -> str:
+        """
+        Return the system message for DeepSeek models.
+        This is used by the prompt formatter for consistent system prompts.
+        """
+        return (
+            "You are DeepSeek, an advanced reasoning AI model that excels at complex problem-solving. "
+            "Be concise, helpful, and accurate."
+        )

@@ -67,7 +67,21 @@ class ModelConfigurations:
                     # Determine model type from capabilities
                     model_type = ModelConfigurations._determine_model_type(capabilities)
                     
-                    # Create ModelConfig
+                    # Create ModelConfig with proper max_tokens based on model capabilities
+                    # Determine appropriate max_tokens for this model
+                    max_tokens = 32000  # Default high value
+                    
+                    # Adjust max_tokens based on model type and capabilities  
+                    description = model_data.get("description", "").lower()
+                    if "reasoning" in description or "thinking" in description:
+                        max_tokens = 65536  # Higher for reasoning models
+                    elif "code" in description or "programming" in description:
+                        max_tokens = 49152  # Higher for coding models
+                    elif any(keyword in description for keyword in ["small", "lightweight", "nano", "mini"]):
+                        max_tokens = 16384  # Lower for smaller models
+                    elif "vision" in description or "multimodal" in description:
+                        max_tokens = 24576  # Medium for vision models
+                    
                     config = ModelConfig(
                         model_id=model_id,
                         display_name=model_data.get("name", model_id),
@@ -79,6 +93,7 @@ class ModelConfigurations:
                         supported_parameters=model_data.get("supported_parameters", []),
                         system_message=ModelConfigurations._generate_system_message(model_id, model_data.get("name", "")),
                         indicator_emoji=ModelConfigurations._get_indicator_emoji(provider, model_type),
+                        max_tokens=max_tokens,  # Set proper max_tokens
                     )
                     models[model_id] = config
         except (json.JSONDecodeError, FileNotFoundError, KeyError) as e:
@@ -100,22 +115,22 @@ class ModelConfigurations:
             system_message="You are Gemini, a helpful AI assistant created by Google. Be concise, helpful, and accurate.",
             supports_images=True,
             supports_documents=True,
-            supported_parameters=["tools", "long_context"],
-            description="Google's latest multimodal AI model",
+            supported_parameters=["tools", "tool_choice", "function_calling", "long_context"],
+            description="Google's latest multimodal AI model with advanced tool calling capabilities",
             type="multimodal",
-            capabilities=[
+            max_tokens=32768,
+            capabilities=[ 
                 "supports_images",
-                "supports_documents",
+                "supports_documents", 
+                "tool_calling",
                 "long_context",
                 "general_purpose",
             ],
         )
         
         return {
-            # Gemini Models
+            # Essential fallback models only
             "gemini": gemini_config,
-            "gemini-2.5-flash": gemini_config,  # Alias for API compatibility
-            # DeepSeek Models
             "deepseek": ModelConfig(
                 model_id="deepseek",
                 display_name="DeepSeek R1",
@@ -124,57 +139,8 @@ class ModelConfigurations:
                 system_message="You are DeepSeek, an advanced reasoning AI model that excels at complex problem-solving.",
                 description="Advanced reasoning model with strong analytical capabilities",
                 type="reasoning",
-                max_tokens=8000,  # Fixed: Reduced from 32000 to avoid token limit errors
+                max_tokens=65536,
                 capabilities=["reasoning_capable", "long_context", "general_purpose", "tool_calling"],
-            ),
-            # OpenRouter Models - Added missing models from fallback chains
-            "deepseek-chat-v3-0324": ModelConfig(
-                model_id="deepseek-chat-v3-0324",
-                display_name="DeepSeek Chat V3",
-                provider=Provider.OPENROUTER,
-                openrouter_model_key="deepseek/deepseek-chat-v3-0324:free",
-                indicator_emoji="🧠",
-                system_message="You are DeepSeek Chat V3, an advanced conversational AI model.",
-                description="Fast and efficient conversational model",
-                type="general_purpose",
-                max_tokens=8000,
-                capabilities=["general_purpose", "fast_response"],
-            ),
-            "llama4_maverick": ModelConfig(
-                model_id="llama4_maverick",
-                display_name="Llama 4 Maverick",
-                provider=Provider.OPENROUTER,
-                openrouter_model_key="meta-llama/llama-4-maverick-17b-instruct:free",
-                indicator_emoji="🦙",
-                system_message="You are Llama 4 Maverick, an advanced AI model by Meta.",
-                description="Meta's latest Llama model with enhanced capabilities",
-                type="general_purpose",
-                max_tokens=16000,
-                capabilities=["general_purpose", "long_context"],
-            ),
-            "deepseek-r1-0528": ModelConfig(
-                model_id="deepseek-r1-0528",
-                display_name="DeepSeek R1 0528",
-                provider=Provider.OPENROUTER,
-                openrouter_model_key="deepseek/deepseek-r1-0528:free",
-                indicator_emoji="🧠",
-                system_message="You are DeepSeek R1 0528, an advanced reasoning AI model.",
-                description="DeepSeek's reasoning model with enhanced analytical capabilities",
-                type="reasoning",
-                max_tokens=8000,
-                capabilities=["reasoning_capable", "general_purpose"],
-            ),
-            "deepseek-r1-distill-llama-70b": ModelConfig(
-                model_id="deepseek-r1-distill-llama-70b",
-                display_name="DeepSeek R1 Distill Llama 70B",
-                provider=Provider.OPENROUTER,
-                openrouter_model_key="deepseek/deepseek-r1-distill-llama-70b:free",
-                indicator_emoji="🧠",
-                system_message="You are DeepSeek R1 Distill Llama 70B, a distilled reasoning model.",
-                description="Distilled version of DeepSeek R1 with Llama 70B architecture",
-                type="reasoning",
-                max_tokens=8000,
-                capabilities=["reasoning_capable", "long_context"],
             ),
         }
 
@@ -339,20 +305,23 @@ class ModelConfigurations:
     @staticmethod
     def _model_supports_tool_calls_logic(model_id: str, model_config: ModelConfig) -> bool:
         """
-        Determine if a model supports tool calls based on strict supported_parameters check.
-        
-        Following OpenRouter documentation and ChatGPT's advice: only check if 'tools' 
-        is explicitly listed in the supported_parameters array.
+        Determine if a model supports tool calls based on supported_parameters and provider.
+
+        Following OpenRouter documentation and Gemini's capabilities: check supported_parameters
+        and provider-specific logic.
         """
         # Primary method: Check supported_parameters directly (strict approach)
         if hasattr(model_config, 'supported_parameters') and model_config.supported_parameters:
-            return 'tools' in model_config.supported_parameters
-        
-        # Fallback for DeepSeek models (known to work reliably)
+            if 'tools' in model_config.supported_parameters:
+                return True
+
+        # Provider-specific logic
         if model_config.provider == Provider.DEEPSEEK:
-            return True
-        
-        # Default to False - no assumptions based on provider or capabilities
+            return True  # DeepSeek models generally support tool calling
+        elif model_config.provider == Provider.GEMINI:
+            return True  # Gemini models support function calling/tools
+
+        # Default to False - no assumptions based on capabilities alone
         return False
 
     @staticmethod
@@ -446,10 +415,12 @@ class ModelConfigurations:
 
         # Simplified fallback mapping with just two reliable models
         fallback_map = {
-            # General purpose fallback
-            "mistralai/mistral-small-3.1-24b-instruct:free": "mistralai/mistral-small-24b-instruct-2501:free",
-            # DeepSeek fallback for reasoning tasks
-            "deepseek/deepseek-chat:free": "deepseek/deepseek-v3-base:free",
+            # Primary mapping for reliable models
+            "gemini": "gemini",
+            "deepseek": "deepseek",
+            # Fallback for tool-calling models from models.json
+            "deepseek/deepseek-chat-v3.1:free": "deepseek/deepseek-r1:free",
+            "meta-llama/llama-4-maverick:free": "meta-llama/llama-3.3-70b-instruct:free",
         }
 
         # First, try to get the model from the primary map
@@ -462,16 +433,16 @@ class ModelConfigurations:
         
         # If no specific fallback, try to find a compatible model based on provider
         if model_id.startswith("mistralai/"):
-            return "mistralai/mistral-small-3.1-24b-instruct:free"
+            return "mistralai/mistral-small-3.2-24b-instruct:free"
         elif model_id.startswith("qwen/"):
             return "qwen/qwen3-8b:free"
         elif model_id.startswith("deepseek/"):
-            return "deepseek/deepseek-chat:free"
+            return "deepseek/deepseek-chat-v3.1:free"
         elif model_id.startswith("google/") or model_id.startswith("gemini"):
-            return "google/gemma-3-12b-it:free"
+            return "google/gemini-2.0-flash-exp:free"
         elif model_id.startswith("meta-llama/"):
-            return "meta-llama/llama-3.2-3b-instruct:free"
+            return "meta-llama/llama-4-maverick:free"
         
-        # Default fallback to a reliable general-purpose model
-        return "mistralai/mistral-small-3.1-24b-instruct:free"
+        # Default fallback to most reliable model
+        return "deepseek/deepseek-chat-v3.1:free"
 

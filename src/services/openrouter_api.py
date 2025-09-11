@@ -112,6 +112,15 @@ class OpenRouterAPI:
                 self.logger.error(f"Invalid OpenRouter model key returned for {model}: {openrouter_model}")
                 return f"Error: Could not determine model for {model}"
 
+            # Set default max_tokens if not provided based on model configuration
+            if max_tokens is None:
+                model_configs = ModelConfigurations.get_all_models()
+                model_config = model_configs.get(model)
+                if model_config and hasattr(model_config, 'max_tokens'):
+                    max_tokens = model_config.max_tokens
+                else:
+                    max_tokens = 32768  # Default high value for OpenRouter models
+
             system_message = self._build_system_message(model, context)
             messages = [{"role": "system", "content": system_message}]
             if context:
@@ -200,6 +209,10 @@ class OpenRouterAPI:
         timeout: float = 300.0,
     ) -> Optional[str]:
         try:
+            # Set default max_tokens if not provided
+            if max_tokens is None:
+                max_tokens = 32768  # Default high value for OpenRouter models
+                
             final_system_message = (
                 system_message
                 or "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."
@@ -258,10 +271,12 @@ class OpenRouterAPI:
             self.logger.info(f"  {model_id} -> {openrouter_key}")
         self.logger.info(f"Total models loaded: {len(self.available_models)}")
 
-    def get_model_indicator(self) -> str:
-        """Get the model indicator emoji and name for OpenRouter models."""
-        # Get the model configuration to determine the indicator
-        model_config = ModelConfigurations.get_all_models().get("openrouter")
-        if model_config and model_config.indicator_emoji:
-            return f"{model_config.indicator_emoji} OpenRouter"
-        return "🤖 OpenRouter"
+    def get_system_message(self) -> str:
+        """
+        Return the system message for OpenRouter models.
+        This is used by the prompt formatter for consistent system prompts.
+        """
+        return (
+            "You are an advanced AI assistant that helps users with various tasks. "
+            "Be concise, helpful, and accurate."
+        )
