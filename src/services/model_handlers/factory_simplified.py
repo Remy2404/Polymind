@@ -21,7 +21,6 @@ class ModelHandlerFactory:
     """
 
     _handlers: Dict[str, ModelHandler] = {}
-    _model_configs = ModelConfigurations.get_all_models()
 
     @classmethod
     def get_model_handler(
@@ -44,8 +43,9 @@ class ModelHandlerFactory:
             ModelHandler instance for the specified model
         """
         if model_name not in cls._handlers:
-            # Get model configuration
-            model_config = cls._model_configs.get(model_name)
+            # Get model configuration (fresh call to ensure latest configs)
+            model_configs = ModelConfigurations.get_all_models()
+            model_config = model_configs.get(model_name)
             if not model_config:
                 raise ValueError(f"Unknown model: {model_name}")
 
@@ -88,12 +88,14 @@ class ModelHandlerFactory:
     @classmethod
     def get_available_models(cls) -> Dict[str, ModelConfig]:
         """Get all available model configurations."""
-        return cls._model_configs
+        return ModelConfigurations.get_all_models()
 
     @classmethod
     def add_custom_model(cls, model_config: ModelConfig) -> None:
         """Add a custom model configuration."""
-        cls._model_configs[model_config.model_id] = model_config
+        # Note: This method is deprecated since we now use fresh configs
+        # Clear handler cache when adding custom models
+        cls.clear_cache()
 
     @classmethod
     def clear_cache(cls) -> None:

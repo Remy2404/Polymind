@@ -70,6 +70,17 @@ class TextHandler:
         # Optional components (will be set externally if needed)
         self.user_model_manager = None
 
+    # Mock message class for safe_send_message fallback
+    class MockMessage:
+        def __init__(self, bot, chat_id):
+            self.bot = bot
+            self.chat_id = chat_id
+
+        async def reply_text(self, text, **kwargs):
+            return await self.bot.send_message(
+                chat_id=self.chat_id, text=text, **kwargs
+            )
+
     # Removed delegation methods - use response_formatter directly
 
     async def handle_text_message(
@@ -502,18 +513,7 @@ class TextHandler:
                                 response
                             )
                             for chunk in chunks:
-                                # Create a mock message object to use with safe_send_message
-                                class MockMessage:
-                                    def __init__(self, bot, chat_id):
-                                        self.bot = bot
-                                        self.chat_id = chat_id
-
-                                    async def reply_text(self, text, **kwargs):
-                                        return await self.bot.send_message(
-                                            chat_id=self.chat_id, text=text, **kwargs
-                                        )
-
-                                mock_message = MockMessage(context.bot, chat_id)
+                                mock_message = self.MockMessage(context.bot, chat_id)
                                 await self.response_formatter.safe_send_message(
                                     mock_message, chunk
                                 )
@@ -797,7 +797,27 @@ class TextHandler:
         is_long_form_request = any(
             indicator in message_text.lower() for indicator in long_form_indicators
         )
-        max_tokens = 32000 if is_long_form_request else 16000
+
+        # Get model-specific max_tokens from configuration
+        from src.services.model_handlers.model_configs import ModelConfigurations
+        model_config = ModelConfigurations.get_all_models().get(preferred_model)
+
+        if model_config and hasattr(model_config, 'max_tokens') and model_config.max_tokens:
+            base_max_tokens = model_config.max_tokens
+        else:
+            # Fallback to reasonable defaults based on model type
+            if "deepseek" in preferred_model.lower():
+                base_max_tokens = 4000  # Conservative for DeepSeek due to 8193 total limit
+            elif "gemini" in preferred_model.lower():
+                base_max_tokens = 8000
+            else:
+                base_max_tokens = 6000
+
+        # Adjust for long-form requests but respect model limits
+        if is_long_form_request:
+            max_tokens = min(base_max_tokens, 12000)  
+        else:
+            max_tokens = min(base_max_tokens, 8000)
 
         # Get model timeout - increase for complex questions
         base_timeout = 60.0
@@ -1060,17 +1080,7 @@ class TextHandler:
                     )
                 else:
                     # For subsequent messages, create a mock message object
-                    class MockMessage:
-                        def __init__(self, bot, chat_id):
-                            self.bot = bot
-                            self.chat_id = chat_id
-
-                        async def reply_text(self, text, **kwargs):
-                            return await self.bot.send_message(
-                                chat_id=self.chat_id, text=text, **kwargs
-                            )
-
-                    mock_message = MockMessage(context.bot, update.effective_chat.id)
+                    mock_message = self.MockMessage(context.bot, update.effective_chat.id)
                     last_message = await self.response_formatter.safe_send_message(
                         mock_message, text_to_send
                     )

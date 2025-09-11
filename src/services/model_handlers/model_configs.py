@@ -37,7 +37,7 @@ class ModelConfig:
     description: str = ""
     type: str = "general_purpose"
     capabilities: List[str] = field(default_factory=list)
-    supported_parameters: List[str] = field(default_factory=list)  # Direct access to OpenRouter supported_parameters
+    supported_parameters: List[str] = field(default_factory=list)
 
 
 class ModelConfigurations:
@@ -45,76 +45,76 @@ class ModelConfigurations:
 
     @staticmethod
     def get_all_models() -> Dict[str, ModelConfig]:
-        """Get all available model configurations from JSON file."""
+        """Get all available model configurations from JSON file, merged with hardcoded models."""
+        models = {}
         try:
             models_file = os.path.join(os.path.dirname(__file__), "..", "..", "..", "models.json")
-            if not os.path.exists(models_file):
-                # Fallback to hardcoded models if JSON file doesn't exist
-                return ModelConfigurations._get_hardcoded_models()
-
-            with open(models_file, "r", encoding="utf-8") as f:
-                models_data = json.load(f)
-
-            models = {}
-            for model_data in models_data:
-                model_id = model_data.get("id", "")
-                if not model_id:
-                    continue
-
-                # Determine provider from model ID
-                provider = ModelConfigurations._determine_provider_from_id(model_id)
-
-                # Extract capabilities from description and supported_parameters
-                capabilities = ModelConfigurations._extract_capabilities_from_model_data(
-                    model_data
-                )
-
-                # Determine model type from capabilities
-                model_type = ModelConfigurations._determine_model_type(capabilities)
-
-                # Create ModelConfig
-                config = ModelConfig(
-                    model_id=model_id,
-                    display_name=model_data.get("name", model_id),
-                    provider=provider,
-                    openrouter_model_key=model_id if provider == Provider.OPENROUTER else None,
-                    description=model_data.get("description", ""),
-                    type=model_type,
-                    capabilities=capabilities,
-                    supported_parameters=model_data.get("supported_parameters", []),  # Add supported_parameters
-                    system_message=ModelConfigurations._generate_system_message(model_id, model_data.get("name", "")),
-                    indicator_emoji=ModelConfigurations._get_indicator_emoji(provider, model_type),
-                )
-                models[model_id] = config
-
-            return models
-
+            if os.path.exists(models_file):
+                with open(models_file, "r", encoding="utf-8") as f:
+                    models_data = json.load(f)
+                
+                for model_data in models_data:
+                    model_id = model_data.get("id", "")
+                    if not model_id:
+                        continue
+                    
+                    # Determine provider from model ID
+                    provider = ModelConfigurations._determine_provider_from_id(model_id)
+                    
+                    # Extract capabilities from description and supported_parameters
+                    capabilities = ModelConfigurations._extract_capabilities_from_model_data(model_data)
+                    
+                    # Determine model type from capabilities
+                    model_type = ModelConfigurations._determine_model_type(capabilities)
+                    
+                    # Create ModelConfig
+                    config = ModelConfig(
+                        model_id=model_id,
+                        display_name=model_data.get("name", model_id),
+                        provider=provider,
+                        openrouter_model_key=model_id if provider == Provider.OPENROUTER else None,
+                        description=model_data.get("description", ""),
+                        type=model_type,
+                        capabilities=capabilities,
+                        supported_parameters=model_data.get("supported_parameters", []),
+                        system_message=ModelConfigurations._generate_system_message(model_id, model_data.get("name", "")),
+                        indicator_emoji=ModelConfigurations._get_indicator_emoji(provider, model_type),
+                    )
+                    models[model_id] = config
         except (json.JSONDecodeError, FileNotFoundError, KeyError) as e:
             print(f"Warning: Failed to load models from JSON: {e}. Using hardcoded models.")
             return ModelConfigurations._get_hardcoded_models()
+        
+        # Merge with hardcoded models (hardcoded models will be overridden if present in JSON)
+        models.update(ModelConfigurations._get_hardcoded_models())
+        return models
 
     @staticmethod
     def _get_hardcoded_models() -> Dict[str, ModelConfig]:
         """Fallback hardcoded models when JSON loading fails."""
+        gemini_config = ModelConfig(
+            model_id="gemini",
+            display_name="Gemini 2.5 Flash",
+            provider=Provider.GEMINI,
+            indicator_emoji="✨",
+            system_message="You are Gemini, a helpful AI assistant created by Google. Be concise, helpful, and accurate.",
+            supports_images=True,
+            supports_documents=True,
+            supported_parameters=["tools", "long_context"],
+            description="Google's latest multimodal AI model",
+            type="multimodal",
+            capabilities=[
+                "supports_images",
+                "supports_documents",
+                "long_context",
+                "general_purpose",
+            ],
+        )
+        
         return {
             # Gemini Models
-            "gemini": ModelConfig(
-                model_id="gemini",
-                display_name="Gemini 2.5 Flash",
-                provider=Provider.GEMINI,
-                indicator_emoji="✨",
-                system_message="You are Gemini, a helpful AI assistant created by Google. Be concise, helpful, and accurate.",
-                supports_images=True,
-                supports_documents=True,
-                description="Google's latest multimodal AI model",
-                type="multimodal",
-                capabilities=[
-                    "supports_images",
-                    "supports_documents",
-                    "long_context",
-                    "general_purpose",
-                ],
-            ),
+            "gemini": gemini_config,
+            "gemini-2.5-flash": gemini_config,  # Alias for API compatibility
             # DeepSeek Models
             "deepseek": ModelConfig(
                 model_id="deepseek",
@@ -124,7 +124,57 @@ class ModelConfigurations:
                 system_message="You are DeepSeek, an advanced reasoning AI model that excels at complex problem-solving.",
                 description="Advanced reasoning model with strong analytical capabilities",
                 type="reasoning",
+                max_tokens=8000,  # Fixed: Reduced from 32000 to avoid token limit errors
                 capabilities=["reasoning_capable", "long_context", "general_purpose", "tool_calling"],
+            ),
+            # OpenRouter Models - Added missing models from fallback chains
+            "deepseek-chat-v3-0324": ModelConfig(
+                model_id="deepseek-chat-v3-0324",
+                display_name="DeepSeek Chat V3",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="deepseek/deepseek-chat-v3-0324:free",
+                indicator_emoji="🧠",
+                system_message="You are DeepSeek Chat V3, an advanced conversational AI model.",
+                description="Fast and efficient conversational model",
+                type="general_purpose",
+                max_tokens=8000,
+                capabilities=["general_purpose", "fast_response"],
+            ),
+            "llama4_maverick": ModelConfig(
+                model_id="llama4_maverick",
+                display_name="Llama 4 Maverick",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="meta-llama/llama-4-maverick-17b-instruct:free",
+                indicator_emoji="🦙",
+                system_message="You are Llama 4 Maverick, an advanced AI model by Meta.",
+                description="Meta's latest Llama model with enhanced capabilities",
+                type="general_purpose",
+                max_tokens=16000,
+                capabilities=["general_purpose", "long_context"],
+            ),
+            "deepseek-r1-0528": ModelConfig(
+                model_id="deepseek-r1-0528",
+                display_name="DeepSeek R1 0528",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="deepseek/deepseek-r1-0528:free",
+                indicator_emoji="🧠",
+                system_message="You are DeepSeek R1 0528, an advanced reasoning AI model.",
+                description="DeepSeek's reasoning model with enhanced analytical capabilities",
+                type="reasoning",
+                max_tokens=8000,
+                capabilities=["reasoning_capable", "general_purpose"],
+            ),
+            "deepseek-r1-distill-llama-70b": ModelConfig(
+                model_id="deepseek-r1-distill-llama-70b",
+                display_name="DeepSeek R1 Distill Llama 70B",
+                provider=Provider.OPENROUTER,
+                openrouter_model_key="deepseek/deepseek-r1-distill-llama-70b:free",
+                indicator_emoji="🧠",
+                system_message="You are DeepSeek R1 Distill Llama 70B, a distilled reasoning model.",
+                description="Distilled version of DeepSeek R1 with Llama 70B architecture",
+                type="reasoning",
+                max_tokens=8000,
+                capabilities=["reasoning_capable", "long_context"],
             ),
         }
 
@@ -383,6 +433,10 @@ class ModelConfigurations:
         """Get OpenRouter model key with fallback to reliable alternatives"""
         if not isinstance(model_id, str) or not model_id.strip():
             raise ValueError("Invalid model_id: must be a non-empty string")
+        
+        # If the model_id is already a valid OpenRouter model key (contains / and :free), return it as-is
+        if "/" in model_id and (":free" in model_id or model_id in ["gemini", "deepseek"]):
+            return model_id
         
         # Primary mapping for direct model matches
         model_map = {

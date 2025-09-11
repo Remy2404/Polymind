@@ -30,51 +30,45 @@ class ModelFallbackHandler:
         self.fallback_map = {
             # DeepSeek R1 variants fallback chain - prioritize more stable models
             "deepseek-r1-0528": [
-                "deepseek-r1-zero",
                 "deepseek-r1-distill-llama-70b",
                 "deepseek-chat-v3-0324",
-                "llama4_maverick",
+                "deepseek",
                 "gemini",
             ],
             "deepseek-r1": [
                 "deepseek-r1-0528",
-                "deepseek-r1-zero",
                 "deepseek-r1-distill-llama-70b",
                 "deepseek-chat-v3-0324",
-                "qwen3-32b-a3b",
-                "mistral-small-3-1",
-            ],
-            "deepseek-r1-zero": [
-                "deepseek-r1-distill-llama-70b",
-                "deepseek-chat-v3-0324",
-                "qwen3-32b-a3b",
-                "mistral-small-3-1",
-                "llama-3.1-8b",
+                "deepseek",
+                "gemini",
             ],
             "deepseek-r1-distill-llama-70b": [
                 "deepseek-r1-0528",
-                "deepseek-r1-zero",
                 "deepseek-chat-v3-0324",
-                "llama4_maverick",
+                "deepseek",
+                "gemini",
             ],
             "deepseek-chat-v3-0324": [
                 "deepseek-r1-distill-llama-70b",
-                "deepseek-r1-zero",
+                "deepseek-r1-0528",
+                "deepseek",
+                "gemini",
+            ],
+            # Standard fallback for common models
+            "gemini": [
+                "deepseek",
+                "deepseek-chat-v3-0324",
                 "llama4_maverick",
             ],
-            # Qwen models fallback to clean models
-            "qwen3-235b": [
+            "deepseek": [
+                "gemini",
                 "deepseek-chat-v3-0324",
-                "qwen3-32b-a3b",
                 "llama4_maverick",
-                "deepseek-r1-zero",
-                "mistral-small-3-1",
             ],
-            "qwen3-32b-a3b": [
+            "llama4_maverick": [
                 "deepseek-chat-v3-0324",
-                "qwen3-235b",
-                "llama4_maverick",
-                "deepseek-r1-zero",
+                "deepseek",
+                "gemini",
             ],
         }
 
@@ -92,11 +86,10 @@ class ModelFallbackHandler:
         return self.fallback_map.get(
             primary_model,
             [
-                "deepseek-r1-zero",
-                "qwen3-32b-a3b",
-                "mistral-small-3-1",
-                "llama-3.1-8b",
                 "gemini",
+                "deepseek",
+                "deepseek-chat-v3-0324",
+                "llama4_maverick",
             ],
         )
 

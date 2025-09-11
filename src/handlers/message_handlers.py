@@ -96,7 +96,7 @@ class MessageHandlers:
         self.logger.info(f"Free OpenRouter models available: {len(free_models)}")
 
         # Verify some commonly used models are available
-        common_models = ["llama-3.3-8b", "deepseek-r1-zero", "gemini", "deepseek"]
+        common_models = ["llama-3.3-8b", "gemini", "deepseek"]
         for model_id in common_models:
             self.log_model_verification(model_id)
 

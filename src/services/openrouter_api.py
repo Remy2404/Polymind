@@ -100,8 +100,17 @@ class OpenRouterAPI:
         timeout: float = 300.0,
     ) -> Optional[str]:
         try:
+            # Validate model parameter
+            if not model or not isinstance(model, str) or not model.strip():
+                self.logger.error("Invalid model parameter: must be a non-empty string")
+                return "Error: Invalid model specified"
+
             # Get model with fallback support from centralized config
             openrouter_model = ModelConfigurations.get_model_with_fallback(model)
+
+            if not openrouter_model or not isinstance(openrouter_model, str) or not openrouter_model.strip():
+                self.logger.error(f"Invalid OpenRouter model key returned for {model}: {openrouter_model}")
+                return f"Error: Could not determine model for {model}"
 
             system_message = self._build_system_message(model, context)
             messages = [{"role": "system", "content": system_message}]
@@ -249,10 +258,10 @@ class OpenRouterAPI:
             self.logger.info(f"  {model_id} -> {openrouter_key}")
         self.logger.info(f"Total models loaded: {len(self.available_models)}")
 
-    async def __aenter__(self):
-        """Async context manager entry."""
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        await self.close()
+    def get_model_indicator(self) -> str:
+        """Get the model indicator emoji and name for OpenRouter models."""
+        # Get the model configuration to determine the indicator
+        model_config = ModelConfigurations.get_all_models().get("openrouter")
+        if model_config and model_config.indicator_emoji:
+            return f"{model_config.indicator_emoji} OpenRouter"
+        return "🤖 OpenRouter"

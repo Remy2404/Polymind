@@ -82,20 +82,15 @@ class DeepSeekLLM:
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
-        max_tokens: int = 32000,
-        top_p: float = 0.9,
-        frequency_penalty: float = 0.0,
-        presence_penalty: float = 0.0,
-    ) -> Optional[str]:
+        max_tokens: int = 4000,  # Reduced from 32000 to stay within 8193 limit
+        timeout: float = 180.0,
+    ) -> str:
         """Generate text from a prompt using the provided message list."""
         # Generate response using the provided messages list
         response = await self.generate_chat_response(
             messages,
             temperature=temperature,
             max_tokens=max_tokens,
-            top_p=top_p,
-            frequency_penalty=frequency_penalty,
-            presence_penalty=presence_penalty,
         )
 
         return response
@@ -104,7 +99,7 @@ class DeepSeekLLM:
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
-        max_tokens: int = 32000,
+        max_tokens: int = 4000,  # Reduced from 32000 to stay within 8193 limit
         top_p: float = 0.9,
         frequency_penalty: float = 0.0,
         presence_penalty: float = 0.0,
@@ -230,12 +225,47 @@ class DeepSeekLLM:
                 logger.error(f"Error streaming text with DeepSeek LLM: {str(e)}")
                 yield f"Error: {str(e)}"
 
-    async def _add_guidelines(
-        self, messages: List[Dict[str, str]]
-    ) -> List[Dict[str, str]]:
-        """Add response style guidelines to the messages."""
-        # Simply return the original messages without adding guidelines
-        return messages.copy()
+    async def generate_response(
+        self,
+        prompt: str,
+        context: Optional[List[Dict]] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4000,
+        **kwargs
+    ) -> Optional[str]:
+        """
+        Generate response method that matches the expected interface for fallback handler.
+        This method converts the prompt and context into the expected message format.
+        """
+        # Convert prompt and context to messages format
+        messages = []
+
+        # Add context messages if available
+        if context:
+            for msg in context:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if content:
+                    messages.append({"role": role, "content": content})
+
+        # Add the current prompt
+        if prompt:
+            messages.append({"role": "user", "content": prompt})
+
+        # If no messages, return None
+        if not messages:
+            return None
+
+        # Use the existing generate_chat_response method
+        return await self.generate_chat_response(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+    def get_model_indicator(self) -> str:
+        """Get the model indicator emoji and name for DeepSeek models."""
+        return "🧠 DeepSeek"
 
 
 # Initialize the DeepSeekLLM instance
