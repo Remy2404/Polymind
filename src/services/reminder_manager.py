@@ -27,7 +27,7 @@ class ReminderManager:
         while True:
             try:
                 await self.check_reminders()
-                await asyncio.sleep(60)  # Check every minute
+                await asyncio.sleep(60)
             except Exception as e:
                 self.logger.error(f"Error in reminder check: {str(e)}")
 

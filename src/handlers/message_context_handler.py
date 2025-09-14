@@ -17,21 +17,16 @@ class MessageContextHandler:
     ) -> Tuple[Optional[str], Optional[int]]:
         """
         Extract quoted text and message ID from a reply message.
-
         Args:
             message: The telegram Message object
-
         Returns:
             A tuple containing (quoted_text, quoted_message_id)
             Both can be None if there is no reply
         """
         if not message or not message.reply_to_message:
             return None, None
-
         quoted_message_id = message.reply_to_message.message_id
         quoted_text = None
-
-        # Extract content based on the message type
         if message.reply_to_message.text:
             quoted_text = message.reply_to_message.text
             self.logger.info(f"User is replying to text message: {quoted_text[:50]}...")
@@ -59,32 +54,26 @@ class MessageContextHandler:
             )
         else:
             quoted_text = "[Message of unsupported type]"
-
         return quoted_text, quoted_message_id
 
     def format_prompt_with_quote(self, prompt: str, quoted_text: str) -> str:
         """
         Format user prompt by including the quoted message context.
-
         Args:
             prompt: The original user prompt/message
             quoted_text: The text that was quoted/replied to
-
         Returns:
             Enhanced prompt with quoted context
         """
         if not quoted_text:
             return prompt
-
         return f'The user is replying to this message: "{quoted_text}"\n\nUser\'s reply: {prompt}'
 
     def detect_reference_to_image(self, text: str) -> bool:
         """
         Detect if a message is referring to a previously shared image.
-
         Args:
             text: The message text to check
-
         Returns:
             True if the message appears to refer to an image
         """
@@ -156,16 +145,13 @@ class MessageContextHandler:
             "picture attachment",
             "img attachment",
         ]
-
         return any(keyword in text.lower() for keyword in image_related_keywords)
 
     def detect_reference_to_document(self, text: str) -> bool:
         """
         Detect if a message is referring to a previously shared document.
-
         Args:
             text: The message text to check
-
         Returns:
             True if the message appears to refer to a document
         """
@@ -219,7 +205,6 @@ class MessageContextHandler:
             "doc attachment",
             "pdf attachment",
         ]
-
         return any(keyword in text.lower() for keyword in document_related_keywords)
 
     def should_use_reply_format(self, quoted_text: str, quoted_message_id: int) -> bool:

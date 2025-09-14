@@ -21,7 +21,6 @@ class ModelHistoryManager:
     ):
         """
         Initialize the ModelHistoryManager.
-
         Args:
             memory_manager: MemoryManager instance to handle the underlying storage.
             user_model_manager: Optional UserModelManager for tracking model selection.
@@ -31,15 +30,10 @@ class ModelHistoryManager:
         if not self.memory_manager:
             logger.error("MemoryManager instance is required for ModelHistoryManager")
             raise ValueError("MemoryManager instance cannot be None")
-
-        # Use UserModelManager if provided
         self.user_model_manager = user_model_manager
         self.model_registry = model_registry
-
-        # Fallback internal tracking only used if user_model_manager is not provided
         self._user_model_selection = {}
         self._default_model = "gemini"
-
         logger.info(
             f"ModelHistoryManager initialized with {'external' if user_model_manager else 'internal'} model tracking"
         )
@@ -47,60 +41,44 @@ class ModelHistoryManager:
     def _get_conversation_id(self, user_id: int, model_id: Optional[str] = None) -> str:
         """
         Generate a unique conversation ID for a user and model.
-
         Args:
             user_id: User's unique identifier
             model_id: Optional model ID. If None, uses user's current model.
-
         Returns:
             A unique string identifier combining user and model.
         """
-        # If no model specified, use user's currently selected model
         if model_id is None:
             model_id = self.get_selected_model(user_id)
-
         return f"user_{user_id}_model_{model_id}"
 
     def get_selected_model(self, user_id: int) -> str:
         """
         Get the currently selected model for a user.
-
         Args:
             user_id: User's unique identifier
-
         Returns:
             Model ID string.
         """
-        # Prefer UserModelManager if available
         if self.user_model_manager:
             return self.user_model_manager.get_user_model(user_id)
-
-        # Otherwise use internal tracking
         return self._user_model_selection.get(user_id, self._default_model)
 
     def set_selected_model(self, user_id: int, model_id: str) -> bool:
         """
         Set the user's selected model.
-
         Args:
             user_id: User's unique identifier
             model_id: Model ID to select
-
         Returns:
             True if successful, False if model was invalid.
         """
-        # Prefer UserModelManager if available
         if self.user_model_manager:
             return self.user_model_manager.set_user_model(user_id, model_id)
-
-        # Otherwise use internal tracking
-        # If we have model_registry, validate the model first
         if self.model_registry and model_id not in self.model_registry.get_all_models():
             logger.warning(
                 f"Attempted to set invalid model {model_id} for user {user_id}"
             )
             return False
-
         self._user_model_selection[user_id] = model_id
         logger.info(f"User {user_id} switched to model: {model_id}")
         return True
@@ -110,55 +88,39 @@ class ModelHistoryManager:
     ) -> List[Dict[str, Any]]:
         """
         Get formatted conversation history for a user and model.
-
         Args:
             user_id: User's unique identifier
             max_messages: Maximum number of recent messages to retrieve
             model_id: Optional model ID. If None, uses user's current model.
-
         Returns:
             List of messages in format suitable for AI models.
         """
-        # If no model specified, use user's currently selected model
         if model_id is None:
             model_id = self.get_selected_model(user_id)
-
         conversation_id = self._get_conversation_id(user_id, model_id)
         logger.debug(
             f"Getting history for conversation_id: {conversation_id} (model: {model_id})"
         )
-
-        # Get messages from memory manager using proper async method
         try:
-            # Use get_short_term_memory which is an async method that properly loads from storage
             messages = await self.memory_manager.get_short_term_memory(
                 conversation_id, limit=max_messages
             )
-
-            # Format messages for AI consumption
             formatted_history = []
             for msg in messages:
-                # Get message attributes
                 sender = msg.get("sender", "")
                 content = msg.get("content", "")
-
-                # Skip empty messages
                 if not content or not content.strip():
                     continue
-
-                # Map senders to standard role format
                 role = (
                     "user"
                     if sender == str(user_id) or sender == "user"
                     else "assistant"
                 )
                 formatted_history.append({"role": role, "content": content})
-
             logger.info(
                 f"Retrieved {len(formatted_history)} history messages for user {user_id} with model {model_id}"
             )
             return formatted_history
-
         except Exception as e:
             logger.error(f"Error retrieving conversation history: {str(e)}")
             return []
@@ -172,40 +134,28 @@ class ModelHistoryManager:
     ) -> None:
         """
         Save a user-assistant message exchange.
-
         Args:
             user_id: User's unique identifier
             user_message: Content of user's message
             assistant_message: Content of assistant's response
             model_id: Optional model ID. If None, uses user's current model.
         """
-        # If no model specified, use user's currently selected model
         if model_id is None:
             model_id = self.get_selected_model(user_id)
-
         conversation_id = self._get_conversation_id(user_id, model_id)
         logger.debug(
             f"Saving message pair for conversation_id: {conversation_id} (model: {model_id})"
         )
-
         try:
-            # Save user message
             await self.memory_manager.add_user_message(
                 conversation_id, user_message, str(user_id)
             )
-
-            # Save assistant response
             await self.memory_manager.add_assistant_message(
                 conversation_id, assistant_message
             )
-
-            # Manage context window if needed
             if hasattr(self.memory_manager, "_maybe_manage_context_window"):
                 await self.memory_manager._maybe_manage_context_window(conversation_id)
-
             logger.info(f"Saved message pair for user {user_id} with model {model_id}")
-
-            # Verify history was saved (optional)
             await self.verify_history_access(user_id, model_id)
         except Exception as e:
             logger.error(
@@ -222,40 +172,28 @@ class ModelHistoryManager:
     ) -> None:
         """
         Save an image interaction in the conversation history.
-
         Args:
             user_id: User's unique identifier
             caption: Caption or description of the image
             assistant_response: Assistant's analysis or response to the image
             model_id: Optional model ID. If None, uses user's current model.
         """
-        # If no model specified, use user's currently selected model
         if model_id is None:
             model_id = self.get_selected_model(user_id)
-
         conversation_id = self._get_conversation_id(user_id, model_id)
         logger.debug(
             f"Saving image interaction for conversation_id: {conversation_id} (model: {model_id})"
         )
-
-        # Format image content for storage
         user_content = f"[Image with caption: {caption}]"
-
         try:
-            # Add user message with image
             await self.memory_manager.add_user_message(
                 conversation_id, user_content, str(user_id), message_type="image"
             )
-
-            # Add assistant response
             await self.memory_manager.add_assistant_message(
                 conversation_id, assistant_response
             )
-
-            # Manage context window if needed
             if hasattr(self.memory_manager, "_maybe_manage_context_window"):
                 await self.memory_manager._maybe_manage_context_window(conversation_id)
-
             logger.info(
                 f"Saved image interaction for user {user_id} with model {model_id}"
             )
@@ -270,36 +208,25 @@ class ModelHistoryManager:
     ) -> bool:
         """
         Verify that history is accessible for a user and model.
-
         Args:
             user_id: User's unique identifier
             model_id: Optional model ID. If None, uses user's current model.
-
         Returns:
             True if history is accessible and contains data.
         """
         try:
-            # If no model specified, use user's currently selected model
             if model_id is None:
                 model_id = self.get_selected_model(user_id)
-
             conversation_id = self._get_conversation_id(user_id, model_id)
-
-            # Use async method to properly check history
             messages = await self.memory_manager.get_short_term_memory(conversation_id)
             message_count = len(messages)
-
-            # Log verification results
             logger.info(
                 f"History verification for user {user_id} with model {model_id}: exists={message_count > 0}, message_count={message_count}"
             )
-
-            # Get sample of formatted history
             history = await self.get_history(user_id, max_messages=5, model_id=model_id)
             logger.debug(
                 f"Formatted history sample for user {user_id} with model {model_id}: {history}"
             )
-
             return message_count > 0
         except Exception as e:
             logger.error(
@@ -316,20 +243,15 @@ class ModelHistoryManager:
     ) -> None:
         """
         Clear conversation history for a user.
-
         Args:
             user_id: User's unique identifier
             model_id: Optional model ID. If None, uses user's current model.
             clear_all_models: If True, clears history for all models for this user.
         """
         if clear_all_models:
-            # Get all model IDs to clear
             model_ids = []
-
-            # If we have model_registry, get all models from there
             if self.model_registry:
                 model_ids = list(self.model_registry.get_all_models().keys())
-            # Otherwise check internal tracking + use current model
             else:
                 if self.user_model_manager:
                     current_model = self.user_model_manager.get_user_model(user_id)
@@ -337,8 +259,6 @@ class ModelHistoryManager:
                     current_model = self._user_model_selection.get(
                         user_id, self._default_model
                     )
-
-                # Include current model and any previously used models
                 if (
                     hasattr(self, "_user_model_selection")
                     and user_id in self._user_model_selection
@@ -351,15 +271,9 @@ class ModelHistoryManager:
                         model_ids.extend(
                             self.user_model_manager.user_model_history[user_id]
                         )
-
-                # Add current and default models
                 model_ids.append(current_model)
                 model_ids.append(self._default_model)
-
-                # Remove duplicates
                 model_ids = list(set(model_ids))
-
-            # Clear history for each model
             cleared_count = 0
             for mid in model_ids:
                 conversation_id = self._get_conversation_id(user_id, mid)
@@ -373,20 +287,16 @@ class ModelHistoryManager:
                     logger.error(
                         f"Error clearing history for user {user_id} with model {mid}: {e}"
                     )
-
             logger.info(
                 f"Cleared {cleared_count}/{len(model_ids)} model histories for user {user_id}"
             )
         else:
-            # Clear just the specific model (or current model if none specified)
             if model_id is None:
                 model_id = self.get_selected_model(user_id)
-
             conversation_id = self._get_conversation_id(user_id, model_id)
             logger.info(
                 f"Clearing history for conversation_id: {conversation_id} (model: {model_id})"
             )
-
             try:
                 cleared = await self.memory_manager.clear_conversation(conversation_id)
                 if cleared:

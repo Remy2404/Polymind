@@ -30,13 +30,10 @@ class ModelHandlerFactory:
         openrouter_api: OpenRouterAPI = None,
     ) -> ModelHandler:
         if model_name not in cls._handlers:
-            # Get model configuration (fresh call to ensure latest configs)
             model_configs = ModelConfigurations.get_all_models()
             model_config = model_configs.get(model_name)
             if not model_config:
                 raise ValueError(f"Unknown model: {model_name}")
-
-            # Get the appropriate API instance based on provider
             api_instance = None
             if model_config.provider == Provider.GEMINI:
                 if gemini_api is None:
@@ -58,10 +55,7 @@ class ModelHandlerFactory:
                 api_instance = deepseek_api
             else:
                 raise ValueError(f"Unsupported provider: {model_config.provider}")
-
-            # Return the API instance directly (removing UnifiedModelHandler)
             cls._handlers[model_name] = api_instance
-
         return cls._handlers[model_name]
 
     @classmethod
@@ -72,8 +66,6 @@ class ModelHandlerFactory:
     @classmethod
     def add_custom_model(cls, model_config: ModelConfig) -> None:
         """Add a custom model configuration."""
-        # Note: This method is deprecated since we now use fresh configs
-        # Clear handler cache when adding custom models
         cls.clear_cache()
 
     @classmethod

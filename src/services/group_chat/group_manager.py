@@ -9,7 +9,6 @@ from typing import Dict, List, Optional, Set, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import defaultdict
-
 from telegram import Update, Chat, User, Message
 from telegram.ext import ContextTypes
 
@@ -83,7 +82,6 @@ class GroupConversationContext:
 class GroupManager:
     """
     Manages group chat interactions, shared memory, and collaborative features.
-
     Features:
     - Shared conversation memory across group members
     - Thread-based conversations
@@ -96,23 +94,16 @@ class GroupManager:
         self.user_data_manager = user_data_manager
         self.conversation_manager = conversation_manager
         self.logger = logging.getLogger(__name__)
-
-        # Group contexts and caches
         self.group_contexts: Dict[int, GroupConversationContext] = {}
         self.active_threads: Dict[str, GroupThread] = {}
         self.participant_cache: Dict[int, Dict[int, GroupParticipant]] = defaultdict(
             dict
         )
-
-        # Activity tracking
         self.message_buffers: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
         self.typing_indicators: Dict[int, Set[int]] = defaultdict(set)
-
-        # Settings
         self.max_shared_memory_size = 50
         self.thread_timeout_hours = 24
         self.max_recent_messages = 100
-
         self.logger.info("GroupManager initialized")
 
     async def handle_group_message(
@@ -120,7 +111,6 @@ class GroupManager:
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Handle incoming group messages with intelligent context management.
-
         Returns:
             Tuple of (processed_message, context_metadata)
         """
@@ -128,47 +118,26 @@ class GroupManager:
             chat = update.effective_chat
             user = update.effective_user
             message = update.message
-
-            # Ensure this is a group chat
             if not chat or chat.type not in ["group", "supergroup"]:
                 return message_text, {}
-
-            # Ensure message exists
             if not message:
                 return message_text, {}
-
-            # Fallback to message.from_user if effective_user is not set
             if not user:
                 user = message.from_user
-
             if not user:
                 return message_text, {}
-
-            # Get or create group context
             group_context = await self._get_or_create_group_context(chat, user)
-
-            # Update participant activity
             await self._update_participant_activity(group_context, user, message)
-
-            # Determine conversation thread
             thread = await self._get_conversation_thread(group_context, message)
-
-            # Build enhanced context
             enhanced_context = await self._build_enhanced_context(
                 group_context, thread, message, message_text
             )
-
-            # Process message with group context
             processed_message = await self._process_group_message(
                 message_text, enhanced_context, group_context, thread
             )
-
-            # Update shared memory
             await self._update_shared_memory(
                 group_context, thread, message, processed_message
             )
-
-            # Generate context metadata
             metadata = {
                 "group_id": chat.id,
                 "thread_id": thread.thread_id if thread else None,
@@ -179,9 +148,7 @@ class GroupManager:
                 "shared_topics": group_context.active_topics[:5],
                 "response_context": enhanced_context,
             }
-
             return processed_message, metadata
-
         except Exception as e:
             self.logger.error(f"Error handling group message: {e}")
             return message_text, {}
@@ -191,9 +158,7 @@ class GroupManager:
     ) -> GroupConversationContext:
         """Get or create group conversation context."""
         group_id = chat.id
-
         if group_id not in self.group_contexts:
-            # Create new group context
             self.group_contexts[group_id] = GroupConversationContext(
                 group_id=group_id,
                 group_name=chat.title or f"Group {group_id}",
@@ -206,12 +171,8 @@ class GroupManager:
                 updated_at=datetime.now(),
                 settings=await self._get_group_settings(group_id),
             )
-
             self.logger.info(f"Created new group context for {group_id}")
-
         group_context = self.group_contexts[group_id]
-
-        # Add or update participant if user is available
         if user and getattr(user, "id", None) is not None:
             if user.id not in group_context.participants:
                 participant = GroupParticipant(
@@ -226,46 +187,36 @@ class GroupManager:
                 )
                 group_context.participants[user.id] = participant
                 self.logger.info(f"Added new participant {user.id} to group {group_id}")
-
         return group_context
 
     async def _get_conversation_thread(
         self, group_context: GroupConversationContext, message: Message
     ) -> Optional[GroupThread]:
         """Determine or create conversation thread for the message."""
-        # Check if replying to a message (creates thread context)
         if getattr(message, "reply_to_message", None):
-            # Create thread ID based on original message
             original_msg_id = message.reply_to_message.message_id
             thread_id = f"{group_context.group_id}_{original_msg_id}"
-
             if thread_id not in group_context.threads:
-                # Create new thread
                 from_user_id = getattr(message.from_user, "id", None)
                 participants_set: Set[int] = set()
                 if from_user_id is not None:
                     participants_set.add(from_user_id)
-
                 group_context.threads[thread_id] = GroupThread(
                     thread_id=thread_id,
                     group_id=group_context.group_id,
-                    topic=None,  # Will be inferred from conversation
+                    topic=None,
                     participants=participants_set,
                     created_at=datetime.now(),
                     last_message_at=datetime.now(),
                     context_scope=ContextScope.THREAD_LOCAL,
                 )
-
             thread = group_context.threads[thread_id]
             from_user_id = getattr(message.from_user, "id", None)
             if from_user_id is not None:
                 thread.participants.add(from_user_id)
             thread.last_message_at = datetime.now()
             thread.message_count += 1
-
             return thread
-
-        # Check for ongoing threads based on message timing and participants
         recent_cutoff = datetime.now() - timedelta(minutes=10)
         from_user_id = getattr(message.from_user, "id", None)
         for thread in group_context.threads.values():
@@ -277,7 +228,6 @@ class GroupManager:
                 thread.last_message_at = datetime.now()
                 thread.message_count += 1
                 return thread
-
         return None
 
     async def _build_enhanced_context(
@@ -289,37 +239,26 @@ class GroupManager:
     ) -> str:
         """Build enhanced context for AI processing."""
         context_parts = []
-
-        # Group information
         context_parts.append(f"📍 Group: {group_context.group_name}")
         context_parts.append(
             f"👥 Active Participants: {len(group_context.participants)}"
         )
-
-        # Thread context if available
         if thread:
             context_parts.append(f"🧵 Thread: {thread.topic or 'Conversation thread'}")
             context_parts.append(f"💬 Thread participants: {len(thread.participants)}")
-
-        # Shared topics and memory
         if group_context.active_topics:
             topics = ", ".join(group_context.active_topics[:3])
             context_parts.append(f"🔖 Active topics: {topics}")
-
-        # Recent conversation context
         if group_context.recent_messages:
             context_parts.append("\n📚 Recent conversation context:")
             for msg in group_context.recent_messages[-3:]:
                 user_name = msg.get("user_name", "Unknown")
                 content = msg.get("content", "")[:100]
                 context_parts.append(f"  {user_name}: {content}")
-
-        # Shared memory highlights
         if group_context.shared_memory:
             context_parts.append("\n🧠 Shared group knowledge:")
             for key, value in list(group_context.shared_memory.items())[:3]:
                 context_parts.append(f"  {key}: {str(value)[:80]}")
-
         return "\n".join(context_parts)
 
     async def _process_group_message(
@@ -330,18 +269,13 @@ class GroupManager:
         thread: Optional[GroupThread],
     ) -> str:
         """Process message with group-aware AI context."""
-        # Enhance the message with group context
         scope = thread.context_scope.value if thread else "group_shared"
-
         enhanced_message = f"""
 {enhanced_context}
-
 📝 Current message: {message_text}
 🎯 Context scope: {scope}
-
 Please respond considering the group conversation context and shared knowledge.
 """
-
         return enhanced_message
 
     async def _update_shared_memory(
@@ -352,7 +286,6 @@ Please respond considering the group conversation context and shared knowledge.
         processed_message: str,
     ):
         """Update shared conversation memory."""
-        # Add to recent messages
         message_data = {
             "user_id": message.from_user.id,
             "user_name": message.from_user.full_name or message.from_user.first_name,
@@ -360,29 +293,19 @@ Please respond considering the group conversation context and shared knowledge.
             "timestamp": datetime.now().isoformat(),
             "thread_id": thread.thread_id if thread else None,
         }
-
         group_context.recent_messages.append(message_data)
-
-        # Maintain recent messages limit
         if len(group_context.recent_messages) > self.max_recent_messages:
             group_context.recent_messages = group_context.recent_messages[
                 -self.max_recent_messages :
             ]
-
-        # Extract and update topics (simple keyword extraction)
         await self._extract_and_update_topics(group_context, message.text or "")
-
-        # Update group context timestamp
         group_context.updated_at = datetime.now()
 
     async def _extract_and_update_topics(
         self, group_context: GroupConversationContext, text: str
     ):
         """Extract and update active topics from conversation."""
-        # Simple topic extraction (can be enhanced with NLP)
         words = text.lower().split()
-
-        # Filter for potential topics (words longer than 3 chars, not common words)
         common_words = {
             "the",
             "and",
@@ -426,19 +349,14 @@ Please respond considering the group conversation context and shared knowledge.
             "too",
             "use",
         }
-
         potential_topics = [
             word
             for word in words
             if len(word) > 3 and word not in common_words and word.isalpha()
         ]
-
-        # Update active topics
-        for topic in potential_topics[:5]:  # Limit new topics
+        for topic in potential_topics[:5]:
             if topic not in group_context.active_topics:
                 group_context.active_topics.append(topic)
-
-        # Maintain topic list size
         if len(group_context.active_topics) > 20:
             group_context.active_topics = group_context.active_topics[-20:]
 
@@ -455,7 +373,6 @@ Please respond considering the group conversation context and shared knowledge.
     async def _get_group_settings(self, group_id: int) -> Dict[str, Any]:
         """Get group-specific settings."""
         try:
-            # Try to load from database
             group_data = await self.user_data_manager.get_user_data(group_id)
             return group_data.get(
                 "group_settings",
@@ -481,17 +398,13 @@ Please respond considering the group conversation context and shared knowledge.
         """Get analytics for a group."""
         if group_id not in self.group_contexts:
             return {}
-
         group_context = self.group_contexts[group_id]
-
-        # Calculate statistics
         total_messages = sum(
             p.message_count for p in group_context.participants.values()
         )
         active_participants = sum(
             1 for p in group_context.participants.values() if p.is_active
         )
-
         return {
             "group_name": group_context.group_name,
             "total_participants": len(group_context.participants),
@@ -510,16 +423,13 @@ Please respond considering the group conversation context and shared knowledge.
         """Clean up inactive threads to maintain performance."""
         if group_id not in self.group_contexts:
             return
-
         group_context = self.group_contexts[group_id]
         cutoff_time = datetime.now() - timedelta(hours=self.thread_timeout_hours)
-
         inactive_threads = [
             thread_id
             for thread_id, thread in group_context.threads.items()
             if thread.last_message_at < cutoff_time
         ]
-
         for thread_id in inactive_threads:
             group_context.threads[thread_id].is_active = False
             self.logger.info(f"Deactivated inactive thread {thread_id}")
@@ -529,19 +439,15 @@ Please respond considering the group conversation context and shared knowledge.
         try:
             if group_id in self.group_contexts:
                 self.group_contexts[group_id].settings["context_scope"] = scope.value
-
-                # Save to database
                 await self.user_data_manager.update_user_data(
                     group_id, {"group_settings.context_scope": scope.value}
                 )
-
                 self.logger.info(
                     f"Updated context scope for group {group_id} to {scope.value}"
                 )
                 return True
         except Exception as e:
             self.logger.error(f"Error setting context scope for group {group_id}: {e}")
-
         return False
 
     def get_active_groups(self) -> List[int]:
@@ -552,9 +458,7 @@ Please respond considering the group conversation context and shared knowledge.
         """Export group context for backup or analysis."""
         if group_id not in self.group_contexts:
             return None
-
         group_context = self.group_contexts[group_id]
-
         return {
             "group_id": group_context.group_id,
             "group_name": group_context.group_name,

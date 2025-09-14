@@ -35,8 +35,6 @@ class ProgressIndicator:
             "description": description,
             "start_time": time.time(),
         }
-
-        # Send initial progress message
         progress_text = f"{self.progress_symbols[0]} {description}\n▱▱▱▱▱▱▱▱▱▱ 0%"
         await message.edit_text(progress_text)
         return operation_id
@@ -47,25 +45,16 @@ class ProgressIndicator:
         """Update progress for an operation"""
         if operation_id not in self.active_operations:
             return
-
         operation = self.active_operations[operation_id]
         operation["current_step"] = step
-
-        # Calculate progress percentage
         progress_percent = min(100, int((step / operation["total_steps"]) * 100))
-
-        # Create progress bar
         filled_bars = int(progress_percent / 10)
         empty_bars = 10 - filled_bars
         progress_bar = "▰" * filled_bars + "▱" * empty_bars
-
-        # Select appropriate progress symbol
         symbol_index = min(
             len(self.progress_symbols) - 1, step % len(self.progress_symbols)
         )
         symbol = self.progress_symbols[symbol_index]
-
-        # Calculate estimated time
         elapsed = time.time() - operation["start_time"]
         if step > 0:
             estimated_total = (elapsed / step) * operation["total_steps"]
@@ -73,13 +62,10 @@ class ProgressIndicator:
             time_text = f" (⏱️ {remaining:.0f}s remaining)" if remaining > 5 else ""
         else:
             time_text = ""
-
-        # Build progress text
         description = status_text or operation["description"]
         progress_text = (
             f"{symbol} {description}\n{progress_bar} {progress_percent}%{time_text}"
         )
-
         try:
             await operation["message"].edit_text(progress_text)
         except Exception as e:
@@ -91,21 +77,15 @@ class ProgressIndicator:
         """Complete a progress operation"""
         if operation_id not in self.active_operations:
             return
-
         operation = self.active_operations[operation_id]
         symbol = "✅" if success else "❌"
-
         elapsed = time.time() - operation["start_time"]
         time_text = f" (⏱️ {elapsed:.1f}s)"
-
         final_text = f"{symbol} {final_message}{time_text}"
-
         try:
             await operation["message"].edit_text(final_text)
         except Exception as e:
             logger.warning(f"Failed to complete progress: {e}")
-
-        # Clean up
         del self.active_operations[operation_id]
 
 
@@ -158,8 +138,6 @@ class SmartSuggestions:
         """Generate smart suggestions based on user message and context"""
         message_lower = user_message.lower()
         suggestions = []
-
-        # Pattern-based suggestions
         for category, pattern_data in self.suggestion_patterns.items():
             if any(keyword in message_lower for keyword in pattern_data["keywords"]):
                 for suggestion in pattern_data["suggestions"]:
@@ -170,9 +148,7 @@ class SmartSuggestions:
                             "category": category,
                         }
                     )
-                break  # Use first matching category
-
-        # Context-based suggestions
+                break
         if context.get("has_media"):
             suggestions.extend(
                 [
@@ -186,7 +162,6 @@ class SmartSuggestions:
                     },
                 ]
             )
-
         if context.get("is_group"):
             suggestions.extend(
                 [
@@ -197,7 +172,6 @@ class SmartSuggestions:
                     {"text": "📝 Add to notes", "callback_data": "suggest_group_note"},
                 ]
             )
-
         if context.get("has_conversation_history"):
             suggestions.extend(
                 [
@@ -211,8 +185,7 @@ class SmartSuggestions:
                     },
                 ]
             )
-
-        return suggestions[:6]  # Limit to 6 suggestions
+        return suggestions[:6]
 
 
 class InteractiveMenus:
@@ -227,15 +200,11 @@ class InteractiveMenus:
     ) -> InlineKeyboardMarkup:
         """Create quick actions menu based on user context"""
         buttons = []
-
-        # Always available actions
         row1 = [
             InlineKeyboardButton("🤖 Switch Model", callback_data="quick_switch_model"),
             InlineKeyboardButton("⚙️ Settings", callback_data="quick_settings"),
         ]
         buttons.append(row1)
-
-        # Context-dependent actions
         row2 = []
         if context.get("can_generate_image"):
             row2.append(
@@ -243,39 +212,31 @@ class InteractiveMenus:
                     "🎨 Generate Image", callback_data="quick_gen_image"
                 )
             )
-
         if context.get("has_conversation"):
             row2.append(
                 InlineKeyboardButton("📊 Get Summary", callback_data="quick_summary")
             )
-
         if context.get("is_group"):
             row2.append(
                 InlineKeyboardButton(
                     "👥 Group Tools", callback_data="quick_group_tools"
                 )
             )
-
         if row2:
             buttons.append(row2)
-
-        # Smart actions based on recent activity
         row3 = []
         if context.get("recent_errors"):
             row3.append(
                 InlineKeyboardButton("🔧 Debug Help", callback_data="quick_debug")
             )
-
         if context.get("has_media"):
             row3.append(
                 InlineKeyboardButton(
                     "🔍 Analyze Media", callback_data="quick_analyze_media"
                 )
             )
-
         if row3:
             buttons.append(row3)
-
         return InlineKeyboardMarkup(buttons)
 
     def create_model_selection_carousel(
@@ -283,21 +244,15 @@ class InteractiveMenus:
     ) -> InlineKeyboardMarkup:
         """Create a carousel-style model selection menu"""
         buttons = []
-
-        # Calculate pagination
         start_idx = current_page * per_page
         end_idx = min(start_idx + per_page, len(models))
         page_models = models[start_idx:end_idx]
-
-        # Model buttons
         for model in page_models:
             button_text = f"{model.get('emoji', '🤖')} {model['display_name']}"
             callback_data = f"select_model_{model['model_id']}"
             buttons.append(
                 [InlineKeyboardButton(button_text, callback_data=callback_data)]
             )
-
-        # Navigation buttons
         nav_buttons = []
         if current_page > 0:
             nav_buttons.append(
@@ -305,33 +260,26 @@ class InteractiveMenus:
                     "⬅️ Previous", callback_data=f"model_page_{current_page - 1}"
                 )
             )
-
-        # Page indicator
         total_pages = (len(models) - 1) // per_page + 1
         nav_buttons.append(
             InlineKeyboardButton(
                 f"📄 {current_page + 1}/{total_pages}", callback_data="page_info"
             )
         )
-
         if end_idx < len(models):
             nav_buttons.append(
                 InlineKeyboardButton(
                     "➡️ Next", callback_data=f"model_page_{current_page + 1}"
                 )
             )
-
         if nav_buttons:
             buttons.append(nav_buttons)
-
-        # Additional options
         buttons.append(
             [
                 InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_main"),
                 InlineKeyboardButton("ℹ️ Model Info", callback_data="model_info"),
             ]
         )
-
         return InlineKeyboardMarkup(buttons)
 
     def create_group_collaboration_menu(
@@ -339,8 +287,6 @@ class InteractiveMenus:
     ) -> InlineKeyboardMarkup:
         """Create collaboration menu for group chats"""
         buttons = []
-
-        # Core collaboration features
         row1 = [
             InlineKeyboardButton(
                 "📝 Add Note", callback_data=f"group_add_note_{group_id}"
@@ -350,8 +296,6 @@ class InteractiveMenus:
             ),
         ]
         buttons.append(row1)
-
-        # Memory and context management
         row2 = [
             InlineKeyboardButton(
                 "🧠 Shared Memory", callback_data=f"group_memory_{group_id}"
@@ -361,8 +305,6 @@ class InteractiveMenus:
             ),
         ]
         buttons.append(row2)
-
-        # Advanced features (if user has permissions)
         if user_permissions.get("can_manage"):
             row3 = [
                 InlineKeyboardButton(
@@ -373,8 +315,6 @@ class InteractiveMenus:
                 ),
             ]
             buttons.append(row3)
-
-        # Quick actions
         row4 = [
             InlineKeyboardButton(
                 "🏃‍♂️ Quick Actions", callback_data=f"group_quick_{group_id}"
@@ -382,7 +322,6 @@ class InteractiveMenus:
             InlineKeyboardButton("🔙 Back", callback_data="back_to_chat"),
         ]
         buttons.append(row4)
-
         return InlineKeyboardMarkup(buttons)
 
     def create_context_aware_suggestions(
@@ -391,10 +330,7 @@ class InteractiveMenus:
         """Create suggestion buttons based on smart analysis"""
         if not suggestions:
             return None
-
         buttons = []
-
-        # Group suggestions into rows of 2
         for i in range(0, len(suggestions), 2):
             row = []
             for j in range(2):
@@ -408,12 +344,9 @@ class InteractiveMenus:
                     )
             if row:
                 buttons.append(row)
-
-        # Add dismiss button
         buttons.append(
             [InlineKeyboardButton("❌ Dismiss", callback_data="dismiss_suggestions")]
         )
-
         return InlineKeyboardMarkup(buttons)
 
 
@@ -436,23 +369,15 @@ class RichUIManager:
     ) -> Dict[str, Any]:
         """Enhance a message exchange with rich UI elements"""
         user_id = update.effective_user.id
-
-        # Generate smart suggestions
         smart_suggestions = self.suggestions.get_smart_suggestions(
             user_message, message_context
         )
-
-        # Create suggestion keyboard if relevant
         suggestion_keyboard = None
         if smart_suggestions:
             suggestion_keyboard = self.menus.create_context_aware_suggestions(
                 smart_suggestions
             )
-
-        # Create quick actions menu
         quick_actions = self.menus.create_quick_actions_menu(user_id, message_context)
-
-        # Prepare enhanced response
         enhanced_response = {
             "text": ai_response,
             "suggestion_keyboard": suggestion_keyboard,
@@ -460,7 +385,6 @@ class RichUIManager:
             "suggestions": smart_suggestions,
             "context": message_context,
         }
-
         return enhanced_response
 
     async def handle_long_operation(
@@ -474,35 +398,23 @@ class RichUIManager:
     ) -> Any:
         """Handle long-running operations with progress indication"""
         operation_id = f"{operation_name}_{int(time.time())}"
-
         try:
-            # Start progress
             await self.progress.start_progress(
                 operation_id,
                 progress_message,
                 len(steps),
                 f"Starting {operation_name}...",
             )
-
-            # Execute operation with progress updates
             for i, step_description in enumerate(steps):
                 await self.progress.update_progress(
                     operation_id, i + 1, step_description
                 )
-
-                # Simulate some work (replace with actual operation steps)
                 await asyncio.sleep(0.5)
-
-            # Execute the actual operation
             result = await operation_func(*args, **kwargs)
-
-            # Complete progress
             await self.progress.complete_progress(
                 operation_id, f"{operation_name} completed successfully!", success=True
             )
-
             return result
-
         except Exception as e:
             await self.progress.complete_progress(
                 operation_id, f"{operation_name} failed: {str(e)}", success=False
@@ -513,26 +425,17 @@ class RichUIManager:
         self, group_id: str, user_id: int, group_context: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Create collaborative interface for group interactions"""
-
-        # Get user permissions
         user_permissions = group_context.get("user_permissions", {})
-
-        # Create group collaboration menu
         collab_menu = self.menus.create_group_collaboration_menu(
             group_id, user_permissions
         )
-
-        # Prepare group status information
         participants = group_context.get("participants", [])
         recent_activity = group_context.get("recent_activity", [])
-
         status_text = "👥 **Group Collaboration Panel**\n\n"
         status_text += f"**Participants:** {len(participants)}\n"
         status_text += f"**Recent Activity:** {len(recent_activity)} messages\n"
-
         if group_context.get("active_topic"):
             status_text += f"**Current Topic:** {group_context['active_topic']}\n"
-
         interface = {
             "status_text": status_text,
             "collaboration_menu": collab_menu,
@@ -541,9 +444,7 @@ class RichUIManager:
                 "group collaboration", group_context
             ),
         }
-
         return interface
 
 
-# Global instance for easy access
 rich_ui = RichUIManager()

@@ -26,8 +26,6 @@ from datetime import datetime, timedelta
 from cachetools import TTLCache
 from typing import Optional
 from PIL import Image
-
-# Import all command modules
 from .commands import (
     BasicCommands,
     ImageCommands,
@@ -99,13 +97,9 @@ class CommandHandlers:
         self.image_handler = ImageGenerationHandler()
         self.deepseek_api = deepseek_api
         self.openrouter_api = openrouter_api
-
-        # Create SuperSimpleAPIManager for model handling
         self.api_manager = SuperSimpleAPIManager(
             gemini_api, deepseek_api, openrouter_api
         )
-
-        # Initialize command modules
         self.basic_commands = BasicCommands(user_data_manager, telegram_logger)
         self.image_commands = ImageCommands(
             flux_lora_image_generator,
@@ -127,18 +121,13 @@ class CommandHandlers:
             self.api_manager, user_data_manager, telegram_logger
         )
         self.group_commands = GroupCommands()
-
-        # Initialize MCP commands
         self.mcp_commands = MCPCommands()
-
-        # Initialize callback handlers
         self.callback_handlers = CallbackHandlers(
             self.document_commands,
             self.model_commands,
             self.export_commands,
         )
 
-    # Delegate basic commands
     async def start_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -154,14 +143,11 @@ class CommandHandlers:
     ) -> None:
         return await self.basic_commands.reset_command(update, context)
 
-    # Delegate settings commands
-
     async def generate_together_image(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.image_commands.generate_together_image(update, context)
 
-    # Delegate model commands
     async def switch_model_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -177,7 +163,6 @@ class CommandHandlers:
     ) -> None:
         return await self.model_commands.current_model_command(update, context)
 
-    # Delegate document commands
     async def generate_ai_document_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -185,7 +170,6 @@ class CommandHandlers:
             update, context
         )
 
-    # Delegate export commands
     async def export_to_document(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -199,24 +183,19 @@ class CommandHandlers:
     async def handle_export_conversation(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        return await self.export_commands.handle_export_conversation(
-            update, context
-        )  # Main callback query handler - delegate to central callback handler
+        return await self.export_commands.handle_export_conversation(update, context)
 
     async def handle_callback_query(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         query = update.callback_query
         data = query.data
-
-        # Handle basic callbacks that don't need special routing
         if data == "help":
             await self.help_command(update, context)
         elif data.startswith("img_"):
             await self.image_commands.handle_image_settings(update, context, data)
         elif data.startswith("pref_"):
             await self.settings_commands.handle_user_preferences(update, context, data)
-        # Route hierarchical model selection callbacks to CallbackHandlers
         elif data.startswith(("category_", "model_")) or data in (
             "back_to_categories",
             "current_model",
@@ -241,22 +220,18 @@ class CommandHandlers:
         elif data == "export_cancel":
             await query.edit_message_text("Document export cancelled.")
         else:
-            # Route to central callback handler for more complex routing
             await self.callback_handlers.handle_callback_query(update, context)
 
-    # Delegate web app commands
     async def open_web_app_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.open_web_app_commands.open_web_app_command(update, context)
 
-    # Delegate poll commands
     async def create_poll_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.poll_commands.create_poll_command(update, context)
 
-    # Delegate group commands
     async def group_settings_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -277,7 +252,6 @@ class CommandHandlers:
     ) -> None:
         return await self.group_commands.clean_threads_command(update, context)
 
-    # Delegate MCP commands
     async def mcp_status_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -300,7 +274,6 @@ class CommandHandlers:
 
     def register_handlers(self, application: Application, cache=None) -> None:
         try:
-            # Command handlers
             application.add_handler(CommandHandler("start", self.start_command))
             application.add_handler(CommandHandler("help", self.help_command))
             application.add_handler(CommandHandler("reset", self.reset_command))
@@ -323,16 +296,10 @@ class CommandHandlers:
             application.add_handler(
                 CommandHandler("gendoc", self.generate_ai_document_command)
             )
-
-            # Poll commands
             application.add_handler(
                 CommandHandler("createpoll", self.create_poll_command)
             )
-
-            # Web App commands
             application.add_handler(CommandHandler("webapp", self.open_web_app_command))
-
-            # Group commands
             application.add_handler(
                 CommandHandler("groupsettings", self.group_settings_command)
             )
@@ -345,8 +312,6 @@ class CommandHandlers:
             application.add_handler(
                 CommandHandler("cleanthreads", self.clean_threads_command)
             )
-
-            # MCP commands
             application.add_handler(
                 CommandHandler("mcpstatus", self.mcp_status_command)
             )
@@ -355,13 +320,8 @@ class CommandHandlers:
             )
             application.add_handler(CommandHandler("mcptools", self.mcp_tools_command))
             application.add_handler(CommandHandler("mcphelp", self.mcp_help_command))
-
-            # Specific callback handlers if needed
             self.response_cache = cache
-
-            # General callback handler LAST (handles all callbacks including model selection)
             application.add_handler(CallbackQueryHandler(self.handle_callback_query))
-
             self.logger.info("Modular command handlers registered successfully")
         except Exception as e:
             self.logger.error(f"Failed to register command handlers: {e}")

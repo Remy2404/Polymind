@@ -30,22 +30,17 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
     Lifespan context manager for the FastAPI application.
     Handles startup and shutdown of the TelegramBot.
     """
-    # Startup logic - runs before application starts taking requests
     logger.info("Starting application with enhanced monitoring...")
-    app.state.start_time = time.time()  # Track app start time
-
+    app.state.start_time = time.time()
     try:
         await bot.application.initialize()
         await bot.application.start()
-
-        # If WEBHOOK_URL is set, configure webhook; otherwise, start polling fallback
         if os.getenv("WEBHOOK_URL"):
             await bot.setup_webhook()
             raw_token = getattr(bot, "token", None)
             if raw_token:
                 from urllib.parse import quote
 
-                # URL-encode the token safely (handles ":" and other special chars)
                 url_encoded_token = quote(raw_token, safe="")
                 bot.logger.info(
                     f"Webhook endpoints registered at /webhook/{raw_token} and /webhook/{url_encoded_token}"
@@ -55,7 +50,6 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
                     "WEBHOOK_URL is set but bot.token is not available; webhook endpoints may not be registered."
                 )
         else:
-            # Start polling in a background thread for development/local usage
             from threading import Thread
 
             def _polling():
@@ -65,19 +59,13 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
             bot.logger.info(
                 "Polling fallback started; bot will process updates via polling."
             )
-
-        # Log successful startup
         logger.info("Application started successfully")
-
-        yield  # Application runs and handles requests here
-
+        yield
     except Exception as e:
         logger.error(f"Error during application startup: {e}", exc_info=True)
         raise
     finally:
-        # Shutdown logic - runs after application finishes handling requests
         logger.info("Shutting down application...")
-
         try:
             await bot.application.stop()
             await bot.application.shutdown()
@@ -88,25 +76,16 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
 
 def create_application():
     os.environ["DEV_SERVER"] = "uvicorn"
-
     bot = TelegramBot()
 
-    # Create lifespan manager that includes the bot instance
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         async with lifespan_context(app, bot):
             yield
 
-    # Create FastAPI app
     app = FastAPI(lifespan=lifespan)
-
-    # Add middleware for compression
     app.add_middleware(GZipMiddleware, minimum_size=1000)
-
-    # Add request tracking middleware
     app.add_middleware(RequestTrackingMiddleware)
-
-    # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -114,15 +93,9 @@ def create_application():
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # Configure dependency injection for bot instance
-    # Set the actual bot instance in the webhook module's global variable
     webhook_module._BOT_INSTANCE = bot
-
-    # Set bot instance for webapp module
     webapp_module.set_bot_instance(bot)
 
-    # Set up exception handlers for webhook exceptions
     @app.exception_handler(webhook.WebhookException)
     async def webhook_exception_handler(
         request: Request, exc: webhook.WebhookException
@@ -135,13 +108,8 @@ def create_application():
             },
         )
 
-    # Include routers
     app.include_router(health.router)
     app.include_router(webhook.router)
     app.include_router(webapp.router)
-
-    # Store bot instance in app state
     app.state.bot = bot
-
-    # Return the fully configured app
     return app

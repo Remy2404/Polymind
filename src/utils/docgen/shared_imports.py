@@ -7,11 +7,10 @@ import os
 import warnings
 from dotenv import load_dotenv
 
-# Define what this module exports
 __all__ = [
     "logging",
     "GEMINI_API_KEY",
-    "WEASYPRINT_AVAILABLE", 
+    "WEASYPRINT_AVAILABLE",
     "REPORTLAB_AVAILABLE",
     "getSampleStyleSheet",
     "ParagraphStyle",
@@ -27,16 +26,10 @@ __all__ = [
     "ListItem",
     "ListFlowable",
 ]
-
-# Suppress WeasyPrint GTK warnings on Windows
 warnings.filterwarnings("ignore", message=".*libgobject.*")
 warnings.filterwarnings("ignore", message=".*WeasyPrint could not import.*")
-
-# Load environment variables
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-# Conditionally import WeasyPrint - it might not work on Windows systems without extra libraries
 WEASYPRINT_AVAILABLE = False
 try:
     import importlib.util
@@ -53,8 +46,6 @@ except Exception as e:
     logging.warning(
         f"WeasyPrint error: {str(e)}. PDF generation will use fallback method."
     )
-
-# Try to import a fallback PDF library (reportlab) for PDF generation
 REPORTLAB_AVAILABLE = False
 try:
     from reportlab.platypus import (
@@ -77,7 +68,6 @@ except ImportError:
     logging.warning(
         "ReportLab not installed. Run 'pip install reportlab' for better PDF fallback support."
     )
-    # Create placeholder imports for when ReportLab is not available
     getSampleStyleSheet = None
     ParagraphStyle = None
     colors = None

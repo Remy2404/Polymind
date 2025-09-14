@@ -2,6 +2,7 @@ import requests
 import json
 import sys
 
+
 def fetch_and_filter_models():
     """Fetch and filter free models from OpenRouter API."""
     # API endpoint
@@ -40,18 +41,24 @@ def fetch_and_filter_models():
         # Print summary
         tool_models = 0
         reasoning_models = 0
-        
+
         for m in free_models:
             supported_params = m.get("supported_parameters", [])
-            
-            has_tools = any(param in supported_params for param in ["tools", "tool_choice", "function_calling"])
-            has_reasoning = any(param in supported_params for param in ["reasoning", "include_reasoning"])
-            
+
+            has_tools = any(
+                param in supported_params
+                for param in ["tools", "tool_choice", "function_calling"]
+            )
+            has_reasoning = any(
+                param in supported_params
+                for param in ["reasoning", "include_reasoning"]
+            )
+
             if has_tools:
                 tool_models += 1
             if has_reasoning:
                 reasoning_models += 1
-                
+
             print(f"🧠 {m['name']}")
             print(f"ID: {m['id']}")
             print(f"Supported Parameters: {supported_params}")
@@ -60,7 +67,7 @@ def fetch_and_filter_models():
             if has_reasoning:
                 print("🤔 SUPPORTS REASONING")
             print("-" * 60)
-            
+
         print("\n📊 SUMMARY:")
         print(f"Total models: {len(free_models)}")
         print(f"Tool calling models: {tool_models}")
@@ -75,6 +82,7 @@ def fetch_and_filter_models():
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     fetch_and_filter_models()

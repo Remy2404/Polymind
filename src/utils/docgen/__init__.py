@@ -1,6 +1,5 @@
 """
 Document Generation Package
-
 This package contains utilities for AI-powered document generation and processing.
 """
 

@@ -3,7 +3,6 @@ import os
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# Keeping this in case it's needed in future extensions
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Union, Optional
 import logging
@@ -14,11 +13,9 @@ class UserDataManager:
     def __init__(self, db):
         """
         Initialize UserDataManager with a database connection.
-
         :param db: MongoDB database instance
         """
         self.db = db
-        # Check if db is None and handle appropriately
         if self.db is None:
             self.users_collection = None
             self.conversation_history = None
@@ -33,14 +30,8 @@ class UserDataManager:
             self.document_history = self.db.document_history
             self.image_analysis_history = self.db.image_analysis_history
         self.logger = logging.getLogger(__name__)
-
-        # Add in-memory cache for user data to improve performance
         self.user_data_cache = {}
-
-        # Add personal information memory
         self.personal_info_cache = {}
-
-        # Add preference memory cache to ensure consistency
         self.preference_cache = {}
 
     async def initialize_user(self, user_id: Union[int, str]) -> None:
@@ -52,7 +43,6 @@ class UserDataManager:
                 "conversation_history": [],
                 "settings": {"markdown_enabled": True, "code_suggestions": True},
             }
-            # update_user_data handles DB None case
             await self.update_user_data(user_id, user_data)
             self.logger.info(f"Initialized new user: {user_id}")
         except Exception as e:
@@ -72,29 +62,16 @@ class UserDataManager:
             if self.db is None:
                 self.logger.error("Cannot update stats: Database connection is None")
                 return
-
             users_collection = self.db.get_collection("users")
-
-            # Create update dictionary
             update_dict = {"$set": {"last_active": datetime.now()}, "$inc": {}}
-
-            # Increment message count if applicable
             if message:
                 update_dict["$inc"]["messages_count"] = 1
-
-            # Increment image count if applicable
             if image:
                 update_dict["$inc"]["images_count"] = 1
-
-            # Increment image generation count if applicable
             if image_generation:
                 update_dict["$inc"]["images_generated_count"] = 1
-
-            # Increment document count if applicable (NEW)
             if document:
                 update_dict["$inc"]["documents_count"] = 1
-
-            # Update user record
             users_collection.update_one({"user_id": user_id}, update_dict, upsert=True)
             self.logger.info(f"Updated stats for user: {user_id}")
             return True
@@ -106,15 +83,11 @@ class UserDataManager:
         """Update user data in the database."""
         try:
             user_id = str(user_id)
-            # ensure id is consistent inside the document
             user_data["user_id"] = user_id
-
-            # If no DB available, keep data in in-memory cache
             if self.users_collection is None:
                 self.user_data_cache[user_id] = user_data
                 self.logger.info(f"Cached data for user (no DB): {user_id}")
                 return
-
             self.users_collection.update_one(
                 {"user_id": user_id}, {"$set": user_data}, upsert=True
             )
@@ -127,15 +100,11 @@ class UserDataManager:
         """
         Clear the conversation history for a user.
         Now clears both contexts and conversation_history collection.
-
         :param user_id: Unique identifier for the user
         """
         try:
             user_id = str(user_id)
-
-            # If no DB, clear caches only
             if self.users_collection is None:
-                # Clear cache contexts if present
                 if user_id in self.user_data_cache:
                     self.user_data_cache[user_id].setdefault("contexts", [])
                     self.user_data_cache[user_id]["contexts"].clear()
@@ -144,18 +113,13 @@ class UserDataManager:
                 self.users_collection.update_one(
                     {"user_id": user_id}, {"$set": {"contexts": []}}
                 )
-
-            # Clear conversation_history collection if available
             if self.conversation_history is not None:
                 result = self.conversation_history.delete_many({"user_id": user_id})
                 self.logger.info(
                     f"Deleted {result.deleted_count} messages from conversation_history collection for user {user_id}"
                 )
-
-            # Clear cache for this user
             if user_id in self.user_data_cache:
                 del self.user_data_cache[user_id]
-
             self.logger.info(f"Cleared history for user: {user_id}")
         except Exception as e:
             self.logger.error(f"Error clearing history for user {user_id}: {str(e)}")
@@ -165,12 +129,10 @@ class UserDataManager:
         """
         Add a message dictionary to the user's conversation history.
         Now saves to both contexts (for backwards compatibility) and conversation_history collection.
-
         :param user_id: Unique identifier for the user
         :param message: Message dictionary ({'role': 'user/assistant', 'content': '...'}) to be added
         """
         try:
-            # Ensure message is a dictionary with required keys
             if (
                 not isinstance(message, dict)
                 or "role" not in message
@@ -180,20 +142,14 @@ class UserDataManager:
                     f"Invalid message format for user {user_id}: {message}"
                 )
                 return
-
             user_id = str(user_id)
-
-            # Add timestamp and message_id if not present
             current_time = datetime.now()
             if "timestamp" not in message:
-                # allow numeric timestamp (float) or ISO string; keep numeric for DB timestamp fields if needed
                 message["timestamp"] = current_time.timestamp()
             if "message_id" not in message:
                 message["message_id"] = (
                     f"{message['role']}_{user_id}_{int(current_time.timestamp() * 1000)}"
                 )
-
-            # Save to conversation_history collection for persistence if available
             if self.conversation_history is not None:
                 conversation_doc = {
                     "user_id": user_id,
@@ -208,18 +164,15 @@ class UserDataManager:
                 self.logger.debug(
                     f"Saved message to conversation_history collection for user: {user_id}"
                 )
-
-            # If no DB collection, keep in-memory cache
             if self.users_collection is None:
                 if user_id not in self.user_data_cache:
                     self.user_data_cache[user_id] = {"contexts": []}
                 self.user_data_cache[user_id]["contexts"].append(message)
                 self.logger.debug(f"Cached message for user: {user_id}")
             else:
-                # Also save to user contexts for backwards compatibility
                 self.users_collection.update_one(
                     {"user_id": user_id},
-                    {"$push": {"contexts": message}},  # Push the dictionary
+                    {"$push": {"contexts": message}},
                     upsert=True,
                 )
                 self.logger.debug(f"Added message to history for user: {user_id}")
@@ -243,45 +196,31 @@ class UserDataManager:
             if self.db is None:
                 self.logger.warning("Database connection is None, using cache")
                 return self.user_data_cache.get(str(user_id), {})
-
-            # Convert user_id to string for consistency
             user_id = str(user_id)
-
-            # Check cache first for performance
             if user_id in self.user_data_cache:
                 return self.user_data_cache[user_id]
-
-            # If collection is not available, fallback to cache
             if self.users_collection is None:
                 return self.user_data_cache.get(user_id, {})
-
             user_data = self.users_collection.find_one({"user_id": user_id})
             if not user_data:
                 await self.initialize_user(user_id)
                 user_data = self.users_collection.find_one({"user_id": user_id})
-
-            # Update cache
             if user_data:
                 self.user_data_cache[user_id] = user_data
-
             return user_data or {}
         except Exception as e:
             self.logger.error(f"Error retrieving data for user {user_id}: {str(e)}")
-            # Return cached data if available, otherwise empty dict
             return self.user_data_cache.get(str(user_id), {})
 
-    # Rename this method to avoid conflict with the async version
     def get_user_settings_sync(self, user_id: Union[int, str]) -> dict:
         """Get user settings from the database (synchronous version)."""
         try:
             user_id = str(user_id)
             if self.users_collection is None:
-                # fallback to cache if present
                 cached = self.user_data_cache.get(user_id, {})
                 return cached.get(
                     "settings", {"markdown_enabled": True, "code_suggestions": True}
                 )
-
             user_data = self.users_collection.find_one({"user_id": user_id})
             if user_data and "settings" in user_data:
                 return user_data["settings"]
@@ -295,22 +234,17 @@ class UserDataManager:
         """
         Retrieve the context (list of message dictionaries) for a specific user.
         Enhanced for web app memory persistence - now gets from conversation_history collection first.
-
         :param user_id: Unique identifier for the user
         :return: List of context message dictionaries for the user
         """
         try:
-            # Convert user_id to string for consistency
             user_id = str(user_id)
-
-            # First try to get from conversation_history collection (more persistent)
             persistent_history = []
             if self.conversation_history is not None:
                 try:
                     cursor = self.conversation_history.find({"user_id": user_id}).sort(
                         "timestamp", 1
-                    )  # Sort by timestamp ascending
-
+                    )
                     for doc in cursor:
                         persistent_history.append(
                             {
@@ -321,24 +255,18 @@ class UserDataManager:
                                 "model_used": doc.get("model_used", "unknown"),
                             }
                         )
-
                     if persistent_history:
                         self.logger.info(
                             f"Retrieved {len(persistent_history)} messages from conversation_history collection for user {user_id}"
                         )
                         return persistent_history
-
                 except Exception as e:
                     self.logger.warning(
                         f"Failed to retrieve from conversation_history collection: {e}"
                     )
-
-            # Fallback to user contexts if conversation_history is empty or failed
             user_data = await self.get_user_data(user_id)
             if user_data is None:
                 return []
-
-            # Get contexts with proper fallback
             context = user_data.get("contexts", [])
             if not isinstance(context, list):
                 self.logger.warning(
@@ -346,14 +274,11 @@ class UserDataManager:
                 )
                 self.clear_history(user_id)
                 return []
-
-            # Filter out any invalid entries and ensure proper format
             valid_context = []
             for item in context:
                 if isinstance(item, dict) and ("role" in item and "content" in item):
                     valid_context.append(item)
                 elif isinstance(item, dict):
-                    # Try to fix legacy format
                     if "user" in item or "assistant" in item:
                         if "user" in item:
                             valid_context.append(
@@ -363,12 +288,10 @@ class UserDataManager:
                             valid_context.append(
                                 {"role": "assistant", "content": item["assistant"]}
                             )
-
             self.logger.info(
                 f"Fallback: Retrieved {len(valid_context)} messages from user contexts for user {user_id}"
             )
             return valid_context
-
         except Exception as e:
             self.logger.error(f"Error retrieving context for user {user_id}: {str(e)}")
             return []
@@ -377,7 +300,6 @@ class UserDataManager:
         """
         Retrieve the conversation history for a user.
         Enhanced with better error handling and caching.
-
         :param user_id: Unique identifier for the user
         :return: List of conversation context message dictionaries
         """
@@ -386,7 +308,6 @@ class UserDataManager:
     async def get_user_settings(self, user_id: str) -> Dict[str, Any]:
         """
         Retrieve user settings.
-
         :param user_id: Unique identifier for the user
         :return: Dictionary of user settings
         """
@@ -403,8 +324,6 @@ class UserDataManager:
             user_id = str(user_id)
             current_settings = self.get_user_settings_sync(user_id)
             current_settings.update(new_settings)
-
-            # If no DB collection, update cache
             if self.users_collection is None:
                 if user_id not in self.user_data_cache:
                     self.user_data_cache[user_id] = {}
@@ -412,7 +331,6 @@ class UserDataManager:
                 self.user_data_cache[user_id]["settings"].update(new_settings)
                 self.logger.info(f"Updated in-memory settings for user: {user_id}")
                 return
-
             self.users_collection.update_one(
                 {"user_id": user_id},
                 {"$set": {"settings": current_settings}},
@@ -434,27 +352,21 @@ class UserDataManager:
             user_data = await self.get_user_data(user_id)
             current_settings = user_data.get("settings", {})
             current_settings.update(new_settings)
-
-            # If no DB collection, update cache
             if self.users_collection is None:
                 if user_id not in self.user_data_cache:
                     self.user_data_cache[user_id] = {}
                 self.user_data_cache[user_id].setdefault("settings", {})
                 self.user_data_cache[user_id]["settings"].update(new_settings)
             else:
-                # Update in database
                 self.users_collection.update_one(
                     {"user_id": user_id},
                     {"$set": {"settings": current_settings}},
                     upsert=True,
                 )
-
-            # Update in memory cache if exists
             if hasattr(self, "user_data_cache") and user_id in self.user_data_cache:
                 if "settings" not in self.user_data_cache[user_id]:
                     self.user_data_cache[user_id]["settings"] = {}
                 self.user_data_cache[user_id]["settings"].update(new_settings)
-
             self.logger.info(
                 f"Async updated settings for user: {user_id} - {new_settings}"
             )
@@ -467,7 +379,6 @@ class UserDataManager:
     def cleanup_inactive_users(self, days_threshold: int = 30) -> None:
         """
         Remove data for inactive users.
-
         :param days_threshold: Number of days of inactivity before cleanup
         """
         try:
@@ -501,7 +412,6 @@ class UserDataManager:
             if user_data and "stats" in user_data:
                 return user_data["stats"]
             else:
-                # Initialize stats if they do not exist
                 stats = {
                     "messages_sent": 0,
                     "images_sent": 0,
@@ -559,7 +469,6 @@ class UserDataManager:
         """Get a user's preference setting."""
         try:
             user_id = str(user_id)
-            # Check the in-memory preference cache first
             if hasattr(self, "preference_cache") and user_id in self.preference_cache:
                 if preference_key in self.preference_cache[user_id]:
                     value = self.preference_cache[user_id][preference_key]
@@ -567,42 +476,31 @@ class UserDataManager:
                         f"Retrieved preference {preference_key} for user {user_id} from cache: {value}"
                     )
                     return value
-
-            # Also check the backup if it exists
             if hasattr(self, "preference_backup") and user_id in self.preference_backup:
                 if preference_key in self.preference_backup[user_id]:
                     value = self.preference_backup[user_id][preference_key]
                     self.logger.info(
                         f"Retrieved preference {preference_key} for user {user_id} from backup: {value}"
                     )
-                    # Store in primary cache for next time
                     if not hasattr(self, "preference_cache"):
                         self.preference_cache = {}
                     if user_id not in self.preference_cache:
                         self.preference_cache[user_id] = {}
                     self.preference_cache[user_id][preference_key] = value
                     return value
-
-            # If not in cache, try to get from database
             user_data = await self.get_user_data(user_id)
-
             if not user_data or "preferences" not in user_data:
                 self.logger.info(
                     f"No preferences found for user {user_id}, returning default: {default}"
                 )
-                # Initialize preferences for this user
                 await self.set_user_preference(user_id, preference_key, default)
                 return default
-
             value = user_data["preferences"].get(preference_key, default)
-
-            # Store in cache for future fast access
             if not hasattr(self, "preference_cache"):
                 self.preference_cache = {}
             if user_id not in self.preference_cache:
                 self.preference_cache[user_id] = {}
             self.preference_cache[user_id][preference_key] = value
-
             self.logger.info(
                 f"Retrieved preference {preference_key} for user {user_id} from database: {value}"
             )
@@ -617,40 +515,28 @@ class UserDataManager:
         """Set a user's preference setting."""
         try:
             user_id = str(user_id)
-            # Initialize user if not yet initialized
             await self.initialize_user(user_id)
-
-            # If no DB, update cache only
             if self.users_collection is None:
                 if not hasattr(self, "preference_cache"):
                     self.preference_cache = {}
                 if user_id not in self.preference_cache:
                     self.preference_cache[user_id] = {}
                 self.preference_cache[user_id][preference_key] = value
-
-                # Also update user cache
                 if hasattr(self, "user_data_cache") and user_id in self.user_data_cache:
                     if "preferences" not in self.user_data_cache[user_id]:
                         self.user_data_cache[user_id]["preferences"] = {}
                     self.user_data_cache[user_id]["preferences"][preference_key] = value
-
-                # Store preference in backup
                 if not hasattr(self, "preference_backup"):
                     self.preference_backup = {}
                 if user_id not in self.preference_backup:
                     self.preference_backup[user_id] = {}
                 self.preference_backup[user_id][preference_key] = value
-
                 return True
-
-            # Update preference directly with a dedicated update operation in DB
             result = self.users_collection.update_one(
                 {"user_id": user_id},
                 {"$set": {f"preferences.{preference_key}": value}},
                 upsert=True,
             )
-
-            # Check if the update was successful
             if result.acknowledged:
                 self.logger.info(
                     f"Set preference {preference_key} for user {user_id} to: {value} (matched: {result.matched_count}, modified: {result.modified_count})"
@@ -659,25 +545,20 @@ class UserDataManager:
                 self.logger.warning(
                     f"Preference update not acknowledged for user {user_id}"
                 )
-
-            # Always update preference_cache, user_data_cache and preference_backup
             if not hasattr(self, "preference_cache"):
                 self.preference_cache = {}
             if user_id not in self.preference_cache:
                 self.preference_cache[user_id] = {}
             self.preference_cache[user_id][preference_key] = value
-
             if hasattr(self, "user_data_cache") and user_id in self.user_data_cache:
                 if "preferences" not in self.user_data_cache[user_id]:
                     self.user_data_cache[user_id]["preferences"] = {}
                 self.user_data_cache[user_id]["preferences"][preference_key] = value
-
             if not hasattr(self, "preference_backup"):
                 self.preference_backup = {}
             if user_id not in self.preference_backup:
                 self.preference_backup[user_id] = {}
             self.preference_backup[user_id][preference_key] = value
-
             return True
         except Exception as e:
             self.logger.error(f"Error setting user preference: {e}")
@@ -688,7 +569,6 @@ class UserDataManager:
     ) -> bool:
         """
         Store or update a piece of personal information about a user.
-
         :param user_id: User's unique identifier
         :param info_key: Type of information (name, location, preference, etc.)
         :param info_value: The actual information value
@@ -696,10 +576,7 @@ class UserDataManager:
         """
         try:
             user_id = str(user_id)
-            # Initialize user if not yet initialized
             await self.initialize_user(user_id)
-
-            # If no DB, update cache
             if self.users_collection is None:
                 if user_id not in self.personal_info_cache:
                     self.personal_info_cache[user_id] = {}
@@ -708,18 +585,13 @@ class UserDataManager:
                     f"Cached personal info '{info_key}' for user {user_id}"
                 )
                 return True
-
-            # Update or create personal info in DB
             update_query = {"$set": {f"personal_info.{info_key}": info_value}}
             self.users_collection.update_one(
                 {"user_id": user_id}, update_query, upsert=True
             )
-
-            # Update in-memory cache
             if user_id not in self.personal_info_cache:
                 self.personal_info_cache[user_id] = {}
             self.personal_info_cache[user_id][info_key] = info_value
-
             self.logger.info(f"Updated personal info '{info_key}' for user {user_id}")
             return True
         except Exception as e:
@@ -731,27 +603,20 @@ class UserDataManager:
     ) -> Any:
         """
         Retrieve personal information for a user.
-
         :param user_id: User's unique identifier
         :param info_key: Specific piece of information to retrieve, or None for all
         :return: The requested information or None if not found
         """
         try:
-            # Check cache first
             if user_id in self.personal_info_cache:
                 if info_key is None:
                     return self.personal_info_cache[user_id]
                 return self.personal_info_cache[user_id].get(info_key)
-
-            # If not in cache, get from database
             user_data = await self.get_user_data(user_id)
             if not user_data or "personal_info" not in user_data:
                 return None if info_key else {}
-
-            # Update cache
             personal_info = user_data.get("personal_info", {})
             self.personal_info_cache[user_id] = personal_info
-
             return personal_info.get(info_key) if info_key else personal_info
         except Exception as e:
             self.logger.error(f"Error retrieving personal info for user {user_id}: {e}")
@@ -762,20 +627,16 @@ class UserDataManager:
     ) -> Dict[str, str]:
         """
         Analyzes a message to extract and store personal information like name, location, etc.
-
         :param user_id: User's unique identifier
         :param message_text: Text to analyze
         :return: Dictionary of extracted information
         """
         try:
             extracted_info = {}
-
-            # Extract name
             name_patterns = [
                 r"(?:my name is|i'm|i am|call me) ([A-Z][a-z]+)",
                 r"(?:name's) ([A-Z][a-z]+)",
             ]
-
             import re
 
             for pattern in name_patterns:
@@ -785,9 +646,6 @@ class UserDataManager:
                     await self.update_user_personal_info(user_id, "name", name)
                     extracted_info["name"] = name
                     break
-
-            # Can be extended for other types of personal info
-
             return extracted_info
         except Exception as e:
             self.logger.error(f"Error extracting personal info: {e}")
@@ -806,12 +664,9 @@ class UserDataManager:
         """
         try:
             user_id = str(user_id)
-
             if self.db is None:
-                # Store in cache for non-database environments
                 if user_id not in self.user_data_cache:
                     self.user_data_cache[user_id] = {"contexts": []}
-
                 self.user_data_cache[user_id]["contexts"].extend(
                     [
                         {
@@ -828,8 +683,6 @@ class UserDataManager:
                     ]
                 )
                 return
-
-            # Add both messages to the conversation history
             timestamp = datetime.now().isoformat()
             messages_to_add = [
                 {"role": "user", "content": user_message, "timestamp": timestamp},
@@ -840,8 +693,6 @@ class UserDataManager:
                     "model_id": model_id or "unknown",
                 },
             ]
-
-            # Update database
             if self.users_collection is not None:
                 self.users_collection.update_one(
                     {"user_id": user_id},
@@ -851,18 +702,14 @@ class UserDataManager:
                     },
                     upsert=True,
                 )
-
-            # Update cache
             if user_id in self.user_data_cache:
                 self.user_data_cache[user_id]["contexts"] = self.user_data_cache[
                     user_id
                 ].get("contexts", [])
                 self.user_data_cache[user_id]["contexts"].extend(messages_to_add)
-
             self.logger.debug(
                 f"Saved message pair for user {user_id} with model {model_id}"
             )
-
         except Exception as e:
             self.logger.error(f"Error saving message pair for user {user_id}: {str(e)}")
 
@@ -874,8 +721,6 @@ class UserDataManager:
         """
         try:
             user_id = str(user_id)
-
-            # Validate message format
             if (
                 not isinstance(message, dict)
                 or "role" not in message
@@ -885,19 +730,13 @@ class UserDataManager:
                     f"Invalid message format for user {user_id}: {message}"
                 )
                 return
-
-            # Add timestamp if not present
             if "timestamp" not in message:
                 message["timestamp"] = datetime.now().isoformat()
-
             if self.db is None or self.users_collection is None:
-                # Store in cache
                 if user_id not in self.user_data_cache:
                     self.user_data_cache[user_id] = {"contexts": []}
                 self.user_data_cache[user_id]["contexts"].append(message)
                 return
-
-            # Update database
             self.users_collection.update_one(
                 {"user_id": user_id},
                 {
@@ -906,14 +745,10 @@ class UserDataManager:
                 },
                 upsert=True,
             )
-
-            # Update cache
             if user_id in self.user_data_cache:
                 if "contexts" not in self.user_data_cache[user_id]:
                     self.user_data_cache[user_id]["contexts"] = []
                 self.user_data_cache[user_id]["contexts"].append(message)
-
             self.logger.debug(f"Added message to context for user {user_id}")
-
         except Exception as e:
             self.logger.error(f"Error adding message for user {user_id}: {str(e)}")

@@ -8,10 +8,7 @@ from dotenv import load_dotenv
 import base64
 import time
 
-# Load environment variables from .env
 load_dotenv()
-
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -23,11 +20,10 @@ class FluxLoraImageGenerator:
         api_key: str,
         api_endpoint: str = "https://api-inference.huggingface.co",
         max_concurrent_requests: int = 5,
-        timeout: int = 300,  # in seconds
+        timeout: int = 300,
     ):
         """
         Initializes the FluxLoraImageGenerator.
-
         Args:
             model_name (str): Name of the Hugging Face model.
             api_key (str): Hugging Face API key.
@@ -40,7 +36,7 @@ class FluxLoraImageGenerator:
         self.api_endpoint = api_endpoint
         self.full_url = f"{self.api_endpoint}/models/{self.model_name}"
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
-        self.cache = {}  # Simple in-memory cache
+        self.cache = {}
         self.session = None
         self.timeout = timeout
         logger.info(
@@ -73,7 +69,6 @@ class FluxLoraImageGenerator:
     ) -> list[Image.Image]:
         """
         Asynchronously generates images from a text prompt using the Hugging Face Inference API.
-
         Args:
             prompt (str): The text prompt for image generation.
             num_images (int): Number of images to generate.
@@ -81,16 +76,13 @@ class FluxLoraImageGenerator:
             width (int): Width of the generated image.
             height (int): Height of the generated image.
             guidance_scale (float): Guidance scale for the model.
-
         Returns:
             list[Image.Image]: List of generated PIL Image objects.
         """
         await self.init_session()
-
         if prompt in self.cache:
             logger.info("Fetching images from cache.")
             return self.cache[prompt]
-
         tasks = [
             self._generate_single_image(
                 prompt,
@@ -98,17 +90,14 @@ class FluxLoraImageGenerator:
                 width,
                 height,
                 guidance_scale,
-                seed=int(time.time() * 1000) + i,  # Different seed for each image
+                seed=int(time.time() * 1000) + i,
             )
             for i in range(num_images)
         ]
-
         images = await asyncio.gather(*tasks)
         valid_images = [img for img in images if isinstance(img, Image.Image)]
-
         if valid_images:
             self.cache[prompt] = valid_images
-
         return valid_images
 
     async def _generate_single_image(
@@ -120,10 +109,8 @@ class FluxLoraImageGenerator:
         guidance_scale: float,
         seed: int = None,
     ) -> Image.Image:
-        # Generate a random seed if none is provided
         if seed is None:
             seed = int(time.time() * 1000) % 1000000 + id(prompt) % 1000
-
         payload = {
             "inputs": prompt,
             "parameters": {
@@ -131,13 +118,11 @@ class FluxLoraImageGenerator:
                 "width": width,
                 "height": height,
                 "guidance_scale": guidance_scale,
-                "seed": seed,  # Add seed parameter
+                "seed": seed,
             },
         }
-
         retries = 3
-        backoff = 2  # initial backoff in seconds
-
+        backoff = 2
         for attempt in range(1, retries + 1):
             try:
                 async with self.semaphore:
@@ -178,30 +163,23 @@ class FluxLoraImageGenerator:
             except Exception as e:
                 logger.error(f"Unexpected error during image generation: {e}")
                 return None
-
         logger.error("Max retries exceeded. Could not generate image.")
         return None
 
     def _process_response(self, data) -> Image.Image:
         """
         Processes the API response and converts it to a PIL Image.
-
         Args:
             data: The JSON response from the API.
-
         Returns:
             Image.Image: Generated PIL Image object or None if processing fails.
         """
         try:
             if isinstance(data, list) and len(data) > 0:
-                # Adjust this based on the actual response structure
-                # Example assumes the image is base64 encoded in 'generated_image' key
                 if "generated_image" in data[0]:
                     img_base64 = data[0]["generated_image"]
                 else:
-                    # Fallback if the image is directly the first element
                     img_base64 = data[0]
-
                 img_bytes = BytesIO(base64.b64decode(img_base64))
                 image = Image.open(img_bytes).convert("RGB")
                 return image
@@ -213,7 +191,6 @@ class FluxLoraImageGenerator:
             return None
 
 
-# Initialize the FluxLoraImageGenerator instance
 flux_lora_image_generator = FluxLoraImageGenerator(
     model_name="black-forest-labs/FLUX.1-schnell",
     api_key=os.getenv("TEXT_TO_IMAGE_API_KEY"),
@@ -227,7 +204,6 @@ def shutdown():
     """Safe shutdown function that doesn't rely on event loop"""
     try:
         logging.info("Marking flux-lora resources for cleanup")
-        # Just mark for cleanup - don't attempt async operations
         if (
             hasattr(flux_lora_image_generator, "session")
             and flux_lora_image_generator.session

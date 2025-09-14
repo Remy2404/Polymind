@@ -1,5 +1,3 @@
-# Commands module initialization
-
 from .basic_commands import BasicCommands
 from .image_commands import ImageCommands
 from .model_commands import ModelCommands

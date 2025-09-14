@@ -1,6 +1,5 @@
 """
 Group Chat Module
-
 Advanced group chat functionality for Telegram bots including:
 - Shared conversation memory
 - Thread-based conversations

@@ -20,7 +20,6 @@ class BasicCommands:
     ) -> None:
         if not update.effective_user:
             return
-
         user_id = update.effective_user.id
         welcome_message = (
             "👋 Welcome to DeepGem! I'm your AI assistant powered by Gemini-2.0-flash & Deepseek-R1 .\n\n"
@@ -40,7 +39,6 @@ class BasicCommands:
             "/switchmodel - Switch between AI models\n\n"
             "Feel free to start chatting or use /help to learn more!"
         )
-
         keyboard = [
             [
                 InlineKeyboardButton("Help 📚", callback_data="help"),
@@ -49,13 +47,10 @@ class BasicCommands:
             [InlineKeyboardButton("Support Channel 📢", url="https://t.me/GemBotAI")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-
-        # Use effective_message for reply
         if update.effective_message:
             await update.effective_message.reply_text(
                 welcome_message, reply_markup=reply_markup
             )
-
         await self.user_data_manager.initialize_user(user_id)
         self.logger.info(f"New user started the bot: {user_id}")
 
@@ -81,10 +76,8 @@ class BasicCommands:
             "• Supports markdown formatting\n\n"
             "Need help? Join our support channel @GemBotAI!"
         )
-        # Use effective_message for reply
         if update.effective_message:
             await update.effective_message.reply_text(help_text)
-        # Only log if effective_user exists
         if update.effective_user:
             self.telegram_logger.log_message(
                 update.effective_user.id, "Help command requested"
@@ -93,18 +86,11 @@ class BasicCommands:
     async def reset_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        # Only proceed if effective_user exists
         if not update.effective_user:
             return
         user_id = update.effective_user.id
-
-        # Get personal info before resetting
         personal_info = await self.user_data_manager.get_user_personal_info(user_id)
-
-        # Reset conversation history
         self.user_data_manager.reset_conversation(user_id)
-
-        # If there was personal information, confirm we remember it
         if update.effective_message:
             if personal_info and "name" in personal_info:
                 await update.effective_message.reply_text(

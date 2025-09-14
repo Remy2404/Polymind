@@ -38,7 +38,6 @@ class ImageCommands:
         self.telegram_logger.log_message(
             "Together AI image generation requested", user_id
         )
-
         if not context.args:
             await update.message.reply_text(
                 "Please provide a description for the image you want to generate.\n"
@@ -46,45 +45,29 @@ class ImageCommands:
                 parse_mode="Markdown",
             )
             return
-
-        # Join all arguments to form the prompt
         prompt = " ".join(context.args)
-
-        # Send a status message
         status_message = await update.message.reply_text(
             "🎨 Generating image with Together AI... This may take a moment."
         )
-
-        # Send typing action to indicate processing
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO
         )
-
         try:
-            # Import the generator
             from services.together_ai_img import together_ai_image_generator
 
-            # Generate the image
             image = await together_ai_image_generator.generate_image(
                 prompt=prompt, num_steps=4, width=1024, height=1024
             )
-
             if image:
-                # Delete the status message
                 await status_message.delete()
-
-                # Send the generated image
                 with io.BytesIO() as output:
                     image.save(output, format="PNG")
                     output.seek(0)
-
                     await update.message.reply_photo(
                         photo=output,
                         caption=f"🖼️ Generated image based on: '{prompt}'",
                         parse_mode="Markdown",
                     )
-
-                # Update user stats if available
                 if self.user_data_manager:
                     self.user_data_manager.update_stats(user_id, image_generation=True)
             else:

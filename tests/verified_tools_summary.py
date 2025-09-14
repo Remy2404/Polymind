@@ -7,7 +7,7 @@ that have been VERIFIED to support tool calling through actual testing:
 
 1. nvidia/nemotron-nano-9b-v2 - NVIDIA: Nemotron Nano 9B V2 (128K context)
 2. openrouter/sonoma-dusk-alpha - Sonoma Dusk Alpha (2M context)
-3. openrouter/sonoma-sky-alpha - Sonoma Sky Alpha (2M context) 
+3. openrouter/sonoma-sky-alpha - Sonoma Sky Alpha (2M context)
 4. deepseek/deepseek-chat-v3.1:free - DeepSeek: DeepSeek V3.1 (64K context)
 5. z-ai/glm-4.5-air:free - Z.AI: GLM 4.5 Air (131K context)
 6. qwen/qwen3-coder:free - Qwen: Qwen3 Coder 480B A35B (262K context)
@@ -43,6 +43,7 @@ This validates that our MCP integration system is working with a solid
 foundation of verified tool-calling models.
 """
 
+
 def main():
     print("📋 VERIFIED TOOL-CALLING MODELS")
     print("=" * 50)
@@ -50,7 +51,7 @@ def main():
     print("that definitively support tool calling.")
     print()
     print("🎯 This is valuable ground truth data for:")
-    print("   • Validating our tool calling detection logic")  
+    print("   • Validating our tool calling detection logic")
     print("   • Ensuring MCP integration works correctly")
     print("   • Providing users with reliable tool-calling options")
     print()
@@ -58,6 +59,7 @@ def main():
     print("✅ Detection: Should be working correctly with our logic")
     print()
     print("🚀 This confirms our MCP tool calling system is solid!")
+
 
 if __name__ == "__main__":
     main()

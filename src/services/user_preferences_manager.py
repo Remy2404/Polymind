@@ -57,16 +57,9 @@ class UserPreferencesManager:
 
     async def get_all_preferences(self, user_id: int) -> Dict[str, Any]:
         """Get all preferences for a user."""
-        # Get model preference
         model = await self.get_user_model_preference(user_id)
-
-        # Get language preference
         language = await self.get_user_language_preference(user_id)
-
-        # Get settings
         settings = await self.user_data_manager.get_user_settings(user_id)
-
-        # Combine all preferences
         return {
             "preferred_model": model,
             "preferred_language": language,

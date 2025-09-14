@@ -13,10 +13,7 @@ class PromptFormatter:
     ) -> str:
         """Optionally apply response style guidelines based on the selected model."""
         try:
-            # Get system message from the model handler
             system_message = model_handler.get_system_message()
-
-            # Detect if user is asking for long-form content
             long_form_indicators = [
                 "100",
                 "list",
@@ -33,12 +30,9 @@ class PromptFormatter:
                 "guide",
                 "comprehensive",
             ]
-
             is_long_form_request = any(
                 indicator in prompt.lower() for indicator in long_form_indicators
             )
-
-            # Optionally enhance prompt for long-form requests
             if is_long_form_request:
                 enhanced_prompt = (
                     f"{system_message}\n\n"
@@ -47,7 +41,6 @@ class PromptFormatter:
                 )
             else:
                 enhanced_prompt = f"{system_message}\n\nUser query: {prompt}"
-
             return enhanced_prompt
         except Exception as e:
             self.logger.error(f"Error applying response guidelines: {str(e)}")
@@ -61,6 +54,4 @@ class PromptFormatter:
             return f"The user is referring to previously processed documents. Here's the context of those documents:\n\n{context_text}\n\nUser's question: {prompt}"
         elif context_type == "quote":
             return f'The user is replying to this message: "{context_text}"\n\nUser\'s reply: {prompt}'
-
-        # Default case
         return prompt

@@ -10,11 +10,9 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from collections import defaultdict, deque
 import uuid
-
 from src.database.connection import DatabaseConnection
 from src.utils.config import get_config
 
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -27,7 +25,7 @@ class GroupParticipant:
     username: str
     first_name: str
     last_name: Optional[str] = None
-    role: str = "member"  # member, admin, moderator
+    role: str = "member"
     join_date: datetime = None
     last_active: datetime = None
     message_count: int = 0
@@ -52,7 +50,7 @@ class GroupMessage:
     username: str
     content: str
     timestamp: datetime
-    message_type: str = "text"  # text, image, document, command, system
+    message_type: str = "text"
     reply_to: Optional[str] = None
     mentions: List[int] = None
     hashtags: List[str] = None
@@ -77,7 +75,7 @@ class GroupConversationState:
 
     group_id: int
     group_name: str
-    group_type: str  # private, public, supergroup, channel
+    group_type: str
     participants: Dict[int, GroupParticipant]
     messages: deque
     current_topic: Optional[str] = None
@@ -125,8 +123,6 @@ class GroupConversationManager:
             lambda: defaultdict(int)
         )
         self.conversation_threads: Dict[str, List[str]] = defaultdict(list)
-
-        # Intelligence features
         self.sentiment_patterns = {
             "positive": ["great", "awesome", "love", "perfect", "excellent", "amazing"],
             "negative": [
@@ -140,7 +136,6 @@ class GroupConversationManager:
             "question": ["?", "how", "what", "when", "where", "why", "which"],
             "urgent": ["urgent", "asap", "emergency", "important", "critical", "help"],
         }
-
         self.topic_keywords = {
             "technical": [
                 "code",
@@ -187,18 +182,13 @@ class GroupConversationManager:
                     group_name=group_name,
                     group_type=group_type,
                     participants={},
-                    messages=deque(maxlen=1000),  # Keep last 1000 messages in memory
+                    messages=deque(maxlen=1000),
                 )
-
-                # Create database entry for group
                 await self._create_group_record(group_id, group_name, group_type)
-
                 logger.info(
                     f"Initialized group conversation for {group_name} ({group_id})"
                 )
-
             return self.group_states[group_id]
-
         except Exception as e:
             logger.error(f"Error initializing group {group_id}: {str(e)}")
             raise
@@ -217,7 +207,6 @@ class GroupConversationManager:
             if group_id not in self.group_states:
                 logger.warning(f"Group {group_id} not initialized")
                 return False
-
             participant = GroupParticipant(
                 user_id=user_id,
                 username=username,
@@ -225,15 +214,10 @@ class GroupConversationManager:
                 last_name=last_name,
                 role=role,
             )
-
             self.group_states[group_id].participants[user_id] = participant
-
-            # Save to database
             await self._save_participant(group_id, participant)
-
             logger.info(f"Added participant {username} to group {group_id}")
             return True
-
         except Exception as e:
             logger.error(
                 f"Error adding participant {user_id} to group {group_id}: {str(e)}"
@@ -254,10 +238,7 @@ class GroupConversationManager:
             if group_id not in self.group_states:
                 logger.warning(f"Group {group_id} not found")
                 return None
-
             group_state = self.group_states[group_id]
-
-            # Create message object
             message = GroupMessage(
                 message_id=str(uuid.uuid4()),
                 user_id=user_id,
@@ -267,29 +248,17 @@ class GroupConversationManager:
                 message_type=message_type,
                 reply_to=reply_to,
             )
-
-            # Extract intelligence features
             await self._analyze_message(message, group_state)
-
-            # Update participant activity
             if user_id in group_state.participants:
                 participant = group_state.participants[user_id]
                 participant.last_active = datetime.now()
                 participant.message_count += 1
-
-            # Add to conversation
             group_state.messages.append(message)
             group_state.last_activity = datetime.now()
-
-            # Update conversation context
             await self._update_conversation_context(group_id, message)
-
-            # Save to database
             await self._save_message(group_id, message)
-
             logger.info(f"Processed message from {username} in group {group_id}")
             return message
-
         except Exception as e:
             logger.error(f"Error processing message in group {group_id}: {str(e)}")
             return None
@@ -299,20 +268,14 @@ class GroupConversationManager:
     ):
         """Analyze message for intelligence features"""
         content_lower = message.content.lower()
-
-        # Sentiment analysis
         for sentiment, keywords in self.sentiment_patterns.items():
             if any(keyword in content_lower for keyword in keywords):
                 message.sentiment = sentiment
                 break
-
-        # Topic detection
         for topic, keywords in self.topic_keywords.items():
             if any(keyword in content_lower for keyword in keywords):
                 message.topic = topic
                 break
-
-        # Extract mentions
         words = message.content.split()
         for word in words:
             if word.startswith("@"):
@@ -321,21 +284,13 @@ class GroupConversationManager:
                     if participant.username == username:
                         message.mentions.append(user_id)
                         self.mention_tracker[message.user_id][user_id] += 1
-
-        # Extract hashtags
         message.hashtags = [word[1:] for word in words if word.startswith("#")]
-
-        # Calculate importance score
         importance_factors = [
-            len(message.mentions) * 0.2,  # Mentions increase importance
-            len(message.hashtags) * 0.1,  # Hashtags add structure
-            (
-                1.0 if message.sentiment == "urgent" else 0.0
-            ),  # Urgent messages are important
-            0.3 if message.reply_to else 0.0,  # Replies show engagement
-            min(
-                len(message.content) / 100, 0.3
-            ),  # Longer messages might be more important
+            len(message.mentions) * 0.2,
+            len(message.hashtags) * 0.1,
+            (1.0 if message.sentiment == "urgent" else 0.0),
+            0.3 if message.reply_to else 0.0,
+            min(len(message.content) / 100, 0.3),
         ]
         message.importance_score = min(sum(importance_factors), 1.0)
 
@@ -346,26 +301,16 @@ class GroupConversationManager:
         try:
             if group_id not in self.group_states:
                 return {"error": "Group not found"}
-
             group_state = self.group_states[group_id]
-
-            # Get recent messages with high importance or relevance
             recent_messages = list(group_state.messages)[-max_messages:]
-
-            # Sort by importance and recency
             important_messages = sorted(
                 recent_messages,
                 key=lambda m: (m.importance_score, m.timestamp),
                 reverse=True,
             )[: max_messages // 2]
-
-            # Get chronologically recent messages
             recent_chrono = recent_messages[-max_messages // 2 :]
-
-            # Combine and deduplicate
             context_messages = []
             seen_ids = set()
-
             for msg in important_messages + recent_chrono:
                 if msg.message_id not in seen_ids:
                     context_messages.append(
@@ -380,14 +325,8 @@ class GroupConversationManager:
                         }
                     )
                     seen_ids.add(msg.message_id)
-
-            # Sort by timestamp for final context
             context_messages.sort(key=lambda m: m["timestamp"])
-
-            # Generate conversation summary
             summary = await self._generate_conversation_summary(group_state)
-
-            # Get active participants
             active_participants = [
                 {
                     "username": p.username,
@@ -398,7 +337,6 @@ class GroupConversationManager:
                 for p in group_state.participants.values()
                 if p.is_active and p.last_active > datetime.now() - timedelta(hours=24)
             ]
-
             return {
                 "group_id": group_id,
                 "group_name": group_state.group_name,
@@ -410,7 +348,6 @@ class GroupConversationManager:
                 "total_messages": len(group_state.messages),
                 "last_activity": group_state.last_activity.isoformat(),
             }
-
         except Exception as e:
             logger.error(f"Error getting group context for {group_id}: {str(e)}")
             return {"error": str(e)}
@@ -422,42 +359,29 @@ class GroupConversationManager:
         try:
             if not group_state.messages:
                 return "No recent conversation activity."
-
-            # Get recent messages for summary
             recent_messages = list(group_state.messages)[-20:]
-
-            # Analyze topics and sentiments
             topics = defaultdict(int)
             sentiments = defaultdict(int)
             participants = set()
-
             for msg in recent_messages:
                 if msg.topic:
                     topics[msg.topic] += 1
                 if msg.sentiment:
                     sentiments[msg.sentiment] += 1
                 participants.add(msg.username)
-
-            # Build summary
             summary_parts = []
-
             if topics:
                 main_topic = max(topics, key=topics.get)
                 summary_parts.append(f"Main discussion topic: {main_topic}")
-
             if sentiments:
                 main_sentiment = max(sentiments, key=sentiments.get)
                 summary_parts.append(f"Overall sentiment: {main_sentiment}")
-
             summary_parts.append(
                 f"Active participants: {', '.join(list(participants)[:5])}"
             )
-
             if len(participants) > 5:
                 summary_parts.append(f"and {len(participants) - 5} others")
-
             return ". ".join(summary_parts) + "."
-
         except Exception as e:
             logger.error(f"Error generating conversation summary: {str(e)}")
             return "Unable to generate conversation summary."
@@ -466,28 +390,19 @@ class GroupConversationManager:
         """Update conversation context based on new message"""
         try:
             group_state = self.group_states[group_id]
-
-            # Update current topic if message has high importance
             if message.importance_score > 0.7 and message.topic:
                 group_state.current_topic = message.topic
-
-            # Track conversation threads
             if message.reply_to:
                 thread_id = f"{group_id}_{message.reply_to}"
                 self.conversation_threads[thread_id].append(message.message_id)
-
-                # Update active threads
                 if thread_id not in group_state.active_threads:
                     group_state.active_threads.append(thread_id)
-
-            # Clean up old threads (older than 24 hours)
             cutoff_time = datetime.now() - timedelta(hours=24)
             group_state.active_threads = [
                 thread
                 for thread in group_state.active_threads
                 if any(msg.timestamp > cutoff_time for msg in group_state.messages)
             ]
-
         except Exception as e:
             logger.error(f"Error updating conversation context: {str(e)}")
 
@@ -498,32 +413,24 @@ class GroupConversationManager:
         try:
             if group_id not in self.group_states:
                 return {"error": "Group not found"}
-
             group_state = self.group_states[group_id]
-
             if user_id not in group_state.participants:
                 return {"error": "Participant not found"}
-
             participant = group_state.participants[user_id]
-
-            # Analyze participant's messages
             user_messages = [
                 msg for msg in group_state.messages if msg.user_id == user_id
             ]
-
             topics = defaultdict(int)
             sentiments = defaultdict(int)
             mentions_given = self.mention_tracker[user_id]
             mentions_received = sum(
                 1 for msg in group_state.messages if user_id in msg.mentions
             )
-
             for msg in user_messages:
                 if msg.topic:
                     topics[msg.topic] += 1
                 if msg.sentiment:
                     sentiments[msg.sentiment] += 1
-
             return {
                 "user_id": user_id,
                 "username": participant.username,
@@ -537,7 +444,6 @@ class GroupConversationManager:
                 "mentions_received": mentions_received,
                 "engagement_score": min(participant.message_count / 10, 1.0),
             }
-
         except Exception as e:
             logger.error(f"Error getting participant insights: {str(e)}")
             return {"error": str(e)}
@@ -554,7 +460,6 @@ class GroupConversationManager:
                 group_name = VALUES(group_name),
                 group_type = VALUES(group_type)
             """
-
             settings = json.dumps(
                 {
                     "max_context_messages": 50,
@@ -562,11 +467,9 @@ class GroupConversationManager:
                     "smart_threading": True,
                 }
             )
-
             await self.db_connection.execute_query(
                 query, (group_id, group_name, group_type, datetime.now(), settings)
             )
-
         except Exception as e:
             logger.error(f"Error creating group record: {str(e)}")
 
@@ -582,7 +485,6 @@ class GroupConversationManager:
                 last_name = VALUES(last_name),
                 role = VALUES(role)
             """
-
             await self.db_connection.execute_query(
                 query,
                 (
@@ -596,7 +498,6 @@ class GroupConversationManager:
                     json.dumps(participant.preferences),
                 ),
             )
-
         except Exception as e:
             logger.error(f"Error saving participant: {str(e)}")
 
@@ -604,12 +505,11 @@ class GroupConversationManager:
         """Save message to database"""
         try:
             query = """
-                INSERT INTO group_messages (message_id, group_id, user_id, username, content, 
+                INSERT INTO group_messages (message_id, group_id, user_id, username, content,
                                           timestamp, message_type, reply_to, mentions, hashtags,
                                           sentiment, topic, importance_score, metadata)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
-
             await self.db_connection.execute_query(
                 query,
                 (
@@ -629,7 +529,6 @@ class GroupConversationManager:
                     json.dumps(message.metadata),
                 ),
             )
-
         except Exception as e:
             logger.error(f"Error saving message: {str(e)}")
 
@@ -638,22 +537,15 @@ class GroupConversationManager:
         try:
             if group_id not in self.group_states:
                 return {"error": "Group not found"}
-
             group_state = self.group_states[group_id]
-
-            # Calculate statistics
             total_messages = len(group_state.messages)
             active_participants = len(
                 [p for p in group_state.participants.values() if p.is_active]
             )
-
-            # Message activity by hour
             message_hours = defaultdict(int)
             for msg in group_state.messages:
                 hour = msg.timestamp.hour
                 message_hours[hour] += 1
-
-            # Top participants
             participant_stats = [
                 {
                     "username": p.username,
@@ -663,7 +555,6 @@ class GroupConversationManager:
                 for p in group_state.participants.values()
             ]
             participant_stats.sort(key=lambda x: x["message_count"], reverse=True)
-
             return {
                 "group_id": group_id,
                 "group_name": group_state.group_name,
@@ -677,11 +568,9 @@ class GroupConversationManager:
                 "current_topic": group_state.current_topic,
                 "active_threads": len(group_state.active_threads),
             }
-
         except Exception as e:
             logger.error(f"Error getting group statistics: {str(e)}")
             return {"error": str(e)}
 
 
-# Global instance
 group_conversation_manager = GroupConversationManager()

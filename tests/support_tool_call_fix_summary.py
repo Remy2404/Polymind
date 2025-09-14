@@ -27,7 +27,7 @@ The support_tool_call.py file had outdated logic for detecting tool calling supp
 These models correctly do NOT support tool calls:
 - gemini (native Gemini API)
 - dolphin-mistral-24b-venice-edition (dolphin pattern)
-- hunyuan-a13b-instruct (hunyuan pattern) 
+- hunyuan-a13b-instruct (hunyuan pattern)
 - gemma-* models (gemma pattern) - 6 models
 - dolphin3-r1-mistral-24b (dolphin pattern)
 
@@ -41,14 +41,16 @@ The fix ensures that the tool calling detection is accurate and consistent
 across all parts of the system.
 """
 
+
 def main():
     print("✅ support_tool_call.py Logic Fix - COMPLETED")
     print("=" * 50)
-    print("Before Fix: 27/72 models (37.5%) detected")  
+    print("Before Fix: 27/72 models (37.5%) detected")
     print("After Fix:  61/72 models (84.7%) detected")
     print("Result:     Perfect alignment with model_configs.py")
     print("=" * 50)
     print("The tool calling model detection is now accurate and consistent!")
+
 
 if __name__ == "__main__":
     main()

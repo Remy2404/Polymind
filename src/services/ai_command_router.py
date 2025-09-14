@@ -11,7 +11,6 @@ import re
 from typing import Dict, Any, Tuple, List
 from enum import Enum
 from dataclasses import dataclass
-
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -56,18 +55,13 @@ class EnhancedIntentDetector:
     Uses ONLY fast regex patterns - zero NLP overhead"""
 
     def __init__(self):
-        # Force garbage collection optimization for low-memory instances
         import gc
 
-        gc.set_threshold(50, 5, 5)  # More aggressive GC
+        gc.set_threshold(50, 5, 5)
         gc.collect()
-
         self.logger = logging.getLogger(__name__)
         self.model_configs = {}
-
         self.logger.info("⚡ Ultra-lightweight IntentDetector initialized (regex-only)")
-
-        # Optimized intent patterns - minimal memory footprint
         self.intent_patterns = {
             CommandIntent.SWITCH_MODEL: {
                 "patterns": [
@@ -166,23 +160,16 @@ class EnhancedIntentDetector:
     def _detect_intent_fast(self, text: str) -> IntentResult:
         """Ultra-fast regex-based intent detection - zero overhead"""
         text_lower = text.lower().strip()
-
-        # Quick keyword check first (fastest operation)
         best_match = None
         best_confidence = 0.0
-
         for intent, config in self.intent_patterns.items():
-            # Check keywords first (O(n) operation)
             keyword_matches = sum(
                 1 for keyword in config.get("keywords", []) if keyword in text_lower
             )
             if keyword_matches == 0:
                 continue
-
-            # Check regex patterns (more expensive but precise)
             for pattern in config.get("patterns", []):
                 if re.search(pattern, text):
-                    # Calculate confidence based on keyword density and priority
                     confidence = min(
                         0.9,
                         0.5
@@ -193,7 +180,6 @@ class EnhancedIntentDetector:
                         best_match = intent
                         best_confidence = confidence
                         break
-
         if best_match:
             return IntentResult(
                 intent=best_match,
@@ -203,8 +189,6 @@ class EnhancedIntentDetector:
                 detected_entities=[],
                 linguistic_features={},
             )
-
-        # Default to chat for better user experience
         return IntentResult(
             intent=CommandIntent.CHAT,
             confidence=0.6,
@@ -236,11 +220,9 @@ class AICommandRouter:
     Optimized for resource-constrained environments"""
 
     def __init__(self, command_handlers, gemini_api=None):
-        # Force garbage collection optimization for low-memory instances
         import gc
 
-        gc.collect()  # Clean up before initializing
-
+        gc.collect()
         self.intent_detector = EnhancedIntentDetector()
         self.command_handlers = command_handlers
         self.gemini_api = gemini_api
@@ -268,7 +250,6 @@ class AICommandRouter:
     ) -> bool:
         """Route detected intent to appropriate handler - streamlined for performance"""
         try:
-            # Fast handler mapping - no complex logic
             if intent == CommandIntent.GENERATE_DOCUMENT:
                 return await self._handle_document_generation(
                     update, context, original_message
@@ -298,11 +279,8 @@ class AICommandRouter:
                 CommandIntent.CHAT,
                 CommandIntent.ANALYZE,
             ]:
-                # These are handled by normal conversation flow
                 return False
-
             return False
-
         except Exception as e:
             self.logger.error(f"❌ Error routing command for intent {intent}: {str(e)}")
             return False
@@ -420,7 +398,6 @@ class AICommandRouter:
 
     def _extract_prompt_for_document(self, message: str) -> str:
         """Extract document prompt - optimized for speed"""
-        # Simple regex replacement for maximum performance
         cleaned = re.sub(
             r"(?i)(?:create|generate|write|make)\s+(?:a\s+)?(?:document|report|article|paper)\s+(?:about|on|regarding|for)\s+",
             "",
@@ -437,7 +414,6 @@ class AICommandRouter:
 
     def _extract_prompt_for_image(self, message: str) -> str:
         """Extract image prompt - optimized for speed"""
-        # Simple regex replacement for maximum performance
         cleaned = re.sub(
             r"(?i)(?:create|generate|draw|make)\s+(?:an?\s+)?(?:image|picture|photo)\s+(?:of|showing|with|depicting)\s+",
             "",
@@ -459,7 +435,7 @@ class AICommandRouter:
 
         gc.collect()
         if hasattr(gc, "set_debug"):
-            gc.set_debug(0)  # Disable debug output
+            gc.set_debug(0)
 
     async def should_route_message(
         self, message: str, has_attached_media: bool = False
@@ -469,15 +445,11 @@ class AICommandRouter:
         """
         if len(message.strip()) < 5:
             return False
-
         intent, confidence = await self.detect_intent(message, has_attached_media)
-
-        # Don't route EDUCATIONAL, CHAT, and ANALYZE intents
         if intent in [
             CommandIntent.EDUCATIONAL,
             CommandIntent.CHAT,
             CommandIntent.ANALYZE,
         ]:
             return False
-
         return intent != CommandIntent.UNKNOWN and confidence > 0.4

@@ -4,14 +4,10 @@ from typing import Dict, List, Any, Optional
 import time
 from dataclasses import dataclass, field
 from sklearn.feature_extraction.text import TfidfVectorizer
-
-# Import our modular components
 from .user_profile_manager import UserProfileManager
 from .persistence_manager import PersistenceManager
 from .semantic_search_manager import SemanticSearchManager
 from .group_memory_operations import GroupMemoryOperations
-
-# MongoDB imports
 import sys
 import os
 
@@ -25,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Message:
-    role: str  # "user", "assistant", "system"
+    role: str
     content: str
     timestamp: float = field(default_factory=time.time)
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -88,7 +84,6 @@ class MemoryManager:
     """Enhanced memory manager with modular components for better maintainability"""
 
     def __init__(self, db=None, client=None, storage_path=None):
-        # Initialize database connection
         if db is None:
             try:
                 self.db, self.client = get_database()
@@ -105,36 +100,25 @@ class MemoryManager:
                 self.client = None
         else:
             self.db = db
-            self.client = client  # Use provided client
-
-        # Initialize modular components
+            self.client = client
         self.user_profile_manager = UserProfileManager(self.db)
         self.persistence_manager = PersistenceManager(self.db, storage_path)
         self.semantic_search_manager = SemanticSearchManager()
         self.group_operations = GroupMemoryOperations()
-
-        # Core memory caches
         self.memory_cache = {}
         self.group_memory_cache = {}
         self.conversation_summaries = {}
         self.group_summaries = {}
         self.lock = asyncio.Lock()
-
-        # Enhanced memory features
         self.vectorizer = TfidfVectorizer(max_features=1000, stop_words="english")
-
-        # Memory importance scoring
         self.importance_factors = {
-            "recency": 0.3,  # How recent the message is
-            "relevance": 0.4,  # How relevant to current context
-            "interaction": 0.2,  # How much interaction it generated
-            "media": 0.1,  # Bonus for media content
+            "recency": 0.3,
+            "relevance": 0.4,
+            "interaction": 0.2,
+            "media": 0.1,
         }
-
-        # Ensure database indexes
         if self.db is not None:
             self.persistence_manager.ensure_indexes()
-
         logger.info("Enhanced MemoryManager initialized with modular components")
 
     async def add_user_message(
@@ -160,18 +144,12 @@ class MemoryManager:
             "group_id": group_id,
             "metadata": metadata,
         }
-
         async with self.lock:
-            # Store in appropriate cache based on group or individual
             if is_group and group_id:
                 if group_id not in self.group_memory_cache:
                     self.group_memory_cache[group_id] = []
                 self.group_memory_cache[group_id].append(message)
-
-                # Update group context
                 await self.group_operations.update_group_context(group_id, message)
-
-                # Store group message vectors for semantic search
                 await self.semantic_search_manager.store_group_message_vector(
                     group_id, content, len(self.group_memory_cache[group_id]) - 1
                 )
@@ -179,15 +157,11 @@ class MemoryManager:
                 if conversation_id not in self.memory_cache:
                     self.memory_cache[conversation_id] = []
                 self.memory_cache[conversation_id].append(message)
-
-                # Store message vectors for semantic search
                 await self.semantic_search_manager.store_message_vector(
                     conversation_id,
                     content,
                     len(self.memory_cache[conversation_id]) - 1,
                 )
-
-            # Persist to storage
             persist_key = conversation_id if not is_group else group_id
             if persist_key is not None:
                 await self.persistence_manager.persist_memory(
@@ -217,18 +191,13 @@ class MemoryManager:
             "group_id": group_id,
             "metadata": metadata,
         }
-
         async with self.lock:
             if is_group and group_id:
                 if group_id not in self.group_memory_cache:
                     self.group_memory_cache[group_id] = []
                 self.group_memory_cache[group_id].append(message)
-
-                # Update group context and shared knowledge
                 await self.group_operations.update_group_context(group_id, message)
                 await self.group_operations.update_shared_knowledge(group_id, content)
-
-                # Store group message vectors
                 await self.semantic_search_manager.store_group_message_vector(
                     group_id, content, len(self.group_memory_cache[group_id]) - 1
                 )
@@ -236,15 +205,11 @@ class MemoryManager:
                 if conversation_id not in self.memory_cache:
                     self.memory_cache[conversation_id] = []
                 self.memory_cache[conversation_id].append(message)
-
-                # Store message vectors
                 await self.semantic_search_manager.store_message_vector(
                     conversation_id,
                     content,
                     len(self.memory_cache[conversation_id]) - 1,
                 )
-
-            # Auto-generate conversation summary if needed
             cache_key = group_id if is_group else conversation_id
             if (
                 len(
@@ -257,7 +222,6 @@ class MemoryManager:
             ):
                 if cache_key is not None:
                     await self._generate_conversation_summary(cache_key, is_group)
-
             persist_key = conversation_id if not is_group else group_id
             if persist_key is not None:
                 await self.persistence_manager.persist_memory(
@@ -285,27 +249,18 @@ class MemoryManager:
                 if is_group
                 else self.memory_cache.get(conversation_id, [])
             )
-
             if not message_cache:
                 return []
-
-            # Get semantic similarity scores
             relevant_messages = await self.semantic_search_manager.semantic_search(
                 cache_key, query, is_group
             )
-
-            # If this is a group and we want to include shared knowledge
             if is_group and include_group_knowledge and group_id:
                 shared_knowledge = await self.group_operations.get_shared_knowledge(
                     group_id, query
                 )
                 relevant_messages.extend(shared_knowledge)
-
-            # Sort by combined relevance and importance score
             scored_messages = []
-            for msg_idx, similarity in relevant_messages[
-                : limit * 2
-            ]:  # Get more candidates
+            for msg_idx, similarity in relevant_messages[: limit * 2]:
                 if msg_idx < len(message_cache):
                     message = message_cache[msg_idx]
                     combined_score = (
@@ -314,14 +269,10 @@ class MemoryManager:
                         )
                     )
                     scored_messages.append((message, combined_score))
-
-            # Sort by score and return top results
             scored_messages.sort(key=lambda x: x[1], reverse=True)
             return [msg for msg, score in scored_messages[:limit]]
-
         except Exception as e:
             logger.error(f"Error in semantic search: {e}")
-            # Fallback to recent messages
             return await self.get_short_term_memory(
                 conversation_id, limit, is_group, group_id
             )
@@ -342,8 +293,6 @@ class MemoryManager:
             if is_group
             else self.memory_cache.get(conversation_id, [])
         )
-
-        # If cache is empty, try to load from storage
         if not message_cache:
             await self.load_memory(cache_key, is_group)
             message_cache = (
@@ -351,10 +300,8 @@ class MemoryManager:
                 if is_group
                 else self.memory_cache.get(conversation_id, [])
             )
-
         if not message_cache:
             return []
-
         return message_cache[-limit:]
 
     async def get_conversation_summary(
@@ -370,11 +317,8 @@ class MemoryManager:
         summary_cache = (
             self.group_summaries if is_group else self.conversation_summaries
         )
-
         if cache_key in summary_cache:
             return summary_cache[cache_key]
-
-        # Generate new summary
         return await self._generate_conversation_summary(cache_key, is_group)
 
     async def clear_conversation(
@@ -394,7 +338,6 @@ class MemoryManager:
                 self.memory_cache.pop(conversation_id, None)
                 self.conversation_summaries.pop(conversation_id, None)
 
-    # Group-specific methods
     async def get_group_participants(self, group_id: str) -> List[str]:
         """Get list of participants in a group conversation"""
         return await self.group_operations.get_group_participants(
@@ -412,7 +355,6 @@ class MemoryManager:
             summary["summary"] = await self.get_conversation_summary("", True, group_id)
         return summary
 
-    # User profile methods (delegated to UserProfileManager)
     async def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]):
         """Save user profile information"""
         return await self.user_profile_manager.save_user_profile(user_id, profile_data)
@@ -433,7 +375,6 @@ class MemoryManager:
             user_id, message_content
         )
 
-    # Storage methods (delegated to PersistenceManager)
     async def load_memory(self, cache_key: str, is_group: bool = False):
         """Load memory from storage"""
         memory_data = await self.persistence_manager.load_memory(cache_key, is_group)
@@ -448,21 +389,16 @@ class MemoryManager:
     ) -> List[Dict[str, Any]]:
         """Get all conversation history for a user/group"""
         try:
-            # Load memory if not already in cache
             cache_key = group_id if is_group else conversation_id
             if cache_key is None:
                 return []
             await self.load_memory(cache_key, is_group)
-
-            # Get all messages from cache
             messages = (
                 self.group_memory_cache.get(cache_key, [])
                 if is_group
                 else self.memory_cache.get(cache_key, [])
             )
-
             return messages
-
         except Exception as e:
             logger.error(f"Error retrieving conversation history: {e}")
             return []
@@ -479,19 +415,14 @@ class MemoryManager:
             if cache_key is None:
                 return {}
             await self.load_memory(cache_key, is_group)
-
-            # Get messages
             messages = await self.get_all_conversation_history(
                 conversation_id, is_group, group_id
             )
-
-            # Get summary
             summary = (
                 self.group_summaries.get(cache_key)
                 if is_group
                 else self.conversation_summaries.get(cache_key)
             )
-
             export_data = {
                 "conversation_id": conversation_id,
                 "is_group": is_group,
@@ -501,19 +432,15 @@ class MemoryManager:
                 "total_messages": len(messages),
                 "exported_at": time.time(),
             }
-
             if is_group and cache_key:
                 export_data["shared_knowledge"] = (
                     self.group_operations.get_shared_knowledge_for_group(cache_key)
                 )
-
             return export_data
-
         except Exception as e:
             logger.error(f"Error exporting conversation data: {e}")
             return {}
 
-    # Private helper methods
     def _get_memory_data(self, cache_key: str, is_group: bool) -> Dict[str, Any]:
         """Get memory data for persistence"""
         memory_data = {
@@ -531,12 +458,10 @@ class MemoryManager:
             "is_group": is_group,
             "last_updated": time.time(),
         }
-
         if is_group and cache_key:
             memory_data["shared_knowledge"] = (
                 self.group_operations.get_shared_knowledge_for_group(cache_key)
             )
-
         return memory_data
 
     def _populate_cache_from_data(
@@ -568,32 +493,21 @@ class MemoryManager:
                 if is_group
                 else self.memory_cache.get(cache_key, [])
             )
-
             if not message_cache:
                 return "No conversation history available."
-
-            # Get recent messages for summary
-            recent_messages = message_cache[-50:]  # Last 50 messages
-
-            # Extract key topics and themes
+            recent_messages = message_cache[-50:]
             topics = []
             user_contributions = defaultdict(list)
-
             for message in recent_messages:
                 content = message.get("content", "")
                 user_id = message.get("user_id", "assistant")
-
-                if len(content) > 20:  # Meaningful content
+                if len(content) > 20:
                     topics.append(content)
                     user_contributions[user_id].append(content[:100])
-
-            # Generate simple summary
             if is_group:
                 participants = len(user_contributions)
                 summary = f"Group conversation with {participants} participants. "
                 summary += f"Total messages: {len(recent_messages)}. "
-
-                # Add top contributors
                 if user_contributions:
                     most_active = max(
                         user_contributions.items(), key=lambda x: len(x[1])
@@ -601,22 +515,16 @@ class MemoryManager:
                     summary += f"Most active participant: User {most_active[0]} ({len(most_active[1])} messages). "
             else:
                 summary = f"Individual conversation with {len(recent_messages)} recent messages. "
-
-            # Add recent topics (simplified)
             if topics:
-                recent_topics = topics[-5:]  # Last 5 topics
+                recent_topics = topics[-5:]
                 summary += "Recent topics: " + "; ".join(
                     [t[:50] + "..." for t in recent_topics]
                 )
-
-            # Cache the summary
             summary_cache = (
                 self.group_summaries if is_group else self.conversation_summaries
             )
             summary_cache[cache_key] = summary
-
             return summary
-
         except Exception as e:
             logger.error(f"Error generating conversation summary: {e}")
             return "Summary generation failed."

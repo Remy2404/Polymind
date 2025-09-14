@@ -5,6 +5,7 @@ Debug script for model mapping issue
 
 import sys
 import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
@@ -61,5 +62,6 @@ try:
 except Exception as e:
     print(f"Error: {e}")
     import traceback
+
     traceback.print_exc()
     sys.exit(1)

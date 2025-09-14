@@ -48,59 +48,61 @@ class ModelConfigurations:
         """Get all available model configurations from JSON file, merged with hardcoded models."""
         models = {}
         try:
-            models_file = os.path.join(os.path.dirname(__file__), "..", "..", "..", "models.json")
+            models_file = os.path.join(
+                os.path.dirname(__file__), "..", "..", "..", "models.json"
+            )
             if os.path.exists(models_file):
                 with open(models_file, "r", encoding="utf-8") as f:
                     models_data = json.load(f)
-                
                 for model_data in models_data:
                     model_id = model_data.get("id", "")
                     if not model_id:
                         continue
-                    
-                    # Determine provider from model ID
                     provider = ModelConfigurations._determine_provider_from_id(model_id)
-                    
-                    # Extract capabilities from description and supported_parameters
-                    capabilities = ModelConfigurations._extract_capabilities_from_model_data(model_data)
-                    
-                    # Determine model type from capabilities
+                    capabilities = (
+                        ModelConfigurations._extract_capabilities_from_model_data(
+                            model_data
+                        )
+                    )
                     model_type = ModelConfigurations._determine_model_type(capabilities)
-                    
-                    # Create ModelConfig with proper max_tokens based on model capabilities
-                    # Determine appropriate max_tokens for this model
-                    max_tokens = 32000  # Default high value
-                    
-                    # Adjust max_tokens based on model type and capabilities  
+                    max_tokens = 32000
                     description = model_data.get("description", "").lower()
                     if "reasoning" in description or "thinking" in description:
-                        max_tokens = 65536  # Higher for reasoning models
+                        max_tokens = 65536
                     elif "code" in description or "programming" in description:
-                        max_tokens = 49152  # Higher for coding models
-                    elif any(keyword in description for keyword in ["small", "lightweight", "nano", "mini"]):
-                        max_tokens = 16384  # Lower for smaller models
+                        max_tokens = 49152
+                    elif any(
+                        keyword in description
+                        for keyword in ["small", "lightweight", "nano", "mini"]
+                    ):
+                        max_tokens = 16384
                     elif "vision" in description or "multimodal" in description:
-                        max_tokens = 24576  # Medium for vision models
-                    
+                        max_tokens = 24576
                     config = ModelConfig(
                         model_id=model_id,
                         display_name=model_data.get("name", model_id),
                         provider=provider,
-                        openrouter_model_key=model_id if provider == Provider.OPENROUTER else None,
+                        openrouter_model_key=(
+                            model_id if provider == Provider.OPENROUTER else None
+                        ),
                         description=model_data.get("description", ""),
                         type=model_type,
                         capabilities=capabilities,
                         supported_parameters=model_data.get("supported_parameters", []),
-                        system_message=ModelConfigurations._generate_system_message(model_id, model_data.get("name", "")),
-                        indicator_emoji=ModelConfigurations._get_indicator_emoji(provider, model_type),
-                        max_tokens=max_tokens,  # Set proper max_tokens
+                        system_message=ModelConfigurations._generate_system_message(
+                            model_id, model_data.get("name", "")
+                        ),
+                        indicator_emoji=ModelConfigurations._get_indicator_emoji(
+                            provider, model_type
+                        ),
+                        max_tokens=max_tokens,
                     )
                     models[model_id] = config
         except (json.JSONDecodeError, FileNotFoundError, KeyError) as e:
-            print(f"Warning: Failed to load models from JSON: {e}. Using hardcoded models.")
+            print(
+                f"Warning: Failed to load models from JSON: {e}. Using hardcoded models."
+            )
             return ModelConfigurations._get_hardcoded_models()
-        
-        # Merge with hardcoded models (hardcoded models will be overridden if present in JSON)
         models.update(ModelConfigurations._get_hardcoded_models())
         return models
 
@@ -115,21 +117,24 @@ class ModelConfigurations:
             system_message="You are Gemini, a helpful AI assistant created by Google. Be concise, helpful, and accurate.",
             supports_images=True,
             supports_documents=True,
-            supported_parameters=["tools", "tool_choice", "function_calling", "long_context"],
+            supported_parameters=[
+                "tools",
+                "tool_choice",
+                "function_calling",
+                "long_context",
+            ],
             description="Google's latest multimodal AI model with advanced tool calling capabilities",
             type="multimodal",
             max_tokens=32768,
-            capabilities=[ 
+            capabilities=[
                 "supports_images",
-                "supports_documents", 
+                "supports_documents",
                 "tool_calling",
                 "long_context",
                 "general_purpose",
             ],
         )
-        
         return {
-            # Essential fallback models only
             "gemini": gemini_config,
             "deepseek": ModelConfig(
                 model_id="deepseek",
@@ -140,7 +145,12 @@ class ModelConfigurations:
                 description="Advanced reasoning model with strong analytical capabilities",
                 type="reasoning",
                 max_tokens=65536,
-                capabilities=["reasoning_capable", "long_context", "general_purpose", "tool_calling"],
+                capabilities=[
+                    "reasoning_capable",
+                    "long_context",
+                    "general_purpose",
+                    "tool_calling",
+                ],
             ),
         }
 
@@ -161,48 +171,55 @@ class ModelConfigurations:
         description = model_data.get("description", "")
         description_lower = description.lower()
         supported_params = model_data.get("supported_parameters", [])
-        
-        # Check supported_parameters first (more reliable than description parsing)
-        if any(param in supported_params for param in ["tools", "tool_choice", "function_calling"]):
+        if any(
+            param in supported_params
+            for param in ["tools", "tool_choice", "function_calling"]
+        ):
             capabilities.append("tool_calling")
-            
-        # Tool calling capabilities from description (fallback - be conservative)
         if not any("tool_calling" in cap for cap in capabilities):
-            # Only check for explicit tool/function calling phrases (be very conservative)
             explicit_phrases = [
-                'tool calling', 'function calling', 'tool use', 'function call',
-                'tool calls', 'function calls', 'native tool use', 'supports tools'
+                "tool calling",
+                "function calling",
+                "tool use",
+                "function call",
+                "tool calls",
+                "function calls",
+                "native tool use",
+                "supports tools",
             ]
-            # Removed 'structured outputs' as it refers to JSON/XML formatting, not API tool calling
             if any(phrase in description_lower for phrase in explicit_phrases):
                 capabilities.append("tool_calling")
-
-        # Reasoning capabilities
-        if any(param in supported_params for param in ["reasoning", "include_reasoning"]):
+        if any(
+            param in supported_params for param in ["reasoning", "include_reasoning"]
+        ):
             capabilities.append("reasoning_capable")
-        elif any(keyword in description_lower for keyword in ["reasoning", "thinking", "logic", "math"]):
+        elif any(
+            keyword in description_lower
+            for keyword in ["reasoning", "thinking", "logic", "math"]
+        ):
             capabilities.append("reasoning_capable")
-
-        # Vision capabilities from description
-        if any(keyword in description_lower for keyword in ["vision", "image", "visual", "multimodal"]):
+        if any(
+            keyword in description_lower
+            for keyword in ["vision", "image", "visual", "multimodal"]
+        ):
             capabilities.append("supports_images")
-
-        # Coding capabilities
-        if any(keyword in description_lower for keyword in ["code", "programming", "coding", "developer"]):
+        if any(
+            keyword in description_lower
+            for keyword in ["code", "programming", "coding", "developer"]
+        ):
             capabilities.append("coding_specialist")
-
-        # Multilingual capabilities
-        if any(keyword in description_lower for keyword in ["multilingual", "language", "translation"]):
+        if any(
+            keyword in description_lower
+            for keyword in ["multilingual", "language", "translation"]
+        ):
             capabilities.append("multilingual_support")
-
-        # Long context
-        if any(keyword in description_lower for keyword in ["long", "context", "128k", "256k", "million"]):
+        if any(
+            keyword in description_lower
+            for keyword in ["long", "context", "128k", "256k", "million"]
+        ):
             capabilities.append("long_context")
-
-        # General purpose fallback
         if not capabilities:
             capabilities.append("general_purpose")
-
         return capabilities
 
     @staticmethod
@@ -210,35 +227,38 @@ class ModelConfigurations:
         """Extract capabilities from model description."""
         capabilities = []
         description_lower = description.lower()
-
-        # Tool calling capabilities
-        if any(keyword in description_lower for keyword in ["tool", "function", "calling", "api"]):
+        if any(
+            keyword in description_lower
+            for keyword in ["tool", "function", "calling", "api"]
+        ):
             capabilities.append("tool_calling")
-
-        # Reasoning capabilities
-        if any(keyword in description_lower for keyword in ["reasoning", "thinking", "logic", "math"]):
+        if any(
+            keyword in description_lower
+            for keyword in ["reasoning", "thinking", "logic", "math"]
+        ):
             capabilities.append("reasoning_capable")
-
-        # Vision capabilities
-        if any(keyword in description_lower for keyword in ["vision", "image", "visual", "multimodal"]):
+        if any(
+            keyword in description_lower
+            for keyword in ["vision", "image", "visual", "multimodal"]
+        ):
             capabilities.append("supports_images")
-
-        # Coding capabilities
-        if any(keyword in description_lower for keyword in ["code", "programming", "coding", "developer"]):
+        if any(
+            keyword in description_lower
+            for keyword in ["code", "programming", "coding", "developer"]
+        ):
             capabilities.append("coding_specialist")
-
-        # Multilingual capabilities
-        if any(keyword in description_lower for keyword in ["multilingual", "language", "translation"]):
+        if any(
+            keyword in description_lower
+            for keyword in ["multilingual", "language", "translation"]
+        ):
             capabilities.append("multilingual_support")
-
-        # Long context
-        if any(keyword in description_lower for keyword in ["long", "context", "128k", "256k"]):
+        if any(
+            keyword in description_lower
+            for keyword in ["long", "context", "128k", "256k"]
+        ):
             capabilities.append("long_context")
-
-        # General purpose fallback
         if not capabilities:
             capabilities.append("general_purpose")
-
         return capabilities
 
     @staticmethod
@@ -291,8 +311,9 @@ class ModelConfigurations:
     def get_models_by_provider(provider: Provider) -> Dict[str, ModelConfig]:
         """Get all models for a specific provider."""
         if not isinstance(provider, Provider):
-            raise ValueError(f"Invalid provider: {provider}. Must be a Provider enum value.")
-        
+            raise ValueError(
+                f"Invalid provider: {provider}. Must be a Provider enum value."
+            )
         all_models = ModelConfigurations.get_all_models()
         return {k: v for k, v in all_models.items() if v.provider == provider}
 
@@ -300,36 +321,42 @@ class ModelConfigurations:
     def get_models_with_tool_calls() -> Dict[str, ModelConfig]:
         """Get all models that support tool calls based on logic rather than configuration."""
         all_models = ModelConfigurations.get_all_models()
-        return {k: v for k, v in all_models.items() if ModelConfigurations._model_supports_tool_calls_logic(k, v)}
+        return {
+            k: v
+            for k, v in all_models.items()
+            if ModelConfigurations._model_supports_tool_calls_logic(k, v)
+        }
 
     @staticmethod
-    def _model_supports_tool_calls_logic(model_id: str, model_config: ModelConfig) -> bool:
+    def _model_supports_tool_calls_logic(
+        model_id: str, model_config: ModelConfig
+    ) -> bool:
         """
         Determine if a model supports tool calls based on supported_parameters and provider.
-
         Following OpenRouter documentation and Gemini's capabilities: check supported_parameters
         and provider-specific logic.
         """
-        # Primary method: Check supported_parameters directly (strict approach)
-        if hasattr(model_config, 'supported_parameters') and model_config.supported_parameters:
-            if 'tools' in model_config.supported_parameters:
+        if (
+            hasattr(model_config, "supported_parameters")
+            and model_config.supported_parameters
+        ):
+            if "tools" in model_config.supported_parameters:
                 return True
-
-        # Provider-specific logic
         if model_config.provider == Provider.DEEPSEEK:
-            return True  # DeepSeek models generally support tool calling
+            return True
         elif model_config.provider == Provider.GEMINI:
-            return True  # Gemini models support function calling/tools
-
-        # Default to False - no assumptions based on capabilities alone
+            return True
         return False
 
     @staticmethod
-    def get_models_with_tool_calls_by_provider(provider: Provider) -> Dict[str, ModelConfig]:
+    def get_models_with_tool_calls_by_provider(
+        provider: Provider,
+    ) -> Dict[str, ModelConfig]:
         """Get all models that support tool calls for a specific provider."""
         if not isinstance(provider, Provider):
-            raise ValueError(f"Invalid provider: {provider}. Must be a Provider enum value.")
-        
+            raise ValueError(
+                f"Invalid provider: {provider}. Must be a Provider enum value."
+            )
         tool_call_models = ModelConfigurations.get_models_with_tool_calls()
         return {k: v for k, v in tool_call_models.items() if v.provider == provider}
 
@@ -338,11 +365,10 @@ class ModelConfigurations:
         """Check if a specific model supports tool calls."""
         if not isinstance(model_id, str) or not model_id.strip():
             raise ValueError("Invalid model_id: must be a non-empty string")
-        
         all_models = ModelConfigurations.get_all_models()
         model = all_models.get(model_id)
         if not model:
-            return False 
+            return False
         return ModelConfigurations._model_supports_tool_calls_logic(model_id, model)
 
     @staticmethod
@@ -361,30 +387,26 @@ class ModelConfigurations:
     def add_openrouter_models(additional_models: List[Dict[str, Any]]) -> None:
         """
         Easily add more OpenRouter models.
-
         Args:
             additional_models: List of model dictionaries with keys:
                 - model_id, display_name, openrouter_model_key, indicator_emoji, etc.
-        
         Raises:
             ValueError: If input validation fails
         """
         if not isinstance(additional_models, list):
             raise ValueError("additional_models must be a list")
-        
         for i, model_data in enumerate(additional_models):
             if not isinstance(model_data, dict):
                 raise ValueError(f"Model at index {i} must be a dictionary")
-            
             required_keys = ["model_id", "display_name", "openrouter_model_key"]
             for key in required_keys:
                 if key not in model_data:
                     raise ValueError(f"Model at index {i} missing required key: {key}")
                 if not isinstance(model_data[key], str) or not model_data[key].strip():
-                    raise ValueError(f"Model at index {i} {key} must be a non-empty string")
-        
+                    raise ValueError(
+                        f"Model at index {i} {key} must be a non-empty string"
+                    )
         current_models = ModelConfigurations.get_all_models()
-
         for model_data in additional_models:
             model_config = ModelConfig(
                 model_id=model_data["model_id"],
@@ -402,36 +424,24 @@ class ModelConfigurations:
         """Get OpenRouter model key with fallback to reliable alternatives"""
         if not isinstance(model_id, str) or not model_id.strip():
             raise ValueError("Invalid model_id: must be a non-empty string")
-        
-        # If the model_id is already a valid OpenRouter model key (contains / and :free), return it as-is
-        if "/" in model_id and (":free" in model_id or model_id in ["gemini", "deepseek"]):
+        if "/" in model_id and (
+            ":free" in model_id or model_id in ["gemini", "deepseek"]
+        ):
             return model_id
-        
-        # Primary mapping for direct model matches
         model_map = {
             "gemini": "gemini",
             "deepseek": "deepseek",
         }
-
-        # Simplified fallback mapping with just two reliable models
         fallback_map = {
-            # Primary mapping for reliable models
             "gemini": "gemini",
             "deepseek": "deepseek",
-            # Fallback for tool-calling models from models.json
             "deepseek/deepseek-chat-v3.1:free": "deepseek/deepseek-r1:free",
             "meta-llama/llama-4-maverick:free": "meta-llama/llama-3.3-70b-instruct:free",
         }
-
-        # First, try to get the model from the primary map
         if model_id in model_map:
             return model_map[model_id]
-
-        # If not found, check the fallback map
         if model_id in fallback_map:
             return fallback_map[model_id]
-        
-        # If no specific fallback, try to find a compatible model based on provider
         if model_id.startswith("mistralai/"):
             return "mistralai/mistral-small-3.2-24b-instruct:free"
         elif model_id.startswith("qwen/"):
@@ -442,7 +452,4 @@ class ModelConfigurations:
             return "google/gemini-2.0-flash-exp:free"
         elif model_id.startswith("meta-llama/"):
             return "meta-llama/llama-4-maverick:free"
-        
-        # Default fallback to most reliable model
         return "deepseek/deepseek-chat-v3.1:free"
-

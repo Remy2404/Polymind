@@ -14,10 +14,8 @@ class MediaUtilities:
     def get_mime_type(file_extension: str) -> str:
         """
         Get MIME type from file extension
-
         Args:
             file_extension: File extension string including the dot (e.g. ".jpg")
-
         Returns:
             MIME type string
         """
@@ -42,7 +40,6 @@ class MediaUtilities:
             ".json": "application/json",
             ".zip": "application/zip",
         }
-
         return mime_types.get(file_extension.lower(), "application/octet-stream")
 
     @staticmethod
@@ -86,9 +83,7 @@ class MessagePreprocessor:
     @staticmethod
     def clean_message(message_text: str) -> str:
         """Clean message text from special characters or problematic patterns"""
-        # Remove redundant whitespace
         cleaned = " ".join(message_text.split())
-        # Remove null bytes and other special characters if needed
         cleaned = cleaned.replace("\0", "")
         return cleaned
 

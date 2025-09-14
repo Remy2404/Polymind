@@ -10,36 +10,30 @@ from enum import Enum
 class VoiceQuality(Enum):
     """Voice quality settings"""
 
-    LOW = "low"  # Fast processing, lower accuracy
-    MEDIUM = "medium"  # Balanced speed and accuracy
-    HIGH = "high"  # Best accuracy, slower processing
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
 
 
 class VoiceConfig:
     """Configuration for voice processing with Faster-Whisper - English only"""
 
-    # Model sizes for Faster-Whisper - English only
     WHISPER_MODEL_SIZES = {
         VoiceQuality.LOW: "tiny",
         VoiceQuality.MEDIUM: "base",
-        VoiceQuality.HIGH: "base",  # Using base even for high quality to save space
+        VoiceQuality.HIGH: "base",
     }
-    # English only configuration
     ENGINE_PREFERENCES = {
         "en": ["faster_whisper"],
         "default": ["faster_whisper"],
     }
-    # Audio preprocessing for English
     LANGUAGE_PREPROCESSING = {
         "en": {"normalize": True, "high_pass_filter": 80, "volume_boost": 1},
         "default": {"normalize": True, "high_pass_filter": 80, "volume_boost": 1},
     }
-    # Confidence threshold for Faster-Whisper
     CONFIDENCE_THRESHOLDS = {
         "faster_whisper": 0.7,
     }
-
-    # VAD (Voice Activity Detection) settings
     VAD_SETTINGS = {
         "aggressiveness": 2,
         "min_speech_ratio": 0.3,
@@ -83,7 +77,6 @@ class VoiceConfig:
 
     def is_high_resource_language(cls, language: str) -> bool:
         """Check if language requires high-resource processing"""
-        # No high resource languages when using English only
         return False
 
     @classmethod
@@ -91,7 +84,6 @@ class VoiceConfig:
         cls, language: str, file_size_mb: float
     ) -> VoiceQuality:
         """Get recommended quality based on language and file size"""
-        # For large files or high-resource languages, use higher quality
         if file_size_mb > 10 or cls.is_high_resource_language(language):
             return VoiceQuality.HIGH
         elif file_size_mb > 2:
@@ -112,15 +104,12 @@ class VoiceConfig:
         config["cache_models"] = True
         config["language_detection"] = True
         engine_prefs = {
-            "en": ["faster_whisper"],  # VOICE_ENGINE_PREFERENCES_EN=faster_whisper
+            "en": ["faster_whisper"],
         }
-
-        # Merge with class defaults
         final_prefs = cls.ENGINE_PREFERENCES.copy()
         final_prefs.update(engine_prefs)
         config["engine_preferences"] = final_prefs
-
-        return config  # Removed non-English language detection methods to save space
+        return config
 
 
 class VoiceStats:
@@ -146,8 +135,6 @@ class VoiceStats:
     ):
         """Record processing result"""
         self.stats["total_processed"] += 1
-
-        # Update by engine
         if engine not in self.stats["by_engine"]:
             self.stats["by_engine"][engine] = {
                 "count": 0,
@@ -155,18 +142,14 @@ class VoiceStats:
                 "total_time": 0,
                 "total_confidence": 0,
             }
-
         engine_stats = self.stats["by_engine"][engine]
         engine_stats["count"] += 1
         engine_stats["total_time"] += processing_time
         engine_stats["total_confidence"] += confidence
         if success:
             engine_stats["success"] += 1
-
-        # Update by language
         if language not in self.stats["by_language"]:
             self.stats["by_language"][language] = {"count": 0, "success": 0}
-
         lang_stats = self.stats["by_language"][language]
         lang_stats["count"] += 1
         if success:
@@ -174,7 +157,6 @@ class VoiceStats:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get comprehensive statistics"""
-        # Calculate derived stats
         for engine, data in self.stats["by_engine"].items():
             if data["count"] > 0:
                 self.stats["success_rate"][engine] = data["success"] / data["count"]
@@ -184,32 +166,25 @@ class VoiceStats:
                 self.stats["avg_confidence"][engine] = (
                     data["total_confidence"] / data["count"]
                 )
-
         return self.stats
 
     def get_best_engine(self, metric: str = "success_rate") -> str:
         """Get best performing engine by metric"""
         if metric not in ["success_rate", "avg_processing_time", "avg_confidence"]:
             metric = "success_rate"
-
         stats = self.get_stats()
         if not stats[metric]:
             return "unknown"
-
         if metric == "avg_processing_time":
-            # For processing time, lower is better
             return min(stats[metric].items(), key=lambda x: x[1])[0]
         else:
-            # For success rate and confidence, higher is better
             return max(stats[metric].items(), key=lambda x: x[1])[0]
 
 
-# Global configuration instance
 voice_config = VoiceConfig()
 voice_stats = VoiceStats()
 
 
-# Hardcoded configuration (no longer dependent on environment)
 def load_config_from_env() -> Dict[str, Any]:
     """Load configuration - now hardcoded for stability"""
     return {

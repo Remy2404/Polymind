@@ -18,8 +18,6 @@ class EnhancedUIComponents:
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-
-        # Emoji sets for different purposes
         self.emojis = {
             "status": {"active": "🟢", "inactive": "🔴", "pending": "🟡"},
             "actions": {"create": "➕", "edit": "✏️", "delete": "🗑️", "view": "👁️"},
@@ -39,8 +37,6 @@ class EnhancedUIComponents:
     ) -> InlineKeyboardMarkup:
         """Create a dynamic quick action menu based on user context"""
         buttons = []
-
-        # Row 1: Core AI Functions
         row1 = [
             InlineKeyboardButton(
                 f"{self.emojis['features']['ai']} Chat", callback_data="quick_chat"
@@ -55,8 +51,6 @@ class EnhancedUIComponents:
             ),
         ]
         buttons.append(row1)
-
-        # Row 2: Collaboration (if in group)
         if user_context.get("is_group", False):
             row2 = [
                 InlineKeyboardButton(
@@ -73,12 +67,10 @@ class EnhancedUIComponents:
                 ),
             ]
             buttons.append(row2)
-
-        # Row 3: Recent Actions (personalized)
         recent_actions = user_context.get("recent_actions", [])
         if recent_actions:
             row3 = []
-            for action in recent_actions[:3]:  # Max 3 recent actions
+            for action in recent_actions[:3]:
                 emoji = self.emojis["actions"].get(action["type"], "🔄")
                 row3.append(
                     InlineKeyboardButton(
@@ -87,8 +79,6 @@ class EnhancedUIComponents:
                     )
                 )
             buttons.append(row3)
-
-        # Row 4: Settings and Help
         row4 = [
             InlineKeyboardButton(
                 f"{self.emojis['features']['settings']} Settings",
@@ -100,7 +90,6 @@ class EnhancedUIComponents:
             ),
         ]
         buttons.append(row4)
-
         return InlineKeyboardMarkup(buttons)
 
     def create_smart_model_selector(
@@ -108,44 +97,33 @@ class EnhancedUIComponents:
     ) -> InlineKeyboardMarkup:
         """Create an intelligent model selector with recommendations"""
         buttons = []
-
-        # Group models by capability and show recommendations
         model_categories = {
             "💬 Chat Experts": ["gemini-2.0-flash", "deepseek-r1"],
             "🎨 Creative AI": ["claude-3.5-sonnet", "gpt-4"],
             "⚡ Speed Champions": ["gemini-1.5-flash", "claude-3-haiku"],
             "🧠 Deep Thinkers": ["deepseek-v3", "qwen2.5-72b"],
         }
-
         for category, models in model_categories.items():
             category_buttons = []
             for model in models:
                 if model in available_models:
                     model_info = available_models[model]
-
-                    # Add indicators for current model and performance
                     indicators = ""
                     if model == current_model:
                         indicators += "✅ "
-
-                    # Performance indicators
                     speed = model_info.get("speed_score", 0)
                     if speed > 8:
                         indicators += "⚡"
-
                     quality = model_info.get("quality_score", 0)
                     if quality > 8:
                         indicators += "🌟"
-
                     button_text = f"{indicators}{model_info.get('display_name', model)}"
                     category_buttons.append(
                         InlineKeyboardButton(
                             button_text, callback_data=f"select_model_{model}"
                         )
                     )
-
             if category_buttons:
-                # Add category header
                 buttons.append(
                     [
                         InlineKeyboardButton(
@@ -153,13 +131,9 @@ class EnhancedUIComponents:
                         )
                     ]
                 )
-
-                # Add model buttons in rows of 2
                 for i in range(0, len(category_buttons), 2):
                     row = category_buttons[i : i + 2]
                     buttons.append(row)
-
-        # Add comparison and help options
         buttons.append(
             [
                 InlineKeyboardButton(
@@ -170,14 +144,11 @@ class EnhancedUIComponents:
                 ),
             ]
         )
-
         return InlineKeyboardMarkup(buttons)
 
     def create_conversation_insights_panel(self, insights: Dict[str, Any]) -> str:
         """Create a rich conversation insights panel"""
         panel = "🧠 **Conversation Intelligence Panel**\n\n"
-
-        # Memory Statistics
         memory_stats = insights.get("memory_stats", {})
         panel += "📊 **Memory Analytics:**\n"
         panel += f"• Total messages: {memory_stats.get('total_messages', 0)}\n"
@@ -185,24 +156,18 @@ class EnhancedUIComponents:
             f"• Important conversations: {memory_stats.get('important_count', 0)}\n"
         )
         panel += f"• Last activity: {memory_stats.get('last_activity', 'Unknown')}\n\n"
-
-        # Active Topics
         topics = insights.get("active_topics", [])
         if topics:
             panel += "🎯 **Active Topics:**\n"
             for i, topic in enumerate(topics[:5], 1):
                 panel += f"{i}. {topic}\n"
             panel += "\n"
-
-        # Smart Suggestions
         suggestions = insights.get("smart_suggestions", [])
         if suggestions:
             panel += "💡 **Smart Suggestions:**\n"
             for suggestion in suggestions[:3]:
                 panel += f"• {suggestion}\n"
             panel += "\n"
-
-        # Group Insights (if applicable)
         if insights.get("is_group"):
             group_info = insights.get("group_info", {})
             panel += "👥 **Group Insights:**\n"
@@ -211,21 +176,16 @@ class EnhancedUIComponents:
             panel += (
                 f"• Shared knowledge items: {group_info.get('shared_knowledge', 0)}\n"
             )
-
         return panel
 
     def create_progress_indicator(
         self, task_name: str, progress: float, eta: Optional[str] = None
     ) -> str:
         """Create an animated progress indicator"""
-        # Progress bar with 10 segments
         filled_segments = int(progress * 10)
         progress_bar = "█" * filled_segments + "░" * (10 - filled_segments)
-
-        # Add percentage and ETA
         percentage = int(progress * 100)
         eta_text = f" (ETA: {eta})" if eta else ""
-
         return f"🔄 **{task_name}**\n`[{progress_bar}]` {percentage}%{eta_text}"
 
     def create_context_aware_suggestions(
@@ -233,11 +193,7 @@ class EnhancedUIComponents:
     ) -> List[InlineKeyboardButton]:
         """Generate context-aware action suggestions"""
         suggestions = []
-
-        # Analyze context and generate relevant suggestions
         last_message = context.get("last_message", "")
-
-        # Code-related suggestions
         if any(
             keyword in last_message.lower()
             for keyword in ["code", "function", "python", "javascript"]
@@ -255,8 +211,6 @@ class EnhancedUIComponents:
                     ),
                 ]
             )
-
-        # Creative suggestions
         elif any(
             keyword in last_message.lower()
             for keyword in ["image", "creative", "design", "art"]
@@ -274,8 +228,6 @@ class EnhancedUIComponents:
                     ),
                 ]
             )
-
-        # Learning/Educational suggestions
         elif any(
             keyword in last_message.lower()
             for keyword in ["learn", "explain", "how", "what", "why"]
@@ -293,8 +245,6 @@ class EnhancedUIComponents:
                     ),
                 ]
             )
-
-        # Default suggestions if no specific context
         if not suggestions:
             suggestions.extend(
                 [
@@ -307,7 +257,6 @@ class EnhancedUIComponents:
                     ),
                 ]
             )
-
         return suggestions
 
     def create_smart_pagination(
@@ -317,11 +266,7 @@ class EnhancedUIComponents:
         total_pages = max(1, (len(items) + items_per_page - 1) // items_per_page)
         start_idx = current_page * items_per_page
         end_idx = min(start_idx + items_per_page, len(items))
-
-        # Create navigation buttons
         nav_buttons = []
-
-        # Previous page
         if current_page > 0:
             nav_buttons.append(
                 InlineKeyboardButton(
@@ -329,15 +274,11 @@ class EnhancedUIComponents:
                     callback_data=f"page_{current_page - 1}",
                 )
             )
-
-        # Page indicator
         nav_buttons.append(
             InlineKeyboardButton(
                 f"📄 {current_page + 1}/{total_pages}", callback_data="page_info"
             )
         )
-
-        # Next page
         if current_page < total_pages - 1:
             nav_buttons.append(
                 InlineKeyboardButton(
@@ -345,7 +286,6 @@ class EnhancedUIComponents:
                     callback_data=f"page_{current_page + 1}",
                 )
             )
-
         return {
             "items": items[start_idx:end_idx],
             "navigation": nav_buttons,
@@ -361,11 +301,7 @@ class EnhancedUIComponents:
     ) -> InlineKeyboardMarkup:
         """Create an adaptive keyboard based on user preferences and context"""
         buttons = []
-
-        # Adapt based on user's most used features
         frequent_features = user_preferences.get("frequent_features", [])
-
-        # First row: Most used features
         if frequent_features:
             row1 = []
             for feature in frequent_features[:3]:
@@ -377,15 +313,10 @@ class EnhancedUIComponents:
                     )
                 )
             buttons.append(row1)
-
-        # Context-sensitive suggestions
         context_suggestions = self.create_context_aware_suggestions(context)
         if context_suggestions:
-            # Add suggestions in rows of 2
             for i in range(0, len(context_suggestions), 2):
                 buttons.append(context_suggestions[i : i + 2])
-
-        # Add discovery section for new features
         if user_preferences.get("show_discovery", True):
             discovery_buttons = [
                 InlineKeyboardButton(
@@ -394,13 +325,10 @@ class EnhancedUIComponents:
                 InlineKeyboardButton("📈 Usage Stats", callback_data="adaptive_stats"),
             ]
             buttons.append(discovery_buttons)
-
         return InlineKeyboardMarkup(buttons)
 
     def format_rich_message(self, content: str, message_type: str = "info") -> str:
         """Format messages with rich styling and structure"""
-
-        # Message type indicators
         type_indicators = {
             "info": "ℹ️",
             "success": "✅",
@@ -409,16 +337,10 @@ class EnhancedUIComponents:
             "tip": "💡",
             "feature": "🚀",
         }
-
         indicator = type_indicators.get(message_type, "📝")
-
-        # Add rich formatting
         formatted = f"{indicator} **{message_type.title()}**\n\n{content}"
-
-        # Add timestamp
         timestamp = datetime.now().strftime("%H:%M")
         formatted += f"\n\n🕐 *{timestamp}*"
-
         return formatted
 
     async def handle_ui_interaction(
@@ -426,12 +348,10 @@ class EnhancedUIComponents:
     ) -> None:
         """Handle UI component interactions"""
         try:
-            # Parse interaction data
             parts = interaction_data.split("_", 2)
             component_type = parts[0]
             action = parts[1] if len(parts) > 1 else ""
             data = parts[2] if len(parts) > 2 else ""
-
             if component_type == "quick":
                 await self._handle_quick_action(update, context, action, data)
             elif component_type == "adaptive":
@@ -440,7 +360,6 @@ class EnhancedUIComponents:
                 await self._handle_suggestion_action(update, context, action, data)
             else:
                 self.logger.warning(f"Unknown UI component type: {component_type}")
-
         except Exception as e:
             self.logger.error(f"Error handling UI interaction: {e}")
             if update.callback_query:
@@ -454,7 +373,6 @@ class EnhancedUIComponents:
         """Handle quick action interactions"""
 
         async def safe_reply(text):
-            # Safely reply to the user, handling cases where message/chat may be None
             message_obj = getattr(update.callback_query, "message", None)
             reply_text_func = getattr(message_obj, "reply_text", None)
             chat = getattr(update, "effective_chat", None)
@@ -466,7 +384,6 @@ class EnhancedUIComponents:
             elif chat and getattr(chat, "id", None) is not None:
                 await context.bot.send_message(chat_id=chat.id, text=text)
             else:
-                # Fallback: answer callback query if possible
                 if update.callback_query:
                     await update.callback_query.answer(text)
 
@@ -480,7 +397,6 @@ class EnhancedUIComponents:
             await safe_reply(
                 "🔍 Smart Search activated! What would you like to find in our conversation history?"
             )
-        # Add more quick actions as needed
 
     async def _handle_adaptive_action(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str, data: str
@@ -488,7 +404,6 @@ class EnhancedUIComponents:
         """Handle adaptive keyboard interactions"""
 
         async def safe_reply(text):
-            # Safely reply to the user, handling cases where message/chat may be None
             message_obj = getattr(update.callback_query, "message", None)
             reply_text_func = getattr(message_obj, "reply_text", None)
             chat = getattr(update, "effective_chat", None)
@@ -500,7 +415,6 @@ class EnhancedUIComponents:
             elif chat and getattr(chat, "id", None) is not None:
                 await context.bot.send_message(chat_id=chat.id, text=text)
             else:
-                # Fallback: answer callback query if possible
                 if update.callback_query:
                     await update.callback_query.answer(text)
 
@@ -525,7 +439,6 @@ class EnhancedUIComponents:
         """Handle suggestion action interactions"""
 
         async def safe_reply(text):
-            # Safely reply to the user, handling cases where message/chat may be None
             message_obj = getattr(update.callback_query, "message", None)
             reply_text_func = getattr(message_obj, "reply_text", None)
             chat = getattr(update, "effective_chat", None)
@@ -537,11 +450,9 @@ class EnhancedUIComponents:
             elif chat and getattr(chat, "id", None) is not None:
                 await context.bot.send_message(chat_id=chat.id, text=text)
             else:
-                # Fallback: answer callback query if possible
                 if update.callback_query:
                     await update.callback_query.answer(text)
 
-        # Example suggestion actions
         if action == "explain_code":
             await safe_reply(
                 "🔍 Here is an explanation of the code snippet you referenced."

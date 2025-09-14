@@ -12,10 +12,8 @@ from src.services.model_handlers.model_configs import (
     ModelConfig,
 )
 
-# Load environment variables
 load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
 if not OPENROUTER_API_KEY:
     telegram_logger.log_error(
         "OPENROUTER_API_KEY not found in environment variables.", 0
@@ -27,18 +25,12 @@ class OpenRouterAPI:
         self.rate_limiter = rate_limiter
         self.logger = logging.getLogger(__name__)
         telegram_logger.log_message("Initializing OpenRouter API", 0)
-
         if not OPENROUTER_API_KEY:
             raise ValueError("OPENROUTER_API_KEY not found or empty")
-
-        # Initialize OpenAI client with OpenRouter base URL
         self.client = AsyncOpenAI(
             api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1"
         )
-
         self._load_openrouter_models_from_config()
-
-        # Circuit breaker properties
         self.api_failures = 0
         self.api_last_failure = 0
         self.circuit_breaker_threshold = 5
@@ -80,12 +72,10 @@ class OpenRouterAPI:
             base_message = (
                 "You are an advanced AI assistant that helps users with various tasks."
             )
-
         context_hint = (
             " Use conversation history/context when relevant." if context else ""
         )
         if not context and not model_config:
-            # If no context is provided and no specific model config, add a general helpfulness hint.
             return base_message + " Be concise, helpful, and accurate."
         return base_message + context_hint
 
@@ -100,27 +90,26 @@ class OpenRouterAPI:
         timeout: float = 300.0,
     ) -> Optional[str]:
         try:
-            # Validate model parameter
             if not model or not isinstance(model, str) or not model.strip():
                 self.logger.error("Invalid model parameter: must be a non-empty string")
                 return "Error: Invalid model specified"
-
-            # Get model with fallback support from centralized config
             openrouter_model = ModelConfigurations.get_model_with_fallback(model)
-
-            if not openrouter_model or not isinstance(openrouter_model, str) or not openrouter_model.strip():
-                self.logger.error(f"Invalid OpenRouter model key returned for {model}: {openrouter_model}")
+            if (
+                not openrouter_model
+                or not isinstance(openrouter_model, str)
+                or not openrouter_model.strip()
+            ):
+                self.logger.error(
+                    f"Invalid OpenRouter model key returned for {model}: {openrouter_model}"
+                )
                 return f"Error: Could not determine model for {model}"
-
-            # Set default max_tokens if not provided based on model configuration
             if max_tokens is None:
                 model_configs = ModelConfigurations.get_all_models()
                 model_config = model_configs.get(model)
-                if model_config and hasattr(model_config, 'max_tokens'):
+                if model_config and hasattr(model_config, "max_tokens"):
                     max_tokens = model_config.max_tokens
                 else:
-                    max_tokens = 32768  # Default high value for OpenRouter models
-
+                    max_tokens = 32768
             system_message = self._build_system_message(model, context)
             messages = [{"role": "system", "content": system_message}]
             if context:
@@ -128,8 +117,6 @@ class OpenRouterAPI:
                     [msg for msg in context if "role" in msg and "content" in msg]
                 )
             messages.append({"role": "user", "content": prompt})
-
-            # Use OpenAI SDK to make the request
             response = await self.client.chat.completions.create(
                 model=openrouter_model,
                 messages=messages,
@@ -137,24 +124,19 @@ class OpenRouterAPI:
                 max_tokens=max_tokens,
                 timeout=timeout,
             )
-
             if response.choices and len(response.choices) > 0:
                 message_content = response.choices[0].message.content
                 finish_reason = response.choices[0].finish_reason
-
                 if finish_reason != "stop":
                     self.logger.warning(f"Finish reason: {finish_reason}")
-
                 self.logger.info(
                     f"OpenRouter response length: {len(message_content) if message_content else 0} characters"
                 )
-                self.api_failures = 0  # Reset failures on successful response
+                self.api_failures = 0
                 return message_content
-
             self.logger.warning("No valid response from OpenRouter API")
             self.api_failures += 1
             return None
-
         except AuthenticationError as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
@@ -163,14 +145,12 @@ class OpenRouterAPI:
             )
             self.logger.error(f"OpenRouter API authentication error: {str(e)}")
             return f"OpenRouter API error: {error_message}"
-
         except RateLimitError as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
             error_message = "Rate limit exceeded. Please try again later."
             self.logger.error(f"OpenRouter API rate limit error: {str(e)}")
             return f"OpenRouter API error: {error_message}"
-
         except APIError as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
@@ -188,13 +168,10 @@ class OpenRouterAPI:
                 f"OpenRouter API error for model {model}: {error_message}"
             )
             return f"OpenRouter API error: {error_message}"
-
         except Exception as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
-            self.logger.error(
-                f"OpenRouter API error: {str(e)}", exc_info=True
-            )  # Log full traceback
+            self.logger.error(f"OpenRouter API error: {str(e)}", exc_info=True)
             return f"Unexpected error when calling OpenRouter API: {str(e)}"
 
     @rate_limit
@@ -209,10 +186,8 @@ class OpenRouterAPI:
         timeout: float = 300.0,
     ) -> Optional[str]:
         try:
-            # Set default max_tokens if not provided
             if max_tokens is None:
                 max_tokens = 32768
-                
             final_system_message = (
                 system_message
                 or "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."
@@ -221,8 +196,6 @@ class OpenRouterAPI:
             if context:
                 messages.extend(context)
             messages.append({"role": "user", "content": prompt})
-
-            # Use OpenAI SDK to make the request
             response = await self.client.chat.completions.create(
                 model=openrouter_model_key,
                 messages=messages,
@@ -230,34 +203,28 @@ class OpenRouterAPI:
                 max_tokens=max_tokens,
                 timeout=timeout,
             )
-
             if response.choices and len(response.choices) > 0:
                 content = response.choices[0].message.content
                 self.api_failures = 0
                 return content
-
             self.api_failures += 1
             return None
-
         except AuthenticationError as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
             self.logger.error(f"OpenRouter API authentication error: {str(e)}")
             return "Authentication error. Please check your OpenRouter API key."
-
         except RateLimitError as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
             self.logger.error(f"OpenRouter API rate limit error: {str(e)}")
             return "Rate limit exceeded. Please try again later."
-
         except APIError as e:
             self.api_failures += 1
             self.api_last_failure = time.time()
             error_message = f"API error: {e.message}"
             self.logger.error(f"OpenRouter API error: {error_message}")
             return f"OpenRouter API error: {error_message}"
-
         except Exception as e:
             self.api_failures += 1
             self.api_last_failure = time.time()

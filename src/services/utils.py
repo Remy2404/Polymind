@@ -17,7 +17,6 @@ def format_response(data: Dict[str, Any]) -> str:
 
 def validate_image(image_data: bytes) -> bool:
     """Validate image data before processing"""
-    # Add image validation logic
     return len(image_data) > 0
 
 

@@ -27,7 +27,6 @@ class EnhancedUI:
         self, options: List[Dict[str, Any]], layout: str = "grid", theme: str = "dark"
     ) -> InlineKeyboardMarkup:
         """Create intelligent keyboard layouts"""
-
         if layout == "carousel":
             return await self._create_carousel_keyboard(options, theme)
         elif layout == "smart_grid":
@@ -40,8 +39,6 @@ class EnhancedUI:
     ) -> InlineKeyboardMarkup:
         """Create a carousel-style keyboard"""
         keyboard = []
-
-        # Add navigation if more than 3 options
         if len(options) > 3:
             nav_row = [
                 InlineKeyboardButton("⬅️ Prev", callback_data="nav_prev"),
@@ -51,8 +48,6 @@ class EnhancedUI:
                 InlineKeyboardButton("Next ➡️", callback_data="nav_next"),
             ]
             keyboard.append(nav_row)
-
-        # Add option buttons (3 per row for carousel)
         for i in range(0, min(3, len(options))):
             option = options[i]
             emoji = option.get("emoji", self.themes[theme]["primary"])
@@ -60,7 +55,6 @@ class EnhancedUI:
             keyboard.append(
                 [InlineKeyboardButton(text, callback_data=option["callback"])]
             )
-
         return InlineKeyboardMarkup(keyboard)
 
     async def _create_smart_grid(
@@ -68,17 +62,13 @@ class EnhancedUI:
     ) -> InlineKeyboardMarkup:
         """Create an intelligent grid based on content"""
         keyboard = []
-
-        # Analyze options to determine best layout
         avg_length = sum(len(opt["text"]) for opt in options) / len(options)
-
-        if avg_length > 15:  # Long text = vertical layout
+        if avg_length > 15:
             cols = 1
-        elif avg_length > 8:  # Medium text = 2 columns
+        elif avg_length > 8:
             cols = 2
-        else:  # Short text = 3 columns
+        else:
             cols = 3
-
         for i in range(0, len(options), cols):
             row = []
             for j in range(cols):
@@ -90,7 +80,6 @@ class EnhancedUI:
                         InlineKeyboardButton(text, callback_data=option["callback"])
                     )
             keyboard.append(row)
-
         return InlineKeyboardMarkup(keyboard)
 
     async def _create_standard_grid(
@@ -98,7 +87,6 @@ class EnhancedUI:
     ) -> InlineKeyboardMarkup:
         """Create standard 2-column grid"""
         keyboard = []
-
         for i in range(0, len(options), 2):
             row = []
             for j in range(2):
@@ -110,7 +98,6 @@ class EnhancedUI:
                         InlineKeyboardButton(text, callback_data=option["callback"])
                     )
             keyboard.append(row)
-
         return InlineKeyboardMarkup(keyboard)
 
 
@@ -124,17 +111,14 @@ class ProgressIndicator:
         self, percentage: int, width: int = 20, style: str = "modern"
     ) -> str:
         """Create animated progress bars"""
-
         if style == "modern":
             filled = int(percentage * width / 100)
             bar = "█" * filled + "░" * (width - filled)
             return f"🔄 {bar} {percentage}%"
-
         elif style == "dots":
             filled = int(percentage * width / 100)
             bar = "●" * filled + "○" * (width - filled)
             return f"⏳ {bar} {percentage}%"
-
         elif style == "arrows":
             filled = int(percentage * width / 100)
             bar = "▶" * filled + "▷" * (width - filled)
@@ -145,7 +129,6 @@ class ProgressIndicator:
         self.active_indicators[message_id] = True
         spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         frame = 0
-
         while self.active_indicators.get(message_id, False):
             try:
                 await context.bot.edit_message_text(
@@ -181,31 +164,25 @@ class ResponseFormatter:
         self, content: str, response_type: str = "info", style: str = "modern"
     ) -> str:
         """Format responses with advanced styling"""
-
         if style == "modern":
             return await self._format_modern(content, response_type)
         elif style == "card":
             return await self._format_card(content, response_type)
         elif style == "minimal":
             return await self._format_minimal(content, response_type)
-
         return content
 
     async def _format_modern(self, content: str, response_type: str) -> str:
         """Modern formatting with emojis and structure"""
         template = self.templates.get(response_type, self.templates["info"])
         formatted = template.format(content=content)
-
-        # Add timestamp
         timestamp = datetime.now().strftime("%H:%M")
         formatted += f"\n\n🕐 {timestamp}"
-
         return formatted
 
     async def _format_card(self, content: str, response_type: str) -> str:
         """Card-style formatting"""
         border = "━" * 30
-
         icons = {
             "success": "✅",
             "error": "❌",
@@ -214,9 +191,7 @@ class ResponseFormatter:
             "loading": "⏳",
             "complete": "🎉",
         }
-
         icon = icons.get(response_type, "ℹ️")
-
         return f"{border}\n{icon} **{response_type.upper()}**\n{border}\n\n{content}\n\n{border}"
 
     async def _format_minimal(self, content: str, response_type: str) -> str:
@@ -229,7 +204,6 @@ class ResponseFormatter:
             "loading": "⋯",
             "complete": "✓",
         }
-
         icon = icons.get(response_type, "i")
         return f"{icon} {content}"
 
@@ -244,14 +218,10 @@ class InteractiveElements:
         self, items: List[Any], page_size: int = 5, current_page: int = 0
     ) -> Dict[str, Any]:
         """Create paginated content"""
-
         total_pages = (len(items) - 1) // page_size + 1
         start_idx = current_page * page_size
         end_idx = start_idx + page_size
-
         page_items = items[start_idx:end_idx]
-
-        # Create navigation buttons
         nav_buttons = []
         if current_page > 0:
             nav_buttons.append(
@@ -261,7 +231,6 @@ class InteractiveElements:
                     "emoji": "⬅️",
                 }
             )
-
         nav_buttons.append(
             {
                 "text": f"{current_page + 1}/{total_pages}",
@@ -269,12 +238,10 @@ class InteractiveElements:
                 "emoji": "📄",
             }
         )
-
         if current_page < total_pages - 1:
             nav_buttons.append(
                 {"text": "Next ➡️", "callback": f"page_{current_page + 1}", "emoji": "➡️"}
             )
-
         return {
             "items": page_items,
             "navigation": nav_buttons,
@@ -288,20 +255,14 @@ class InteractiveElements:
         self, steps: List[Dict[str, Any]], current_step: int = 0
     ) -> Dict[str, Any]:
         """Create multi-step form interface"""
-
         total_steps = len(steps)
         current = steps[current_step]
-
-        # Progress indicator
         progress = await self._create_step_progress(current_step, total_steps)
-
-        # Navigation buttons
         nav_buttons = []
         if current_step > 0:
             nav_buttons.append(
                 {"text": "⬅️ Back", "callback": f"step_{current_step - 1}", "emoji": "⬅️"}
             )
-
         if current_step < total_steps - 1:
             nav_buttons.append(
                 {"text": "Next ➡️", "callback": f"step_{current_step + 1}", "emoji": "➡️"}
@@ -310,7 +271,6 @@ class InteractiveElements:
             nav_buttons.append(
                 {"text": "✅ Complete", "callback": "form_complete", "emoji": "✅"}
             )
-
         return {
             "step_info": current,
             "progress": progress,
@@ -324,7 +284,6 @@ class InteractiveElements:
     async def _create_step_progress(self, current: int, total: int) -> str:
         """Create step progress indicator"""
         progress_chars = []
-
         for i in range(total):
             if i < current:
                 progress_chars.append("✅")
@@ -332,7 +291,6 @@ class InteractiveElements:
                 progress_chars.append("🔄")
             else:
                 progress_chars.append("⭕")
-
         return " ".join(progress_chars)
 
 
@@ -347,7 +305,6 @@ class AdaptiveInterface:
         self, user_id: int, interaction_data: Dict[str, Any]
     ):
         """Learn from user interactions"""
-
         if user_id not in self.user_preferences:
             self.user_preferences[user_id] = {
                 "preferred_layout": "grid",
@@ -355,18 +312,13 @@ class AdaptiveInterface:
                 "interaction_speed": "normal",
                 "complexity_preference": "medium",
             }
-
-        # Update preferences based on interactions
         prefs = self.user_preferences[user_id]
-
-        # Analyze interaction patterns
         if "button_clicks" in interaction_data:
             clicks = interaction_data["button_clicks"]
-            if len(clicks) > 5:  # Fast clicker
+            if len(clicks) > 5:
                 prefs["interaction_speed"] = "fast"
-            elif len(clicks) < 2:  # Slow/careful user
+            elif len(clicks) < 2:
                 prefs["interaction_speed"] = "slow"
-
         if "preferred_options" in interaction_data:
             options = interaction_data["preferred_options"]
             if "simple" in str(options).lower():
@@ -378,7 +330,6 @@ class AdaptiveInterface:
         self, user_id: int, context: str = "general"
     ) -> Dict[str, Any]:
         """Get interface adapted to user preferences"""
-
         prefs = self.user_preferences.get(
             user_id,
             {
@@ -388,8 +339,6 @@ class AdaptiveInterface:
                 "complexity_preference": "medium",
             },
         )
-
-        # Adapt interface based on preferences
         interface_config = {
             "layout": prefs["preferred_layout"],
             "theme": prefs["preferred_theme"],
@@ -399,7 +348,6 @@ class AdaptiveInterface:
             ),
             "auto_advance": prefs["interaction_speed"] == "fast",
         }
-
         return interface_config
 
     def _get_animation_speed(self, speed: str) -> float:
@@ -417,7 +365,6 @@ class AdaptiveInterface:
             return "standard"
 
 
-# Global instances
 enhanced_ui = EnhancedUI()
 progress_indicator = ProgressIndicator()
 response_formatter = ResponseFormatter()

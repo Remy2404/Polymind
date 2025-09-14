@@ -2,7 +2,6 @@ import logging
 from typing import Optional, Tuple
 import re
 import traceback
-
 from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
 from src.services.gemini_api import GeminiAPI
 from src.services.openrouter_api import OpenRouterAPI
@@ -21,11 +20,9 @@ class AIDocumentGenerator:
         deepseek_api: Optional[DeepSeekLLM] = None,
         api_manager=None,
     ):
-        # Use provided API manager or create a new one
         if api_manager:
             self.api_manager = api_manager
         else:
-            # Initialize the unified API manager
             self.api_manager = SuperSimpleAPIManager(
                 gemini_api=gemini_api,
                 openrouter_api=openrouter_api,
@@ -74,16 +71,12 @@ class AIDocumentGenerator:
             system_prompt += "3. Use consistent formatting for all bullet points and numbered lists\n"
             system_prompt += "4. End with both a conclusion AND a separate summary section that highlights key takeaways\n"
             system_prompt += "5. Do not leave empty sections - each heading must have substantial content\n"
-
             user_prompt = (
                 f"Create a comprehensive, professional document about: {prompt}"
             )
             if additional_context:
                 user_prompt += f"\n\nAdditional context: {additional_context}"
-
             full_prompt = f"{system_prompt}\n\n{user_prompt}"
-
-            # Use the unified API manager to generate content with the selected model
             try:
                 self.logger.info(f"Generating document using model: {model}")
                 ai_response = await self.api_manager.chat(
@@ -95,7 +88,6 @@ class AIDocumentGenerator:
                 self.logger.info(f"API response received from {model}")
             except Exception as api_error:
                 self.logger.error(f"API error with {model}: {str(api_error)}")
-                # Try fallback to gemini if it's not the model we just tried
                 if model != "gemini":
                     try:
                         self.logger.info("Attempting fallback to Gemini model")
@@ -111,21 +103,15 @@ class AIDocumentGenerator:
                         ai_response = "# Document Generation Error\n\nUnable to generate your document. Please try again with a different model or prompt."
                 else:
                     ai_response = "# Document Generation Error\n\nUnable to generate your document. Please try again with a different model or prompt."
-
-            # The SuperSimpleAPIManager returns a string directly
             content = ai_response if isinstance(ai_response, str) else str(ai_response)
             self.logger.info(f"Content generated: {len(content)} characters")
-
             if not content or len(content.strip()) < 10:
                 self.logger.error("Empty or too short content generated")
                 content = "# Document Generation Failed\n\nThe AI model did not generate sufficient content for your document. Please try again with a more specific prompt or a different document type."
-
             title = self._extract_title(content) or f"AI Document: {prompt[:30]}..."
-            # Ensure title is clean and doesn't contain error messages
             if "error" in title.lower() or "api" in title.lower() or len(title) > 100:
                 title = "Document Generation Error"
             self.logger.info(f"Using title: {title}")
-
             if content:
                 if not content.strip().startswith("# "):
                     content = f"# {title}\n\n{content}"
@@ -135,7 +121,6 @@ class AIDocumentGenerator:
                 self.logger.info(
                     "Content processed and formatted for document generation"
                 )
-
             if output_format.lower() == "pdf":
                 document_bytes = await self.document_generator.create_pdf(
                     content=content, title=title, author="DeepGem AI"
@@ -144,9 +129,7 @@ class AIDocumentGenerator:
                 document_bytes = await self.document_generator.create_docx(
                     content=content, title=title, author="DeepGem AI"
                 )
-
             return document_bytes, title
-
         except Exception as e:
             self.logger.error(f"Error generating AI document: {str(e)}")
             traceback.print_exc()
@@ -156,19 +139,14 @@ class AIDocumentGenerator:
         lines = content.splitlines()
         result_lines = []
         i = 0
-
         while i < len(lines):
             current_line = lines[i]
             result_lines.append(current_line)
-
             if re.match(r"^#{1,6}\s+", current_line):
-                # No need to use the result of re.match here, just extract heading text
                 heading_text = current_line.strip("#").strip()
-
                 next_non_empty = i + 1
                 while next_non_empty < len(lines) and not lines[next_non_empty].strip():
                     next_non_empty += 1
-
                 if next_non_empty >= len(lines) or re.match(
                     r"^#{1,6}\s+", lines[next_non_empty]
                 ):
@@ -200,18 +178,14 @@ class AIDocumentGenerator:
                         section_type = "government policies and regulatory framework"
                     else:
                         section_type = "detailed information related to this topic"
-
                     title = self._extract_title(content) or "the main topic"
                     placeholder = f"This section provides {section_type} for {title}. "
                     placeholder += f"It includes relevant data, analysis, and insights about {heading_text.lower()} "
                     placeholder += f"in the context of {title}."
-
                     result_lines.append("")
                     result_lines.append(placeholder)
                     result_lines.append("")
-
             i += 1
-
         return "\n".join(result_lines)
 
     def _get_document_prompt(self, document_type: str) -> str:
@@ -224,7 +198,6 @@ class AIDocumentGenerator:
             "analysis": "You are a data analyst. Create an in-depth analysis with observations, trends, and actionable insights.",
             "proposal": "You are a business consultant. Create a compelling proposal with overview, objectives, methods, and benefits.",
         }
-
         return document_prompts.get(document_type.lower(), document_prompts["article"])
 
     def _extract_title(self, content: str) -> Optional[str]:
@@ -245,7 +218,6 @@ class AIDocumentGenerator:
     def _clean_markdown_formatting(self, content: str) -> str:
         lines = content.splitlines()
         cleaned_lines = []
-
         for i, line in enumerate(lines):
             if re.match(r"^#{1,6}", line):
                 for j in range(6, 0, -1):
@@ -257,7 +229,6 @@ class AIDocumentGenerator:
                             heading_text = heading_text[0].upper() + heading_text[1:]
                         line = "#" * j + match.group(1) + heading_text
                         break
-
             if re.match(r"^\s*[\*\-•]([^\s]|$)", line):
                 indentation_match = re.match(r"^(\s*)", line)
                 indentation = indentation_match.group(1) if indentation_match else ""
@@ -269,7 +240,6 @@ class AIDocumentGenerator:
                     line = f"{indentation}* {content}"
                 else:
                     line = f"{indentation}* "
-
             if re.match(r"^\s*\d+\.[^\s]", line):
                 indentation_match = re.match(r"^(\s*)", line)
                 indentation = indentation_match.group(1) if indentation_match else ""
@@ -281,13 +251,11 @@ class AIDocumentGenerator:
                     if content and content[0].islower():
                         content = content[0].upper() + content[1:]
                     line = f"{indentation}{number}. {content}"
-
             if "**" in line or "*" in line:
                 line = re.sub(r"\s+\*\*", r" **", line)
                 line = re.sub(r"\*\*\s+", r"** ", line)
                 line = re.sub(r"\s+\*([^\*])", r" *\1", line)
                 line = re.sub(r"([^\*])\*\s+", r"\1* ", line)
-
                 if line.count("**") % 2 != 0:
                     next_line_has_marker = False
                     for j in range(i + 1, min(len(lines), i + 3)):
@@ -296,7 +264,6 @@ class AIDocumentGenerator:
                             break
                     if not next_line_has_marker:
                         line += "**"
-
                 if line.count("*") % 2 != 0 and line.count("**") * 2 != line.count("*"):
                     next_line_has_marker = False
                     for j in range(i + 1, min(len(lines), i + 3)):
@@ -305,7 +272,6 @@ class AIDocumentGenerator:
                             break
                     if not next_line_has_marker:
                         line += "*"
-
             if re.match(r"^\s*\|.*\|\s*$", line):
                 cells = [cell.strip() for cell in line.strip("|").split("|")]
                 formatted_cells = []
@@ -314,15 +280,12 @@ class AIDocumentGenerator:
                         cell = cell[0].upper() + cell[1:]
                     formatted_cells.append(cell)
                 line = "| " + " | ".join(formatted_cells) + " |"
-
             cleaned_lines.append(line)
-
         result_lines = []
         i = 0
         while i < len(cleaned_lines):
             current_line = cleaned_lines[i]
             result_lines.append(current_line)
-
             if re.match(r"^#{1,6}\s", current_line) and i < len(cleaned_lines) - 1:
                 next_non_empty = i + 1
                 while (
@@ -330,35 +293,28 @@ class AIDocumentGenerator:
                     and not cleaned_lines[next_non_empty].strip()
                 ):
                     next_non_empty += 1
-
                 if next_non_empty < len(cleaned_lines) and re.match(
                     r"^#{1,6}\s", cleaned_lines[next_non_empty]
                 ):
                     result_lines.append("")
                     i = next_non_empty - 1
-
             i += 1
-
         result = "\n".join(result_lines)
         result = re.sub(r"\n{3,}", "\n\n", result)
         result = re.sub(r"```(\w+)?\s+", r"```\1\n", result)
         result = re.sub(r"\s+```", r"\n```", result)
-
         return result
 
     def _ensure_section_spacing(self, content: str) -> str:
         lines = content.splitlines()
         result_lines = []
         i = 0
-
         while i < len(lines):
             current_line = lines[i]
             result_lines.append(current_line)
-
             if re.match(r"^#{1,6}\s+", current_line) and i < len(lines) - 1:
                 next_heading_index = i + 1
                 found_content = False
-
                 while next_heading_index < len(lines):
                     next_line = lines[next_heading_index]
                     if next_line.strip() and not re.match(r"^#{1,6}\s+", next_line):
@@ -367,7 +323,6 @@ class AIDocumentGenerator:
                     elif re.match(r"^#{1,6}\s+", next_line):
                         break
                     next_heading_index += 1
-
                 if next_heading_index < len(lines) and re.match(
                     r"^#{1,6}\s+", lines[next_heading_index]
                 ):
@@ -376,13 +331,10 @@ class AIDocumentGenerator:
                             i = next_heading_index - 1
                         else:
                             result_lines.append("")
-
             i += 1
-
         result = "\n".join(result_lines)
         result = re.sub(
             r"(^#{1,6}\s+.+)\n([^#\s])", r"\1\n\n\2", result, flags=re.MULTILINE
         )
         result = re.sub(r"\n{3,}", r"\n\n", result)
-
         return result
