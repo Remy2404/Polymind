@@ -389,22 +389,6 @@ class SpireDocumentExporter:
                         continue
         except Exception as e:
             self.logger.warning(f"Could not apply table borders: {e}")
-    def _process_table_row(self, paragraph, line):
-        """Deprecated method - kept for backward compatibility"""
-        if not re.match(r"^\s*\|.*\|\s*$", line):
-            return
-        raw_cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if all(re.fullmatch(r"^[-:]+$", cell) for cell in raw_cells):
-            return
-        cells = [
-            (c[0].upper() + c[1:] if c and c[0].islower() else c) for c in raw_cells
-        ]
-        formatted = "| " + " | ".join(cells) + " |"
-        self._add_formatted_text_with_inline(paragraph, formatted)
-        paragraph.Format.LeftIndent = 10
-        paragraph.Format.RightIndent = 10
-        paragraph.Format.SpaceBefore = 3
-        paragraph.Format.SpaceAfter = 3
     def _add_emoji_support(self, text_range):
         """Enhance emoji rendering with proper font support"""
         text_range.CharacterFormat.FontName = "Segoe UI Emoji"

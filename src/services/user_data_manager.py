@@ -5,7 +5,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Union, Optional
 import logging
-import warnings
 class UserDataManager:
     def __init__(self, db):
         """
@@ -171,13 +170,6 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error adding message for user {user_id}: {str(e)}")
             raise
-    def add_to_context(self, user_id: str, message: Dict[str, str]) -> None:
-        warnings.warn(
-            "add_to_context is deprecated, use add_message instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.add_message(user_id, message)
     async def get_user_data(self, user_id: Union[int, str]) -> Dict[str, Any]:
         """
         Retrieve all data for a specific user with improved error handling.

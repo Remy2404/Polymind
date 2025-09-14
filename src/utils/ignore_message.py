@@ -14,7 +14,7 @@ class MessageFilter:
         """Initialize the message filter with default settings."""
         self.logger = logging.getLogger(__name__)
     def should_ignore_update(
-        self, update_data: dict, bot_username: str = "", context=None
+        self, update_data: dict, bot_username: str = None, context=None
     ) -> bool:
         """
         Determine if an update should be ignored based on content and chat type.
@@ -25,8 +25,9 @@ class MessageFilter:
         - Respond to all messages (default behavior)
         Args:
             update_data: The update data received from Telegram
-            bot_username: The bot's username for mention detection (deprecated, use context)
-            context: Telegram context object for dynamic username detection
+            bot_username: (Optional, deprecated) The bot's username for mention detection. 
+                         If not provided and no context given, defaults to "Gemini_AIAssistBot"
+            context: (Optional) Telegram context object for dynamic username detection
         Returns:
             True if the update should be ignored, False otherwise
         """
@@ -57,6 +58,7 @@ class MessageFilter:
                 )
             else:
                 if not bot_username:
+                    # Fallback to default bot username if neither context nor bot_username provided
                     bot_username = "Gemini_AIAssistBot"
                 message_text = message.get("text", "")
                 mentioned_in_text = f"@{bot_username}" in message_text
