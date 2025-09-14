@@ -2,10 +2,8 @@
 Simplified Model switching command handlers.
 Uses the unified API management system.
 """
-
 import sys
 import os
-
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
@@ -16,8 +14,6 @@ from services.model_handlers.simple_api_manager import (
     APIProvider,
 )
 import logging
-
-
 class ModelCommands:
     def __init__(
         self,
@@ -35,7 +31,6 @@ class ModelCommands:
             deepseek_api=deepseek_api,
             openrouter_api=openrouter_api,
         )
-
     async def switch_model_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -78,7 +73,6 @@ class ModelCommands:
             reply_markup=reply_markup,
             parse_mode="Markdown",
         )
-
     async def handle_model_selection(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -103,7 +97,6 @@ class ModelCommands:
             "You can now start chatting with your new AI model! 🚀",
             parse_mode="Markdown",
         )
-
     async def list_models_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -134,7 +127,6 @@ class ModelCommands:
                 message_parts.append("")
         message_parts.append("💡 Use /switchmodel to change your active model.")
         await update.message.reply_text("\n".join(message_parts), parse_mode="Markdown")
-
     async def current_model_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:

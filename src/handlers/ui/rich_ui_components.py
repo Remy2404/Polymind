@@ -2,24 +2,18 @@
 Rich UI Components for Enhanced User Experience
 Provides interactive menus, progress indicators, and smart suggestions
 """
-
 import logging
 import asyncio
 from typing import Dict, List, Any, Optional
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 import time
-
 logger = logging.getLogger(__name__)
-
-
 class ProgressIndicator:
     """Visual progress indicators for long-running operations"""
-
     def __init__(self):
         self.active_operations = {}
         self.progress_symbols = ["⏳", "⏲️", "⌛", "🔄"]
-
     async def start_progress(
         self,
         operation_id: str,
@@ -38,7 +32,6 @@ class ProgressIndicator:
         progress_text = f"{self.progress_symbols[0]} {description}\n▱▱▱▱▱▱▱▱▱▱ 0%"
         await message.edit_text(progress_text)
         return operation_id
-
     async def update_progress(
         self, operation_id: str, step: int, status_text: Optional[str] = None
     ) -> None:
@@ -70,7 +63,6 @@ class ProgressIndicator:
             await operation["message"].edit_text(progress_text)
         except Exception as e:
             logger.warning(f"Failed to update progress: {e}")
-
     async def complete_progress(
         self, operation_id: str, final_message: str, success: bool = True
     ) -> None:
@@ -87,11 +79,8 @@ class ProgressIndicator:
         except Exception as e:
             logger.warning(f"Failed to complete progress: {e}")
         del self.active_operations[operation_id]
-
-
 class SmartSuggestions:
     """Intelligent action suggestions based on context"""
-
     def __init__(self):
         self.suggestion_patterns = {
             "code": {
@@ -131,7 +120,6 @@ class SmartSuggestions:
                 ],
             },
         }
-
     def get_smart_suggestions(
         self, user_message: str, context: Dict[str, Any]
     ) -> List[Dict[str, str]]:
@@ -186,15 +174,11 @@ class SmartSuggestions:
                 ]
             )
         return suggestions[:6]
-
-
 class InteractiveMenus:
     """Rich interactive menu system"""
-
     def __init__(self):
         self.menu_cache = {}
         self.logger = logging.getLogger(__name__)
-
     def create_quick_actions_menu(
         self, user_id: int, context: Dict[str, Any]
     ) -> InlineKeyboardMarkup:
@@ -238,7 +222,6 @@ class InteractiveMenus:
         if row3:
             buttons.append(row3)
         return InlineKeyboardMarkup(buttons)
-
     def create_model_selection_carousel(
         self, models: List[Dict[str, Any]], current_page: int = 0, per_page: int = 4
     ) -> InlineKeyboardMarkup:
@@ -281,7 +264,6 @@ class InteractiveMenus:
             ]
         )
         return InlineKeyboardMarkup(buttons)
-
     def create_group_collaboration_menu(
         self, group_id: str, user_permissions: Dict[str, bool]
     ) -> InlineKeyboardMarkup:
@@ -323,7 +305,6 @@ class InteractiveMenus:
         ]
         buttons.append(row4)
         return InlineKeyboardMarkup(buttons)
-
     def create_context_aware_suggestions(
         self, suggestions: List[Dict[str, str]]
     ) -> InlineKeyboardMarkup:
@@ -348,17 +329,13 @@ class InteractiveMenus:
             [InlineKeyboardButton("❌ Dismiss", callback_data="dismiss_suggestions")]
         )
         return InlineKeyboardMarkup(buttons)
-
-
 class RichUIManager:
     """Main manager for rich UI components"""
-
     def __init__(self):
         self.progress = ProgressIndicator()
         self.suggestions = SmartSuggestions()
         self.menus = InteractiveMenus()
         self.logger = logging.getLogger(__name__)
-
     async def enhance_message_with_ui(
         self,
         update: Update,
@@ -386,7 +363,6 @@ class RichUIManager:
             "context": message_context,
         }
         return enhanced_response
-
     async def handle_long_operation(
         self,
         operation_name: str,
@@ -420,7 +396,6 @@ class RichUIManager:
                 operation_id, f"{operation_name} failed: {str(e)}", success=False
             )
             raise
-
     async def create_collaborative_interface(
         self, group_id: str, user_id: int, group_context: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -445,6 +420,4 @@ class RichUIManager:
             ),
         }
         return interface
-
-
 rich_ui = RichUIManager()

@@ -2,7 +2,6 @@
 👥 Advanced Group Chat Integration System
 Enables seamless team collaboration with shared memory, intelligent context, and rich UI
 """
-
 import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -11,13 +10,9 @@ from telegram.ext import ContextTypes
 from telegram.constants import ChatType
 import time
 from src.utils.bot_username_helper import BotUsernameHelper
-
 logger = logging.getLogger(__name__)
-
-
 class GroupChatManager:
     """Advanced group chat management with collaborative features"""
-
     def __init__(self, conversation_manager, enhanced_ui_components):
         self.conversation_manager = conversation_manager
         self.ui_components = enhanced_ui_components
@@ -31,7 +26,6 @@ class GroupChatManager:
         self.knowledge_base = {}
         self.typing_indicators = {}
         self.activity_streams = {}
-
     async def initialize_group(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> Dict[str, Any]:
@@ -94,7 +88,6 @@ class GroupChatManager:
             {"session_id": session_info.get("session_id")},
         )
         return {"success": True, "group_info": group_info, "session": session_info}
-
     async def handle_group_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> Dict[str, Any]:
@@ -127,7 +120,6 @@ class GroupChatManager:
             group_id, user_id, message_text, context
         )
         return processing_result
-
     async def _process_group_message_intelligently(
         self, group_id: str, user_id: int, message_text: str, message, context
     ) -> Dict[str, Any]:
@@ -166,7 +158,6 @@ class GroupChatManager:
             "context": message_context,
             "requires_response": intent_analysis.get("needs_ai_response", False),
         }
-
     async def _handle_group_ai_interaction(
         self, group_id: str, user_id: int, message_text: str, context
     ) -> Dict[str, Any]:
@@ -183,7 +174,6 @@ class GroupChatManager:
                 group_id, user_id, message_text, group_context, context
             )
         return response
-
     async def _handle_group_command(
         self, group_id: str, user_id: int, command: str, context
     ) -> Dict[str, Any]:
@@ -217,7 +207,6 @@ class GroupChatManager:
             return await self._perform_group_smart_search(group_id, query, context)
         else:
             return {"success": False, "error": f"Unknown command: {base_command}"}
-
     async def _generate_group_summary(self, group_id: str, context) -> Dict[str, Any]:
         """Generate intelligent group conversation summary"""
         try:
@@ -297,7 +286,6 @@ class GroupChatManager:
         except Exception as e:
             self.logger.error(f"Error generating group summary: {e}")
             return {"success": False, "error": str(e)}
-
     async def _create_collaborative_note(
         self, group_id: str, user_id: int, note_content: Optional[str], context
     ) -> Dict[str, Any]:
@@ -370,7 +358,6 @@ class GroupChatManager:
             parse_mode="Markdown",
         )
         return {"success": True, "note_created": True}
-
     async def _start_group_discussion(
         self, group_id: str, user_id: int, topic: str, context
     ) -> Dict[str, Any]:
@@ -426,7 +413,6 @@ class GroupChatManager:
             "discussion_started": True,
             "discussion_id": discussion_id,
         }
-
     async def _perform_group_smart_search(
         self, group_id: str, query: str, context
     ) -> Dict[str, Any]:
@@ -540,7 +526,6 @@ class GroupChatManager:
         except Exception as e:
             self.logger.error(f"Error performing group search: {e}")
             return {"success": False, "error": str(e)}
-
     def _create_group_welcome_message(self, group_info: Dict[str, Any]) -> str:
         """Create a rich welcome message for newly initialized groups"""
         message = "🎉 **Welcome to Enhanced Group AI!**\n\n"
@@ -562,7 +547,6 @@ class GroupChatManager:
         message += "`/grouptasks` - Manage team tasks\n\n"
         message += "Let's make teamwork smarter! 🚀"
         return message
-
     def _create_group_setup_keyboard(self, group_id: str) -> InlineKeyboardMarkup:
         """Create setup keyboard for new groups"""
         return InlineKeyboardMarkup(
@@ -593,18 +577,15 @@ class GroupChatManager:
                 ],
             ]
         )
-
     async def _get_member_count(self, chat, context) -> int:
         """Get group member count"""
         try:
             return await context.bot.get_chat_member_count(chat.id)
         except Exception:
             return 0
-
     def _is_bot_mentioned(self, message_text: str, context) -> bool:
         """Check if bot is mentioned in message using dynamic username detection"""
         return BotUsernameHelper.is_bot_mentioned(message_text, context)
-
     def _detect_media_type(self, message) -> str:
         """Detect media type in message"""
         if message.photo:
@@ -619,28 +600,21 @@ class GroupChatManager:
             return "sticker"
         else:
             return "text"
-
     def _extract_mentions(self, message_text: str) -> List[str]:
         """Extract user mentions from message"""
         import re
-
         return re.findall(r"@\w+", message_text)
-
     def _extract_hashtags(self, message_text: str) -> List[str]:
         """Extract hashtags from message"""
         import re
-
         return re.findall(r"#\w+", message_text)
-
     def _extract_urls(self, message_text: str) -> List[str]:
         """Extract URLs from message"""
         import re
-
         url_pattern = re.compile(
             r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
         )
         return url_pattern.findall(message_text)
-
     async def _analyze_message_intent(
         self, message_text: str, context: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -685,7 +659,6 @@ class GroupChatManager:
             intent["needs_ai_response"] = False
             intent["priority"] = "low"
         return intent
-
     async def _get_current_group_context(self, group_id: str) -> Dict[str, Any]:
         """Get current context for the group"""
         context = {
@@ -702,7 +675,6 @@ class GroupChatManager:
             "group_settings": self.group_settings.get(group_id, {}),
         }
         return context
-
     async def _update_group_knowledge_base(
         self, group_id: str, message_text: str, intent: Dict[str, Any]
     ) -> None:
@@ -740,7 +712,6 @@ class GroupChatManager:
                 self.knowledge_base[group_id][key] = self.knowledge_base[group_id][key][
                     -20:
                 ]
-
     async def _log_group_activity(
         self, group_id: str, user_id: int, activity_type: str, data: Dict[str, Any]
     ) -> None:
@@ -755,7 +726,6 @@ class GroupChatManager:
         }
         self.activity_streams[group_id].append(activity_log)
         self.activity_streams[group_id] = self.activity_streams[group_id][-100:]
-
     async def _update_group_activity(
         self, group_id: str, user_id: int, message_text: str
     ) -> None:
@@ -769,7 +739,6 @@ class GroupChatManager:
                 "timestamp": datetime.now().isoformat(),
             },
         )
-
     async def _check_collaboration_triggers(
         self, group_id: str, user_id: int, message_text: str, context
     ) -> None:
@@ -801,7 +770,6 @@ class GroupChatManager:
                 reply_markup=suggestion_keyboard,
                 parse_mode="Markdown",
             )
-
     async def handle_callback_query(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -826,19 +794,15 @@ class GroupChatManager:
         except Exception as e:
             self.logger.error(f"Error handling group callback: {e}")
             await query.answer("❌ An error occurred. Please try again.")
-
     async def _handle_group_callback(self, query, data_parts, context) -> None:
         """Handle group-specific callbacks"""
         pass
-
     async def _handle_collaboration_callback(self, query, data_parts, context) -> None:
         """Handle collaboration callbacks"""
         pass
-
     async def _handle_search_callback(self, query, data_parts, context) -> None:
         """Handle search callbacks"""
         pass
-
     async def _handle_discussion_callback(self, query, data_parts, context) -> None:
         """Handle discussion callbacks"""
         pass

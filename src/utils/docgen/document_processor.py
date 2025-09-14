@@ -3,7 +3,6 @@ Modern Document Processor for Gemini 2.0 Flash
 Handles document processing with multimodal capabilities
 Integrated with the new GeminiAPI
 """
-
 import logging
 import io
 from typing import Optional, List, Dict, Any, Union
@@ -12,14 +11,11 @@ from src.services.gemini_api import (
     ProcessingResult,
     create_document_input,
 )
-
-
 class DocumentProcessor:
     """
     Enhanced document processor using Gemini 2.0 Flash
     Supports multimodal document analysis with images, text, and structured data
     """
-
     def __init__(self, gemini_api: GeminiAPI):
         self.gemini_api = gemini_api
         self.logger = logging.getLogger(__name__)
@@ -54,7 +50,6 @@ class DocumentProcessor:
             "yaml",
             "yml",
         }
-
     async def process_document(
         self,
         file_data: Union[bytes, io.BytesIO],
@@ -98,7 +93,6 @@ class DocumentProcessor:
             error_msg = f"Document processing failed for {filename}: {str(e)}"
             self.logger.error(error_msg)
             return ProcessingResult(success=False, error=error_msg)
-
     async def process_multiple_documents(
         self,
         files: List[Dict[str, Any]],
@@ -161,7 +155,6 @@ class DocumentProcessor:
             error_msg = f"Multiple document processing failed: {str(e)}"
             self.logger.error(error_msg)
             return ProcessingResult(success=False, error=error_msg)
-
     async def extract_document_entities(
         self, file_data: Union[bytes, io.BytesIO], filename: str
     ) -> ProcessingResult:
@@ -198,7 +191,6 @@ class DocumentProcessor:
             error_msg = f"Entity extraction failed for {filename}: {str(e)}"
             self.logger.error(error_msg)
             return ProcessingResult(success=False, error=error_msg)
-
     async def code_analysis(
         self,
         file_data: Union[bytes, io.BytesIO],
@@ -293,7 +285,6 @@ class DocumentProcessor:
             error_msg = f"Code analysis failed for {filename}: {str(e)}"
             self.logger.error(error_msg)
             return ProcessingResult(success=False, error=error_msg)
-
     def _detect_language(self, extension: str) -> str:
         """Detect programming language from file extension"""
         language_map = {
@@ -317,14 +308,12 @@ class DocumentProcessor:
             "css": "CSS",
         }
         return language_map.get(extension.lower(), "Unknown")
-
     def is_supported_document(self, filename: str) -> bool:
         """Check if document type is supported"""
         if not filename or "." not in filename:
             return False
         extension = filename.split(".")[-1].lower()
         return extension in self.supported_extensions
-
     def get_document_info(self, filename: str) -> Dict[str, str]:
         """Get information about document type"""
         if not filename or "." not in filename:
@@ -364,7 +353,6 @@ class DocumentProcessor:
                     "language": language,
                 }
         return {"type": extension, "category": "unknown", "language": "Unknown"}
-
     async def process_document_enhanced(
         self,
         file: Union[bytes, io.BytesIO],
@@ -387,7 +375,6 @@ class DocumentProcessor:
             )
             import datetime
             import hashlib
-
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             if isinstance(file, io.BytesIO):
                 file.seek(0)
@@ -413,7 +400,6 @@ class DocumentProcessor:
                 "success": False,
                 "metadata": {},
             }
-
     async def process_document_from_file(
         self,
         file: Union[bytes, io.BytesIO],
@@ -436,7 +422,6 @@ class DocumentProcessor:
             )
             import datetime
             import hashlib
-
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             if isinstance(file, io.BytesIO):
                 file.seek(0)
@@ -462,8 +447,6 @@ class DocumentProcessor:
                 "success": False,
                 "metadata": {},
             }
-
-
 async def quick_document_analysis(
     gemini_api: GeminiAPI,
     file_data: Union[bytes, io.BytesIO],
@@ -478,8 +461,6 @@ async def quick_document_analysis(
         if result.success and result.content is not None
         else f"Error: {result.error}"
     )
-
-
 async def extract_document_text(
     gemini_api: GeminiAPI, file_data: Union[bytes, io.BytesIO], filename: str
 ) -> str:

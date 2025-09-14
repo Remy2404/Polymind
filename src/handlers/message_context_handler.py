@@ -1,17 +1,13 @@
 import logging
 from typing import Tuple, Optional
 from telegram import Message
-
-
 class MessageContextHandler:
     """
     Handler for extracting and managing message context information.
     This includes handling quoted texts, referred images, documents, etc.
     """
-
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-
     def extract_reply_context(
         self, message: Message
     ) -> Tuple[Optional[str], Optional[int]]:
@@ -55,7 +51,6 @@ class MessageContextHandler:
         else:
             quoted_text = "[Message of unsupported type]"
         return quoted_text, quoted_message_id
-
     def format_prompt_with_quote(self, prompt: str, quoted_text: str) -> str:
         """
         Format user prompt by including the quoted message context.
@@ -68,7 +63,6 @@ class MessageContextHandler:
         if not quoted_text:
             return prompt
         return f'The user is replying to this message: "{quoted_text}"\n\nUser\'s reply: {prompt}'
-
     def detect_reference_to_image(self, text: str) -> bool:
         """
         Detect if a message is referring to a previously shared image.
@@ -146,7 +140,6 @@ class MessageContextHandler:
             "img attachment",
         ]
         return any(keyword in text.lower() for keyword in image_related_keywords)
-
     def detect_reference_to_document(self, text: str) -> bool:
         """
         Detect if a message is referring to a previously shared document.
@@ -206,10 +199,8 @@ class MessageContextHandler:
             "pdf attachment",
         ]
         return any(keyword in text.lower() for keyword in document_related_keywords)
-
     def should_use_reply_format(self, quoted_text: str, quoted_message_id: int) -> bool:
         return quoted_text is not None and quoted_message_id is not None
-
     def format_response_with_quote_indicator(
         self, response: str, model_indicator: str, is_reply: bool = False
     ) -> str:

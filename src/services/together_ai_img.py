@@ -8,15 +8,11 @@ from PIL import Image
 import requests
 from dotenv import load_dotenv
 from together import Together
-
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
 class TogetherAIImageGenerator:
     """Image generation using the Together AI API."""
-
     def __init__(
         self,
         model_name: str = "black-forest-labs/FLUX.1-schnell-Free",
@@ -40,7 +36,6 @@ class TogetherAIImageGenerator:
         logger.info(
             f"Initialized TogetherAIImageGenerator with model '{self.model_name}'"
         )
-
     async def generate_image(
         self,
         prompt: str,
@@ -95,7 +90,6 @@ class TogetherAIImageGenerator:
             except Exception as e:
                 logger.error(f"Error generating image with Together AI: {str(e)}")
                 return None
-
     async def generate_images(
         self, prompt: str, num_images: int = 1, **kwargs
     ) -> List[Image.Image]:
@@ -116,6 +110,4 @@ class TogetherAIImageGenerator:
             tasks.append(self.generate_image(prompt, **kwargs))
         results = await asyncio.gather(*tasks)
         return [img for img in results if img is not None]
-
-
 together_ai_image_generator = TogetherAIImageGenerator()

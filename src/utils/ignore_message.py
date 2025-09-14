@@ -2,23 +2,17 @@
 Message filtering module for Telegram bot.
 This module provides functions to determine which messages should be ignored or processed.
 """
-
 import logging
 from .bot_username_helper import BotUsernameHelper
-
 logger = logging.getLogger(__name__)
-
-
 class MessageFilter:
     """
     Filters for handling Telegram bot message processing rules.
     Provides configurable rules for ignoring or processing messages.
     """
-
     def __init__(self):
         """Initialize the message filter with default settings."""
         self.logger = logging.getLogger(__name__)
-
     def should_ignore_update(
         self, update_data: dict, bot_username: str = "", context=None
     ) -> bool:
@@ -92,7 +86,6 @@ class MessageFilter:
         except Exception as e:
             self.logger.error(f"Error in update filter: {str(e)}")
             return False
-
     def configure_filters(self, config):
         """
         Configure the message filter with custom settings.
@@ -100,6 +93,4 @@ class MessageFilter:
             config: Dictionary containing filter configuration options
         """
         pass
-
-
 message_filter = MessageFilter()

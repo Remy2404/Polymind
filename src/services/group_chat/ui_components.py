@@ -2,16 +2,12 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-
 logger = logging.getLogger(__name__)
-
-
 class GroupUIManager:
     """
     Manages UI components and formatting for group chat features.
     Provides rich, interactive elements for better user experience.
     """
-
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.EMOJIS = {
@@ -31,7 +27,6 @@ class GroupUIManager:
             "info": "ℹ️",
         }
         self.logger.info("GroupUIManager initialized")
-
     async def enhance_group_response(
         self, update: Update, metadata: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -67,7 +62,6 @@ class GroupUIManager:
         except Exception as e:
             self.logger.error(f"Error enhancing group response: {e}")
             return {}
-
     def _should_show_management_buttons(
         self, update: Update, metadata: Dict[str, Any]
     ) -> bool:
@@ -77,7 +71,6 @@ class GroupUIManager:
         if not chat or not user:
             return False
         return metadata.get("participant_count", 0) > 3
-
     async def _create_quick_actions_keyboard(
         self, group_id: Optional[int]
     ) -> InlineKeyboardMarkup:
@@ -105,7 +98,6 @@ class GroupUIManager:
             ],
         ]
         return InlineKeyboardMarkup(buttons)
-
     async def format_group_analytics(self, analytics: Dict[str, Any]) -> str:
         """Format group analytics into a rich display."""
         if not analytics:
@@ -170,7 +162,6 @@ class GroupUIManager:
             except (ValueError, TypeError):
                 pass
         return "\n".join(message_parts)
-
     async def format_thread_list(self, threads: Dict[str, Any]) -> str:
         """Format active threads into a readable list."""
         if not threads:
@@ -213,7 +204,6 @@ class GroupUIManager:
         if len(threads) > 10:
             message_parts.append(f"\n... and {len(threads) - 10} more threads")
         return "\n".join(message_parts)
-
     async def format_context_summary(self, context_info: Dict[str, Any]) -> str:
         """Format conversation context summary."""
         if not context_info:
@@ -283,7 +273,6 @@ class GroupUIManager:
             except Exception as e:
                 self.logger.error(f"Error parsing updated_at date: {updated_at}, {e}")
         return "\n".join(message_parts)
-
     async def create_settings_menu(self, group_id: int) -> str:
         """Create an interactive settings menu for the group."""
         message_parts = [
@@ -313,7 +302,6 @@ class GroupUIManager:
             f"{self.EMOJIS['info']} Use the buttons below to modify settings.",
         ]
         return "\n".join(message_parts)
-
     async def create_participant_summary(self, participants: Dict[int, Any]) -> str:
         """Create a summary of group participants."""
         if not participants:
@@ -356,12 +344,10 @@ class GroupUIManager:
                 f"\n*... and {len(participants) - 10} more participants*"
             )
         return "\n".join(message_parts)
-
     def format_status_indicator(self, status_type: str, message: str) -> str:
         """Format a status indicator message."""
         emoji = self.EMOJIS.get(status_type, self.EMOJIS["info"])
         return f"{emoji} {message}"
-
     def create_progress_bar(self, current: int, total: int, length: int = 10) -> str:
         """Create a text-based progress bar."""
         if total == 0:
@@ -370,7 +356,6 @@ class GroupUIManager:
         bar = "█" * filled + "░" * (length - filled)
         percentage = int(100 * current / total)
         return f"{bar} {percentage}%"
-
     async def format_error_message(
         self, error: str, context: Optional[str] = None
     ) -> str:
@@ -379,7 +364,6 @@ class GroupUIManager:
         if context:
             message_parts.extend(["", f"Context: {context}"])
         return "\n".join(message_parts)
-
     async def format_success_message(
         self, message: str, details: Optional[str] = None
     ) -> str:

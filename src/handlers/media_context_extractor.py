@@ -1,14 +1,10 @@
 import logging
 from typing import Dict, Any
 import re
-
-
 class MediaContextExtractor:
     """Extracts context from previously shared media messages."""
-
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-
     def is_referring_to_image(self, message: str) -> bool:
         """
         Detects if a message is referring to a previously shared image.
@@ -30,7 +26,6 @@ class MediaContextExtractor:
             if re.search(pattern, message):
                 return True
         return False
-
     async def get_image_context(self, user_data: Dict[str, Any]) -> str:
         """Generate context from previously processed images."""
         if "image_history" not in user_data or not user_data["image_history"]:
@@ -46,7 +41,6 @@ class MediaContextExtractor:
             image_context += f"Description: {desc_text}\n\n"
         image_context += "You can refer to these images in your responses when the user asks about them."
         return image_context
-
     async def get_document_context(self, user_data: Dict[str, Any]) -> str:
         """Generate context from previously processed documents."""
         if "document_history" not in user_data or not user_data["document_history"]:

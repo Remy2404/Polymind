@@ -2,27 +2,21 @@
 Enhanced UI/UX Components for Telegram Bot
 Provides rich interactive elements and modern formatting
 """
-
 import asyncio
 from typing import Dict, List, Any
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
 import logging
-
 logger = logging.getLogger(__name__)
-
-
 class EnhancedUI:
     """Enhanced UI components for better user experience"""
-
     def __init__(self):
         self.themes = {
             "dark": {"primary": "🔹", "secondary": "▫️", "accent": "🌟"},
             "light": {"primary": "🔸", "secondary": "▪️", "accent": "⭐"},
             "colorful": {"primary": "🟢", "secondary": "🔵", "accent": "🟡"},
         }
-
     async def create_smart_keyboard(
         self, options: List[Dict[str, Any]], layout: str = "grid", theme: str = "dark"
     ) -> InlineKeyboardMarkup:
@@ -33,7 +27,6 @@ class EnhancedUI:
             return await self._create_smart_grid(options, theme)
         else:
             return await self._create_standard_grid(options, theme)
-
     async def _create_carousel_keyboard(
         self, options: List[Dict], theme: str
     ) -> InlineKeyboardMarkup:
@@ -56,7 +49,6 @@ class EnhancedUI:
                 [InlineKeyboardButton(text, callback_data=option["callback"])]
             )
         return InlineKeyboardMarkup(keyboard)
-
     async def _create_smart_grid(
         self, options: List[Dict], theme: str
     ) -> InlineKeyboardMarkup:
@@ -81,7 +73,6 @@ class EnhancedUI:
                     )
             keyboard.append(row)
         return InlineKeyboardMarkup(keyboard)
-
     async def _create_standard_grid(
         self, options: List[Dict], theme: str
     ) -> InlineKeyboardMarkup:
@@ -99,14 +90,10 @@ class EnhancedUI:
                     )
             keyboard.append(row)
         return InlineKeyboardMarkup(keyboard)
-
-
 class ProgressIndicator:
     """Real-time progress indicators"""
-
     def __init__(self):
         self.active_indicators = {}
-
     async def create_progress_bar(
         self, percentage: int, width: int = 20, style: str = "modern"
     ) -> str:
@@ -123,7 +110,6 @@ class ProgressIndicator:
             filled = int(percentage * width / 100)
             bar = "▶" * filled + "▷" * (width - filled)
             return f"🚀 {bar} {percentage}%"
-
     async def start_spinner(self, message_id: int, context: ContextTypes.DEFAULT_TYPE):
         """Start animated spinner"""
         self.active_indicators[message_id] = True
@@ -141,15 +127,11 @@ class ProgressIndicator:
             except Exception as e:
                 logger.error(f"Spinner error: {e}")
                 break
-
     async def stop_spinner(self, message_id: int):
         """Stop animated spinner"""
         self.active_indicators[message_id] = False
-
-
 class ResponseFormatter:
     """Advanced response formatting"""
-
     def __init__(self):
         self.templates = {
             "success": "✅ **Success!**\n\n{content}",
@@ -159,7 +141,6 @@ class ResponseFormatter:
             "loading": "⏳ **Processing**\n\n{content}",
             "complete": "🎉 **Complete!**\n\n{content}",
         }
-
     async def format_response(
         self, content: str, response_type: str = "info", style: str = "modern"
     ) -> str:
@@ -171,7 +152,6 @@ class ResponseFormatter:
         elif style == "minimal":
             return await self._format_minimal(content, response_type)
         return content
-
     async def _format_modern(self, content: str, response_type: str) -> str:
         """Modern formatting with emojis and structure"""
         template = self.templates.get(response_type, self.templates["info"])
@@ -179,7 +159,6 @@ class ResponseFormatter:
         timestamp = datetime.now().strftime("%H:%M")
         formatted += f"\n\n🕐 {timestamp}"
         return formatted
-
     async def _format_card(self, content: str, response_type: str) -> str:
         """Card-style formatting"""
         border = "━" * 30
@@ -193,7 +172,6 @@ class ResponseFormatter:
         }
         icon = icons.get(response_type, "ℹ️")
         return f"{border}\n{icon} **{response_type.upper()}**\n{border}\n\n{content}\n\n{border}"
-
     async def _format_minimal(self, content: str, response_type: str) -> str:
         """Minimal clean formatting"""
         icons = {
@@ -206,14 +184,10 @@ class ResponseFormatter:
         }
         icon = icons.get(response_type, "i")
         return f"{icon} {content}"
-
-
 class InteractiveElements:
     """Interactive UI elements"""
-
     def __init__(self):
         self.active_sessions = {}
-
     async def create_pagination(
         self, items: List[Any], page_size: int = 5, current_page: int = 0
     ) -> Dict[str, Any]:
@@ -250,7 +224,6 @@ class InteractiveElements:
             "has_prev": current_page > 0,
             "has_next": current_page < total_pages - 1,
         }
-
     async def create_multi_step_form(
         self, steps: List[Dict[str, Any]], current_step: int = 0
     ) -> Dict[str, Any]:
@@ -280,7 +253,6 @@ class InteractiveElements:
             "is_first": current_step == 0,
             "is_last": current_step == total_steps - 1,
         }
-
     async def _create_step_progress(self, current: int, total: int) -> str:
         """Create step progress indicator"""
         progress_chars = []
@@ -292,15 +264,11 @@ class InteractiveElements:
             else:
                 progress_chars.append("⭕")
         return " ".join(progress_chars)
-
-
 class AdaptiveInterface:
     """AI-powered adaptive interface"""
-
     def __init__(self):
         self.user_preferences = {}
         self.interaction_patterns = {}
-
     async def learn_user_preferences(
         self, user_id: int, interaction_data: Dict[str, Any]
     ):
@@ -325,7 +293,6 @@ class AdaptiveInterface:
                 prefs["complexity_preference"] = "simple"
             elif "advanced" in str(options).lower():
                 prefs["complexity_preference"] = "advanced"
-
     async def get_adaptive_interface(
         self, user_id: int, context: str = "general"
     ) -> Dict[str, Any]:
@@ -349,12 +316,10 @@ class AdaptiveInterface:
             "auto_advance": prefs["interaction_speed"] == "fast",
         }
         return interface_config
-
     def _get_animation_speed(self, speed: str) -> float:
         """Get animation speed based on user preference"""
         speeds = {"slow": 1.5, "normal": 1.0, "fast": 0.5}
         return speeds.get(speed, 1.0)
-
     def _get_button_complexity(self, complexity: str) -> str:
         """Get button complexity based on user preference"""
         if complexity == "simple":
@@ -363,8 +328,6 @@ class AdaptiveInterface:
             return "detailed"
         else:
             return "standard"
-
-
 enhanced_ui = EnhancedUI()
 progress_indicator = ProgressIndicator()
 response_formatter = ResponseFormatter()

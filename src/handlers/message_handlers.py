@@ -28,10 +28,7 @@ from src.services.model_handlers.model_configs import (
     ModelConfig,
 )
 from src.utils.bot_username_helper import BotUsernameHelper
-
 logger = logging.getLogger(__name__)
-
-
 class MessageHandlers:
     def __init__(
         self,
@@ -74,19 +71,15 @@ class MessageHandlers:
         common_models = ["llama-3.3-8b", "gemini", "deepseek"]
         for model_id in common_models:
             self.log_model_verification(model_id)
-
     def get_all_models(self) -> dict:
         """Get all available models - useful for external access."""
         return self.all_models
-
     def get_models_by_provider(self, provider: Provider) -> dict:
         """Get models by specific provider."""
         return ModelConfigurations.get_models_by_provider(provider)
-
     def get_free_models(self) -> dict:
         """Get all free models."""
         return ModelConfigurations.get_free_models()
-
     def log_model_verification(self, model_id: str) -> bool:
         """Log verification for a specific model and return if it exists."""
         model_config = self.get_model_config(model_id)
@@ -102,7 +95,6 @@ class MessageHandlers:
         else:
             self.logger.warning(f"❌ Model '{model_id}' not found in configurations")
             return False
-
     def get_model_stats(self) -> dict:
         """Get statistics about available models."""
         total_models = len(self.all_models)
@@ -117,11 +109,9 @@ class MessageHandlers:
             "provider_counts": provider_counts,
             "model_ids": list(self.all_models.keys())[:10],
         }
-
     def get_model_config(self, model_id: str) -> ModelConfig:
         """Get model configuration by ID."""
         return self.all_models.get(model_id)
-
     def get_model_indicator_and_config(self, model_id: str) -> tuple[str, ModelConfig]:
         """Get model indicator emoji and configuration for a model."""
         model_config = self.get_model_config(model_id)
@@ -133,7 +123,6 @@ class MessageHandlers:
         else:
             self.logger.warning(f"Unknown model ID: {model_id}, using default")
             return "🤖 Unknown Model", None
-
     async def generate_ai_response(
         self,
         prompt: str,
@@ -214,7 +203,6 @@ class MessageHandlers:
         except Exception as e:
             self.logger.error(f"Error generating response with {model_id}: {str(e)}")
             return f"Sorry, there was an error with the {model_config.display_name} model: {str(e)}"
-
     async def _handle_text_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -241,7 +229,6 @@ class MessageHandlers:
                     )
                 else:
                     from src.handlers.commands.document_commands import DocumentCommands
-
                     doc_commands = DocumentCommands(
                         self.gemini_api, self.user_data_manager, self.telegram_logger
                     )
@@ -368,7 +355,6 @@ class MessageHandlers:
         except Exception as e:
             self.logger.error(f"Error processing text message: {str(e)}")
             await self._error_handler(update, context)
-
     async def _handle_image_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -425,7 +411,6 @@ class MessageHandlers:
         except Exception as e:
             self.logger.error(f"Error in image message handler: {str(e)}")
             await self._error_handler(update, context)
-
     async def _handle_voice_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -458,7 +443,6 @@ class MessageHandlers:
                 or self.preferences_manager is None
             ):
                 from src.services.user_preferences_manager import UserPreferencesManager
-
                 self.preferences_manager = UserPreferencesManager(
                     self.user_data_manager
                 )
@@ -690,7 +674,6 @@ class MessageHandlers:
                     await update.message.reply_text(error_message)
             except Exception as reply_error:
                 self.logger.error(f"Failed to send error message: {str(reply_error)}")
-
     async def _handle_document_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
@@ -772,7 +755,6 @@ class MessageHandlers:
                 )
             else:
                 await self._error_handler(update, context)
-
     async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         conversation_id = f"user_{user_id}"
@@ -903,7 +885,6 @@ class MessageHandlers:
             await update.message.reply_text(
                 f"Sorry, I couldn't process your document. Error: {str(e)[:100]}..."
             )
-
     async def _error_handler(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -913,7 +894,6 @@ class MessageHandlers:
             await update.effective_message.reply_text(
                 "An error occurred while processing your request. Please try again later."
             )
-
     def register_handlers(self, application):
         """Register message handlers with the application."""
         try:
@@ -936,7 +916,6 @@ class MessageHandlers:
         except Exception as e:
             self.logger.error(f"Failed to register message handlers: {str(e)}")
             raise Exception("Failed to register message handlers") from e
-
     async def handle_awaiting_doc_text(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> bool:
@@ -975,7 +954,6 @@ class MessageHandlers:
             )
             return True
         return False
-
     async def handle_awaiting_doc_image(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> bool:

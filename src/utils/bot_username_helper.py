@@ -4,14 +4,10 @@ This module provides utilities for dynamic bot username detection
 to support developer team testing with different bot names.
 Perfect for clone projects where each developer might use different bot instances.
 """
-
 import logging
 from typing import Optional
 from telegram.ext import ContextTypes
-
 logger = logging.getLogger(__name__)
-
-
 class BotUsernameHelper:
     """
     Helper class for dynamic bot username detection.
@@ -19,7 +15,6 @@ class BotUsernameHelper:
     making it easy for development teams to test with different bot instances
     without hardcoding usernames.
     """
-
     @classmethod
     def get_bot_username(
         cls,
@@ -62,7 +57,6 @@ class BotUsernameHelper:
         elif not with_at and username.startswith("@"):
             return username[1:]
         return username
-
     @classmethod
     def is_bot_mentioned(
         cls,
@@ -109,7 +103,6 @@ class BotUsernameHelper:
         if is_mentioned:
             logger.debug(f"Bot mentioned in text: {bot_username}")
         return is_mentioned
-
     @classmethod
     def remove_bot_mention(
         cls, text: str, context: Optional[ContextTypes.DEFAULT_TYPE] = None, bot=None
@@ -129,7 +122,6 @@ class BotUsernameHelper:
         cleaned_text = text.replace(bot_username, "").strip()
         logger.debug(f"Removed bot mention '{bot_username}' from text")
         return cleaned_text
-
     @classmethod
     def get_bot_info_summary(
         cls, context: Optional[ContextTypes.DEFAULT_TYPE] = None, bot=None
@@ -172,15 +164,11 @@ class BotUsernameHelper:
                 "error": str(e),
                 "available": False,
             }
-
-
 def get_bot_username(
     context: Optional[ContextTypes.DEFAULT_TYPE] = None, bot=None, with_at: bool = True
 ) -> str:
     """Convenience function to get bot username."""
     return BotUsernameHelper.get_bot_username(context, bot, with_at)
-
-
 def is_bot_mentioned(
     text: str,
     context: Optional[ContextTypes.DEFAULT_TYPE] = None,
@@ -189,8 +177,6 @@ def is_bot_mentioned(
 ) -> bool:
     """Convenience function to check if bot is mentioned."""
     return BotUsernameHelper.is_bot_mentioned(text, context, bot, entities)
-
-
 def remove_bot_mention(
     text: str, context: Optional[ContextTypes.DEFAULT_TYPE] = None, bot=None
 ) -> str:

@@ -14,59 +14,43 @@ from src.services.mcp import MCPManager
 from src.services.model_handlers.model_configs import ModelConfigurations
 from src.utils.log.telegramlog import telegram_logger
 from dotenv import load_dotenv
-
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     logging.error("GEMINI_API_KEY not found in environment variables.")
     raise ValueError("GEMINI_API_KEY is required")
-
-
 class MediaType(Enum):
     """Supported media types for multimodal processing"""
-
     IMAGE = "image"
     DOCUMENT = "document"
     AUDIO = "audio"
     VIDEO = "video"
     TEXT = "text"
-
-
 @dataclass
 class MediaInput:
     """Represents a media input for processing"""
-
     type: MediaType
     data: Union[bytes, str, io.BytesIO]
     mime_type: str
     filename: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
-
-
 @dataclass
 class ToolCall:
     """Represents a tool/function call from the model"""
-
     name: str
     args: Dict[str, Any]
     id: Optional[str] = None
-
-
 @dataclass
 class ProcessingResult:
     """Result of multimodal processing"""
-
     success: bool
     content: Optional[str] = None
     error: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
     tool_calls: Optional[List[ToolCall]] = None
     function_calls: Optional[List[ToolCall]] = None
-
-
 class MediaProcessor:
     """Handles processing of different media types for Gemini"""
-
     MAX_IMAGE_SIZE = 4096
     MAX_FILE_SIZE = 20 * 1024 * 1024
     SUPPORTED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP", "GIF"}
@@ -101,7 +85,6 @@ class MediaProcessor:
         "yaml": "text/plain",
         "yml": "text/plain",
     }
-
     @staticmethod
     def validate_image(image_data: Union[bytes, io.BytesIO]) -> bool:
         """Validate image format and size"""
@@ -121,7 +104,6 @@ class MediaProcessor:
                 return True
         except Exception:
             return False
-
     @staticmethod
     def optimize_image(image_data: Union[bytes, io.BytesIO]) -> io.BytesIO:
         """Optimize image for Gemini processing"""
@@ -160,7 +142,6 @@ class MediaProcessor:
         except Exception as e:
             logging.error(f"Image optimization failed: {e}")
             raise ValueError(f"Image processing failed: {e}")
-
     @staticmethod
     def get_image_mime_type(image_data: Union[bytes, io.BytesIO]) -> str:
         """Get MIME type for image"""
@@ -180,7 +161,6 @@ class MediaProcessor:
                 return format_map.get(img.format, "image/jpeg")
         except Exception:
             return "image/jpeg"
-
     @staticmethod
     def get_document_mime_type(filename: str) -> str:
         """Get MIME type from filename extension"""
@@ -188,7 +168,6 @@ class MediaProcessor:
             return "application/octet-stream"
         ext = filename.split(".")[-1].lower()
         return MediaProcessor.DOCUMENT_MIME_TYPES.get(ext, "application/octet-stream")
-
     @staticmethod
     def validate_document(file_data: Union[bytes, io.BytesIO], filename: str) -> bool:
         """Validate document for processing"""
@@ -202,14 +181,11 @@ class MediaProcessor:
             return True
         except Exception:
             return False
-
-
 class GeminiAPI:
     """
     Modern Gemini 2.5 Flash API client with multimodal and tool calling support
     Uses the latest Google Gen AI SDK for enhanced capabilities
     """
-
     def __init__(self, rate_limiter: RateLimiter, mcp_config_path: str = "mcp.json"):
         self.logger = logging.getLogger(__name__)
         self.rate_limiter = rate_limiter
@@ -227,7 +203,6 @@ class GeminiAPI:
         self.logger.info(
             "Gemini 2.5 Flash API initialized with Google Gen AI SDK and MCP support"
         )
-
     async def initialize_mcp_tools(self) -> bool:
         """
         Initialize and load MCP tools from configured servers.
@@ -260,7 +235,6 @@ class GeminiAPI:
                 f"Error initializing MCP tools for Gemini: {str(e)}", 0
             )
             return False
-
     async def generate_response_with_mcp_tools(
         self,
         prompt: str,
@@ -321,7 +295,6 @@ class GeminiAPI:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
-
     def _convert_mcp_tool_to_gemini(self, mcp_tool: Dict[str, Any]) -> Optional[Any]:
         """
         Convert MCP tool format to Gemini-compatible tool format.
@@ -332,7 +305,6 @@ class GeminiAPI:
         """
         try:
             from google.genai import types
-
             function = mcp_tool.get("function", {})
             if not function:
                 return None
@@ -347,7 +319,6 @@ class GeminiAPI:
         except Exception as e:
             self.logger.error(f"Failed to convert MCP tool to Gemini format: {e}")
             return None
-
     def _convert_mcp_parameters_to_gemini(
         self, mcp_parameters: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -359,7 +330,6 @@ class GeminiAPI:
             Parameters in Gemini format
         """
         return mcp_parameters
-
     async def _generate_with_tools(
         self,
         prompt: str,
@@ -453,7 +423,6 @@ class GeminiAPI:
         except Exception as e:
             self.logger.error(f"Error in _generate_with_tools: {e}")
             return None
-
     async def _execute_mcp_tool(self, function_call: Any) -> Optional[str]:
         """
         Execute an MCP tool based on Gemini's function call.
@@ -482,7 +451,6 @@ class GeminiAPI:
                 f"Error executing MCP tool {getattr(function_call, 'name', 'unknown')}: {e}"
             )
             return None
-
     def _extract_response_text(self, candidate: Any) -> Optional[str]:
         """
         Extract text response from Gemini candidate.
@@ -507,7 +475,6 @@ class GeminiAPI:
         except Exception as e:
             self.logger.error(f"Error extracting response text: {e}")
             return None
-
     async def get_available_mcp_tools(self) -> List[Dict[str, Any]]:
         """
         Get all available MCP tools in MCP format.
@@ -520,7 +487,6 @@ class GeminiAPI:
             return await self.mcp_manager.get_all_tools()
         else:
             return []
-
     def get_mcp_server_info(self) -> Dict[str, Any]:
         """
         Get information about connected MCP servers.
@@ -531,7 +497,6 @@ class GeminiAPI:
             return self.mcp_manager.get_server_info()
         else:
             return {}
-
     def _build_system_message(
         self,
         model_id: str,
@@ -600,7 +565,6 @@ You have access to the following tools: {', '.join(tool_names)}
 - Do not mention tool internal details in your final response
 Focus on providing the most helpful and accurate response possible using the available tools."""
         return base_message + context_hint + tool_instructions
-
     def _categorize_tools(self, tools: List[Any]) -> Dict[str, List[str]]:
         """
         Categorize tools by their functionality for better organization.
@@ -717,7 +681,6 @@ Focus on providing the most helpful and accurate response possible using the ava
                 else:
                     categories["Other"].append(tool.function_declarations[0].name)
         return {k: v for k, v in categories.items() if v}
-
     async def process_multimodal_input(
         self,
         text_prompt: str,
@@ -804,7 +767,6 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Multimodal processing failed: {e}")
             return ProcessingResult(success=False, error=f"Processing failed: {str(e)}")
-
     async def _process_media_input(self, media: MediaInput) -> Optional[List[Any]]:
         """Process individual media input based on its type"""
         try:
@@ -827,12 +789,10 @@ Focus on providing the most helpful and accurate response possible using the ava
             return [
                 f"[Error processing {media.type.value}: {media.filename or 'unknown'}]"
             ]
-
     async def _process_image_input(self, media: MediaInput) -> Optional[List[Any]]:
         """Process image input for Gemini using new SDK"""
         try:
             from google.genai import types
-
             if not self.media_processor.validate_image(media.data):
                 return [f"[Invalid image file: {media.filename or 'unknown'}]"]
             optimized_image = self.media_processor.optimize_image(media.data)
@@ -843,12 +803,10 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Image processing failed: {e}")
             return [f"[Image processing failed: {media.filename or 'unknown'}]"]
-
     async def _process_document_input(self, media: MediaInput) -> Optional[List[Any]]:
         """Process document input for Gemini using new SDK"""
         try:
             from google.genai import types
-
             if not media.filename:
                 return ["[Document file uploaded without filename]"]
             if not self.media_processor.validate_document(media.data, media.filename):
@@ -880,7 +838,6 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Document processing failed: {e}")
             return [f"[Document processing failed: {media.filename or 'unknown'}]"]
-
     async def _upload_file_to_gemini_new_sdk(
         self, file_bytes: bytes, mime_type: str, filename: str
     ) -> Any:
@@ -897,13 +854,11 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"New SDK file upload failed: {e}")
             raise
-
     def _build_conversation_context(
         self, context: Optional[List[Dict]], content_parts: List[Any]
     ) -> List[Any]:
         """Build conversation context using new SDK patterns"""
         from google.genai import types
-
         contents = []
         if context:
             for msg in context[-10:]:
@@ -931,7 +886,6 @@ Focus on providing the most helpful and accurate response possible using the ava
                     parts.append(part)
             contents.append(types.Content(role="user", parts=parts))
         return contents if contents else content_parts
-
     def get_system_message(self) -> str:
         """
         Return the system message for Gemini models.
@@ -942,7 +896,6 @@ Focus on providing the most helpful and accurate response possible using the ava
             "text, images, documents, and other media types. Provide helpful, accurate, "
             "and detailed responses based on all provided content."
         )
-
     async def _generate_with_retry(
         self, contents: List[Any], model_name: str, config: Any, max_retries: int = 3
     ) -> Any:
@@ -979,7 +932,6 @@ Focus on providing the most helpful and accurate response possible using the ava
                     continue
                 raise e
         raise Exception("All retry attempts failed")
-
     async def generate_content_with_tools(
         self,
         prompt: str,
@@ -1006,7 +958,6 @@ Focus on providing the most helpful and accurate response possible using the ava
             tools=tools,
             auto_function_calling=auto_execute,
         )
-
     async def stream_content(
         self,
         prompt: str,
@@ -1016,7 +967,6 @@ Focus on providing the most helpful and accurate response possible using the ava
         """Stream content generation using new SDK"""
         try:
             from google.genai import types
-
             await self.rate_limiter.acquire()
             content_parts = []
             if media_inputs:
@@ -1037,7 +987,6 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Streaming failed: {e}")
             yield f"Error: {str(e)}"
-
     async def create_chat_session(
         self,
         model_name: str = "gemini-2.5-flash",
@@ -1053,7 +1002,6 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Failed to create chat session: {e}")
             raise
-
     async def generate_content(
         self, prompt: str, context: Optional[List[Dict]] = None
     ) -> Dict[str, Any]:
@@ -1075,7 +1023,6 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Error in generate_content: {e}")
             return {"status": "error", "content": f"Error: {str(e)}", "error": str(e)}
-
     async def generate_response(
         self,
         prompt: str,
@@ -1131,18 +1078,14 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Error in generate_response: {e}")
             return None
-
     async def close(self):
         """Clean up resources and close MCP connections."""
         self.logger.info("Gemini API client closed")
         if self.mcp_tools_loaded:
             await self.mcp_manager.disconnect_all()
-
     def get_model_indicator(self) -> str:
         """Get the model indicator emoji and name for Gemini models."""
         return "✨ Gemini"
-
-
 def create_image_input(
     image_data: Union[bytes, io.BytesIO], filename: Optional[str] = None
 ) -> MediaInput:
@@ -1173,8 +1116,6 @@ def create_image_input(
         mime_type=mime_type,
         filename=filename,
     )
-
-
 def create_document_input(
     document_data: Union[bytes, io.BytesIO], filename: str
 ) -> MediaInput:

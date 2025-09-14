@@ -2,10 +2,8 @@
 Image generation command handlers.
 Contains advanced image generation and Together AI image generation commands.
 """
-
 import sys
 import os
-
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
@@ -14,8 +12,6 @@ from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 import logging
 import io
-
-
 class ImageCommands:
     def __init__(
         self,
@@ -29,7 +25,6 @@ class ImageCommands:
         self.telegram_logger = telegram_logger
         self.image_handler = image_handler
         self.logger = logging.getLogger(__name__)
-
     async def generate_together_image(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -54,7 +49,6 @@ class ImageCommands:
         )
         try:
             from services.together_ai_img import together_ai_image_generator
-
             image = await together_ai_image_generator.generate_image(
                 prompt=prompt, num_steps=4, width=1024, height=1024
             )

@@ -2,20 +2,15 @@
 🎨 Enhanced UI Components for Telegram Bot
 Provides modern, interactive UI elements with rich functionality
 """
-
 import logging
 import asyncio
 from typing import List, Dict, Any, Optional
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from datetime import datetime
-
 logger = logging.getLogger(__name__)
-
-
 class EnhancedUIComponents:
     """Modern UI components with rich interactivity and visual appeal"""
-
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.emojis = {
@@ -31,7 +26,6 @@ class EnhancedUIComponents:
                 "vote": "🗳️",
             },
         }
-
     def create_quick_action_menu(
         self, user_context: Dict[str, Any]
     ) -> InlineKeyboardMarkup:
@@ -91,7 +85,6 @@ class EnhancedUIComponents:
         ]
         buttons.append(row4)
         return InlineKeyboardMarkup(buttons)
-
     def create_smart_model_selector(
         self, available_models: Dict[str, Any], current_model: str
     ) -> InlineKeyboardMarkup:
@@ -145,7 +138,6 @@ class EnhancedUIComponents:
             ]
         )
         return InlineKeyboardMarkup(buttons)
-
     def create_conversation_insights_panel(self, insights: Dict[str, Any]) -> str:
         """Create a rich conversation insights panel"""
         panel = "🧠 **Conversation Intelligence Panel**\n\n"
@@ -177,7 +169,6 @@ class EnhancedUIComponents:
                 f"• Shared knowledge items: {group_info.get('shared_knowledge', 0)}\n"
             )
         return panel
-
     def create_progress_indicator(
         self, task_name: str, progress: float, eta: Optional[str] = None
     ) -> str:
@@ -187,7 +178,6 @@ class EnhancedUIComponents:
         percentage = int(progress * 100)
         eta_text = f" (ETA: {eta})" if eta else ""
         return f"🔄 **{task_name}**\n`[{progress_bar}]` {percentage}%{eta_text}"
-
     def create_context_aware_suggestions(
         self, context: Dict[str, Any]
     ) -> List[InlineKeyboardButton]:
@@ -258,7 +248,6 @@ class EnhancedUIComponents:
                 ]
             )
         return suggestions
-
     def create_smart_pagination(
         self, items: List[Any], current_page: int, items_per_page: int = 5
     ) -> Dict[str, Any]:
@@ -295,7 +284,6 @@ class EnhancedUIComponents:
                 "showing": f"{start_idx + 1}-{end_idx} of {len(items)}",
             },
         }
-
     def create_adaptive_keyboard(
         self, user_preferences: Dict[str, Any], context: Dict[str, Any]
     ) -> InlineKeyboardMarkup:
@@ -326,7 +314,6 @@ class EnhancedUIComponents:
             ]
             buttons.append(discovery_buttons)
         return InlineKeyboardMarkup(buttons)
-
     def format_rich_message(self, content: str, message_type: str = "info") -> str:
         """Format messages with rich styling and structure"""
         type_indicators = {
@@ -342,7 +329,6 @@ class EnhancedUIComponents:
         timestamp = datetime.now().strftime("%H:%M")
         formatted += f"\n\n🕐 *{timestamp}*"
         return formatted
-
     async def handle_ui_interaction(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, interaction_data: str
     ) -> None:
@@ -366,12 +352,10 @@ class EnhancedUIComponents:
                 await update.callback_query.answer(
                     "❌ Action failed. Please try again."
                 )
-
     async def _handle_quick_action(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str, data: str
     ) -> None:
         """Handle quick action interactions"""
-
         async def safe_reply(text):
             message_obj = getattr(update.callback_query, "message", None)
             reply_text_func = getattr(message_obj, "reply_text", None)
@@ -386,7 +370,6 @@ class EnhancedUIComponents:
             else:
                 if update.callback_query:
                     await update.callback_query.answer(text)
-
         if action == "chat":
             await safe_reply("🤖 Quick Chat activated! What would you like to discuss?")
         elif action == "image":
@@ -397,12 +380,10 @@ class EnhancedUIComponents:
             await safe_reply(
                 "🔍 Smart Search activated! What would you like to find in our conversation history?"
             )
-
     async def _handle_adaptive_action(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str, data: str
     ) -> None:
         """Handle adaptive keyboard interactions"""
-
         async def safe_reply(text):
             message_obj = getattr(update.callback_query, "message", None)
             reply_text_func = getattr(message_obj, "reply_text", None)
@@ -417,7 +398,6 @@ class EnhancedUIComponents:
             else:
                 if update.callback_query:
                     await update.callback_query.answer(text)
-
         if action == "discover":
             await safe_reply(
                 "🔮 **Discover New Features**\n\nHere are some features you might not know about:\n"
@@ -432,12 +412,10 @@ class EnhancedUIComponents:
                 "This feature is being prepared for you!\n"
                 "Soon you'll see detailed analytics about your bot usage."
             )
-
     async def _handle_suggestion_action(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str, data: str
     ) -> None:
         """Handle suggestion action interactions"""
-
         async def safe_reply(text):
             message_obj = getattr(update.callback_query, "message", None)
             reply_text_func = getattr(message_obj, "reply_text", None)
@@ -452,7 +430,6 @@ class EnhancedUIComponents:
             else:
                 if update.callback_query:
                     await update.callback_query.answer(text)
-
         if action == "explain_code":
             await safe_reply(
                 "🔍 Here is an explanation of the code snippet you referenced."

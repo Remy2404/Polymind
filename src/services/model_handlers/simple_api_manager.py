@@ -13,7 +13,6 @@ Benefits:
 ✅ Reduced code complexity
 ✅ Centralized configuration
 """
-
 import logging
 from typing import Dict, Optional, List, Any
 from enum import Enum
@@ -21,22 +20,15 @@ from dataclasses import dataclass
 from src.services.gemini_api import GeminiAPI
 from src.services.openrouter_api import OpenRouterAPI
 from src.services.DeepSeek_R1_Distill_Llama_70B import DeepSeekLLM
-
 logger = logging.getLogger(__name__)
-
-
 class APIProvider(Enum):
     """Supported API providers"""
-
     GEMINI = "gemini"
     OPENROUTER = "openrouter"
     DEEPSEEK = "deepseek"
-
-
 @dataclass
 class ModelConfig:
     """Configuration for a single model"""
-
     model_id: str
     display_name: str
     provider: APIProvider
@@ -46,8 +38,6 @@ class ModelConfig:
     openrouter_key: Optional[str] = None
     max_tokens: int = 32000
     type: str = "general_purpose"
-
-
 PROVIDER_GROUPS = {
     "🤖 Gemini Models": {
         "provider": APIProvider.GEMINI,
@@ -65,15 +55,12 @@ PROVIDER_GROUPS = {
         "models": [],
     },
 }
-
-
 class SuperSimpleAPIManager:
     """
     🚀 SUPER SIMPLE API MANAGER 🚀
     One class to rule them all! Manages Gemini, OpenRouter, and DeepSeek
     through a single, easy-to-use interface.
     """
-
     def __init__(
         self,
         gemini_api: Optional[GeminiAPI] = None,
@@ -88,14 +75,12 @@ class SuperSimpleAPIManager:
         }
         self.logger = logging.getLogger(__name__)
         self._setup_models()
-
     def _setup_models(self):
         """🎨 Configure all your models here - Easy to add new ones!"""
         from src.services.model_handlers.model_configs import (
             ModelConfigurations,
             Provider,
         )
-
         model_configs = ModelConfigurations.get_all_models()
         self.models: Dict[str, ModelConfig] = {}
         for model_id, config in model_configs.items():
@@ -117,7 +102,6 @@ class SuperSimpleAPIManager:
                     openrouter_key=config.openrouter_model_key,
                     type=config.type,
                 )
-
     def get_models_by_category(self) -> Dict[str, Dict[str, Any]]:
         """Get models organized by category/provider for hierarchical selection"""
         categories = {
@@ -177,7 +161,6 @@ class SuperSimpleAPIManager:
             else:
                 categories["creative"]["models"][model_id] = config
         return {k: v for k, v in categories.items() if v["models"]}
-
     async def chat(
         self,
         model_id: str,
@@ -217,7 +200,6 @@ class SuperSimpleAPIManager:
         except Exception as e:
             self.logger.error(f"Error with {model_id}: {e}")
             return f"❌ Error: {str(e)}"
-
     def _determine_optimal_tokens(self, prompt: str, model_config: ModelConfig) -> int:
         """Determine optimal max_tokens based on prompt and model capabilities"""
         prompt_length = len(prompt)
@@ -255,13 +237,11 @@ class SuperSimpleAPIManager:
             return min(16000, model_config.max_tokens)
         else:
             return min(8000, model_config.max_tokens)
-
     async def _call_gemini(
         self, api: GeminiAPI, prompt: str, context: Optional[List]
     ) -> str:
         """Call Gemini API"""
         return await api.generate_response(prompt, context)
-
     async def _call_deepseek(
         self,
         api: DeepSeekLLM,
@@ -277,7 +257,6 @@ class SuperSimpleAPIManager:
         return await api.generate_response(
             messages=messages, temperature=temperature, max_tokens=max_tokens
         )
-
     async def _call_openrouter(
         self,
         api: OpenRouterAPI,
@@ -296,24 +275,19 @@ class SuperSimpleAPIManager:
             temperature=temperature,
             max_tokens=max_tokens,
         )
-
     def get_all_models(self) -> Dict[str, ModelConfig]:
         """Get all available models"""
         return self.models
-
     def get_model_config(self, model_id: str) -> Optional[ModelConfig]:
         """Get config for a specific model"""
         return self.models.get(model_id)
-
     def get_models_by_provider(self, provider: APIProvider) -> Dict[str, ModelConfig]:
         """Get all models for a specific provider"""
         return {k: v for k, v in self.models.items() if v.provider == provider}
-
     def get_model_display(self, model_id: str) -> str:
         """Get display name for a model"""
         config = self.models.get(model_id)
         return f"{config.emoji} {config.display_name}" if config else model_id
-
     def list_available_models(self) -> str:
         """Get a formatted string of all available models"""
         lines = ["🤖 **Available Models:**\n"]
@@ -325,10 +299,7 @@ class SuperSimpleAPIManager:
                     lines.append(f"• {config.emoji} {config.display_name}")
                 lines.append("")
         return "\n".join(lines)
-
     def add_model(self, model_config: ModelConfig) -> None:
         """Add a new model configuration"""
         self.models[model_config.model_id] = model_config
-
-
 UnifiedAPIManager = SuperSimpleAPIManager

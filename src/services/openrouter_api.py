@@ -11,15 +11,12 @@ from src.services.model_handlers.model_configs import (
     Provider,
     ModelConfig,
 )
-
 load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 if not OPENROUTER_API_KEY:
     telegram_logger.log_error(
         "OPENROUTER_API_KEY not found in environment variables.", 0
     )
-
-
 class OpenRouterAPI:
     def __init__(self, rate_limiter: RateLimiter):
         self.rate_limiter = rate_limiter
@@ -35,7 +32,6 @@ class OpenRouterAPI:
         self.api_last_failure = 0
         self.circuit_breaker_threshold = 5
         self.circuit_breaker_timeout = 300
-
     def _load_openrouter_models_from_config(self):
         """Load available models from centralized configuration specific to OpenRouter."""
         openrouter_configs = ModelConfigurations.get_models_by_provider(
@@ -49,16 +45,13 @@ class OpenRouterAPI:
         self.logger.info(
             f"Loaded {len(self.available_models)} OpenRouter models from configuration."
         )
-
     def get_available_models(self) -> Dict[str, str]:
         """Get the mapping of model IDs to OpenRouter model keys."""
         return self.available_models.copy()
-
     async def close(self):
         """Close the OpenAI client."""
         await self.client.close()
         self.logger.info("Closed OpenRouter API OpenAI client.")
-
     def _build_system_message(
         self, model_id: str, context: Optional[List[Dict]] = None
     ) -> str:
@@ -78,7 +71,6 @@ class OpenRouterAPI:
         if not context and not model_config:
             return base_message + " Be concise, helpful, and accurate."
         return base_message + context_hint
-
     @rate_limit
     async def generate_response(
         self,
@@ -173,7 +165,6 @@ class OpenRouterAPI:
             self.api_last_failure = time.time()
             self.logger.error(f"OpenRouter API error: {str(e)}", exc_info=True)
             return f"Unexpected error when calling OpenRouter API: {str(e)}"
-
     @rate_limit
     async def generate_response_with_model_key(
         self,
@@ -230,14 +221,12 @@ class OpenRouterAPI:
             self.api_last_failure = time.time()
             self.logger.error(f"OpenRouter API error: {str(e)}")
             return f"Unexpected error when calling OpenRouter API: {str(e)}"
-
     def debug_model_mapping(self):
         """Debug method to log all available model mappings."""
         self.logger.info("=== OpenRouter Model Mappings ===")
         for model_id, openrouter_key in self.available_models.items():
             self.logger.info(f"  {model_id} -> {openrouter_key}")
         self.logger.info(f"Total models loaded: {len(self.available_models)}")
-
     def get_system_message(self) -> str:
         """
         Return the system message for OpenRouter models.
@@ -247,7 +236,6 @@ class OpenRouterAPI:
             "You are an advanced AI assistant that helps users with various tasks. "
             "Be concise, helpful, and accurate."
         )
-
     def get_model_indicator(self) -> str:
         """
         Return the model indicator for OpenRouter models.

@@ -2,19 +2,14 @@
 MCP Commands for Telegram Bot
 This module provides MCP-related commands for the Telegram bot.
 """
-
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from src.services.mcp_bot_integration import mcp_integration
-
-
 class MCPCommands:
     """MCP-related commands for the Telegram bot."""
-
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-
     async def mcp_status_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -53,7 +48,6 @@ class MCPCommands:
             await message.reply_text(
                 "❌ Error retrieving MCP status. Please try again later."
             )
-
     async def mcp_toggle_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -75,7 +69,6 @@ class MCPCommands:
             await message.reply_text(
                 "❌ Error toggling MCP functionality. Please try again later."
             )
-
     async def mcp_tools_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -118,7 +111,6 @@ class MCPCommands:
             await message.reply_text(
                 "❌ Error retrieving MCP tools. Please try again later."
             )
-
     async def mcp_help_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -149,6 +141,4 @@ MCP allows the bot to use external tools and services to enhance responses with 
 **Note**: MCP functionality requires proper server configuration and API keys.
         """
         await message.reply_text(help_msg, parse_mode="Markdown")
-
-
 mcp_commands = MCPCommands()

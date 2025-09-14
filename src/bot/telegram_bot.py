@@ -25,16 +25,12 @@ from src.services.flux_lora_img import flux_lora_image_generator
 from src.utils.docgen.document_processor import DocumentProcessor
 from src.services.group_chat.integration import GroupChatIntegration
 from src.services.mcp_bot_integration import initialize_mcp_for_bot
-
 logger = logging.getLogger(__name__)
-
-
 class TelegramBot:
     """
     TelegramBot class that handles interactions with the Telegram API.
     Manages bot initialization, message handling, and service management.
     """
-
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self._update_tasks = set()
@@ -61,16 +57,13 @@ class TelegramBot:
         self._init_services()
         self._setup_handlers()
         self.session = None
-
     def is_user_blocked(self, user_id):
         """Check if user is blocked."""
         return user_id in self.user_blocklist
-
     def block_user(self, user_id):
         """Block a user from accessing the bot."""
         self.user_blocklist.add(user_id)
         self.logger.warning(f"Blocked user {user_id} due to suspicious activity.")
-
     def check_user_rate_limit(self, user_id):
         """Check and update per-user rate limit. Returns True if allowed, False if rate limited."""
         count = self.user_rate_limits.get(user_id, 0)
@@ -81,7 +74,6 @@ class TelegramBot:
             return False
         self.user_rate_limits[user_id] = count + 1
         return True
-
     async def create_session(self):
         """Create an aiohttp session for HTTP requests."""
         try:
@@ -101,7 +93,6 @@ class TelegramBot:
         except Exception as e:
             self.logger.error(f"Failed to create aiohttp session: {str(e)}")
             raise
-
     def _init_db_connection(self):
         """Initialize database connection with enhanced retry mechanism and fallback."""
         max_retries = int(os.getenv("DB_MAX_RETRIES", "5"))
@@ -157,7 +148,6 @@ class TelegramBot:
                     self.logger.warning(
                         "🚨 Bot starting in degraded mode without database persistence"
                     )
-
     def _init_services(self):
         """Initialize bot services and API clients."""
         try:
@@ -168,7 +158,6 @@ class TelegramBot:
         except Exception as e:
             self.logger.error(f"Error initializing services: {e}")
             raise
-
     def _init_model_apis(self):
         """Initialize AI model APIs."""
         rate_limiter = RateLimiter(requests_per_minute=30)
@@ -181,7 +170,6 @@ class TelegramBot:
         self.application.bot_data["gemini_api"] = self.gemini_api
         self.application.bot_data["openrouter_api"] = self.openrouter_api
         self.application.bot_data["deepseek_api"] = self.deepseek_api
-
     def _init_utility_classes(self):
         """Initialize utility classes for message handling."""
         from src.handlers.message_context_handler import MessageContextHandler
@@ -191,7 +179,6 @@ class TelegramBot:
         from src.services.media.voice_processor import VoiceProcessor
         from src.services.model_handlers.prompt_formatter import PromptFormatter
         from src.services.user_preferences_manager import UserPreferencesManager
-
         self.user_data_manager = UserDataManager(self.db)
         self.telegram_logger = telegram_logger
         self.context_handler = MessageContextHandler()
@@ -210,7 +197,6 @@ class TelegramBot:
         self.application.bot_data["voice_processor"] = self.voice_processor
         self.application.bot_data["prompt_formatter"] = self.prompt_formatter
         self.application.bot_data["preferences_manager"] = self.preferences_manager
-
     def _init_handlers(self):
         """Initialize message and command handlers."""
         self.text_handler = TextHandler(
@@ -220,7 +206,6 @@ class TelegramBot:
             deepseek_api=self.deepseek_api,
         )
         from src.services.memory_context.conversation_manager import ConversationManager
-
         self.conversation_manager = ConversationManager(
             self.text_handler.memory_manager, self.text_handler.model_history_manager
         )
@@ -258,18 +243,15 @@ class TelegramBot:
             self.group_chat_integration
         )
         self.message_handlers._group_chat_integration = self.group_chat_integration
-
     def get_message_handlers(self):
         """Get the message handlers instance for Web App API access."""
         return getattr(self, "message_handlers", None)
-
     async def shutdown(self):
         """Properly clean up resources on shutdown."""
         if self.session and not self.session.closed:
             await self.session.close()
         close_database_connection(self.client)
         logger.info("Shutdown complete. Database connection closed.")
-
     def _setup_handlers(self):
         """Register handlers with the application."""
         self.response_cache = TTLCache(maxsize=1000, ttl=300)
@@ -277,7 +259,6 @@ class TelegramBot:
             self.application, cache=self.response_cache
         )
         self.message_handlers.register_handlers(self.application)
-
         async def remind_handler(update: Update, context):
             user = update.effective_user
             user_id = user.id if user is not None else None
@@ -294,7 +275,6 @@ class TelegramBot:
                     await message_obj.reply_text("Usage: /remind <time> <message>")
                 return
             from datetime import datetime
-
             time_str = args[0]
             message = " ".join(args[1:])
             try:
@@ -310,13 +290,11 @@ class TelegramBot:
                 await message_obj.reply_text(
                     f"Reminder set for {remind_time}: {message}"
                 )
-
         self.application.add_handler(CommandHandler("remind", remind_handler))
         self.application.add_handler(
             CommandHandler("language", self.language_manager.set_language)
         )
         self.application.error_handlers.clear()
-
         async def error_handler(update_or_obj, context):
             if hasattr(update_or_obj, "message") or hasattr(update_or_obj, "update_id"):
                 await self.message_handlers._error_handler(update_or_obj, context)
@@ -324,9 +302,7 @@ class TelegramBot:
                 self.logger.error(
                     f"Error handler received non-Update object: {update_or_obj}"
                 )
-
         self.application.add_error_handler(error_handler)
-
     async def setup_webhook(self):
         """Set up webhook with proper update processing."""
         await initialize_mcp_for_bot()
@@ -354,7 +330,6 @@ class TelegramBot:
             await self.application.start()
         else:
             self.logger.info("Application is already running. Skipping start.")
-
     async def process_update(self, update_data):
         """Process updates with task management."""
         try:

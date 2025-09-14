@@ -7,21 +7,15 @@ import os
 import platform
 from typing import List, Optional, Any
 from telegramify_markdown import convert, escape_markdown, markdownify, customize
-
-
 class ResponseFormatter:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-
     def _convert_tables(self, text: str) -> str:
         pattern = r"(?:\|.*\|\s*\n)(?:\|[-: ]+\|\s*\n)(?:\|.*\|\s*\n?)+"
-
         def repl(match):
             rows = match.group(0).strip().splitlines()
             return "\n".join(f"```\n{row}\n```" for row in rows)
-
         return re.sub(pattern, repl, text)
-
     def _handle_spoilers_and_underlines(self, text: str) -> str:
         text = re.sub(
             r"\|\|(.+?)\|\|", lambda m: f"||{escape_markdown(m.group(1))}||", text
@@ -30,7 +24,6 @@ class ResponseFormatter:
             r"__(.+?)__", lambda m: f"__{escape_markdown(m.group(1))}__", text
         )
         return text
-
     def _render_mermaid_to_image(self, mmd_text: str) -> Any:
         try:
             cleaned_mmd = self._clean_mermaid_syntax(mmd_text)
@@ -260,7 +253,6 @@ class ResponseFormatter:
         except Exception as e:
             self.logger.error(f"Mermaid rendering error: {e}")
             raise
-
     def _clean_mermaid_syntax(self, mmd_text: str) -> str:
         """Clean up Mermaid syntax to handle AI-generated issues and improve performance"""
         lines = mmd_text.split("\n")
@@ -327,11 +319,9 @@ class ResponseFormatter:
         if len(result.strip()) < 10:
             raise Exception("Diagram too short or invalid")
         return result
-
     def _fix_mermaid_labels(self, line: str) -> str:
         """This method is kept for potential future use but simplified for now"""
         return line
-
     async def format_telegram_markdown(self, text: str) -> str:
         text = str(text)
         text = self._clean_unwanted_dashes(text)
@@ -340,7 +330,6 @@ class ResponseFormatter:
         except Exception as e:
             self.logger.error(f"format_telegram_markdown error: {e}")
             return self._escape_all(text)
-
     async def escape_markdown_text(self, text: str) -> str:
         text = str(text)
         try:
@@ -348,7 +337,6 @@ class ResponseFormatter:
         except Exception as e:
             self.logger.error(f"escape_markdown_text error: {e}")
             return self._escape_all(text)
-
     async def markdownify_text(
         self, md: str, normalize_whitespace: bool = False
     ) -> str:
@@ -363,14 +351,12 @@ class ResponseFormatter:
         except Exception as e:
             self.logger.error(f"markdownify_text error: {e}")
             return await self.format_telegram_markdown(md)
-
     async def format_telegram_html(self, text: str) -> str:
         try:
             return html.escape(str(text))
         except Exception as e:
             self.logger.error(f"format_telegram_html error: {e}")
             return html.escape(str(text))
-
     def set_markdown_options(self, **opts) -> "ResponseFormatter":
         cfg = customize
         if "strict_markdown" in opts:
@@ -390,7 +376,6 @@ class ResponseFormatter:
                 if name in symbols:
                     setattr(cfg.markdown_symbol, name, symbols[name])
         return self
-
     async def split_long_message(self, text: str, max_length: int = 4096) -> List[str]:
         """Split long messages into chunks that fit within Telegram's limits"""
         text = self._convert_tables(str(text or ""))
@@ -450,20 +435,17 @@ class ResponseFormatter:
                 if chunk.strip():
                     final_chunks.append(chunk)
         return final_chunks if final_chunks else [text[:max_length]]
-
     def format_with_model_indicator(
         self, text: str, model: str, is_reply: bool = False
     ) -> str:
         text = str(text)
         header = model + ("\n↪️ Replying to message\n" if is_reply else "\n")
         return f"{header}{text}"
-
     def _escape_all(self, text: str) -> str:
         specials = r"_*[]()~`>#+\-=|{}.!".split()
         for ch in specials:
             text = text.replace(ch, f"\\{ch}")
         return text
-
     def _clean_unwanted_dashes(self, text: str) -> str:
         """Remove standalone dashes that appear at the end of lines"""
         lines = text.split("\n")
@@ -475,7 +457,6 @@ class ResponseFormatter:
             elif not stripped:
                 cleaned_lines.append(line)
         return "\n".join(cleaned_lines)
-
     async def safe_send_message(
         self,
         message,
@@ -538,7 +519,6 @@ class ResponseFormatter:
         return await self._send_single_message(
             message, text, reply_to_message_id, disable_web_page_preview
         )
-
     async def _send_single_message(
         self,
         message,
@@ -586,7 +566,6 @@ class ResponseFormatter:
         except Exception as e:
             self.logger.error(f"All send attempts failed: {e}")
             return None
-
     async def format_response(
         self, content: str, user_id: int = None, model_name: str = None
     ) -> str:

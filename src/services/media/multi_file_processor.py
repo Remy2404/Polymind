@@ -2,7 +2,6 @@
 Multi-file processor module for handling multiple files of different types simultaneously.
 Intelligently processes files based on their types and user intent.
 """
-
 import io
 import os
 import logging
@@ -11,15 +10,11 @@ import asyncio
 from services.gemini_api import GeminiAPI
 import mimetypes
 import re
-
 logger = logging.getLogger(__name__)
-
-
 class MultiFileProcessor:
     """
     Process multiple files of different types simultaneously and determine their purpose.
     """
-
     def __init__(self, gemini_api: GeminiAPI, document_processor=None):
         """
         Initialize the multi-file processor.
@@ -31,7 +26,6 @@ class MultiFileProcessor:
         self.logger = logging.getLogger(__name__)
         self.document_processor = document_processor
         self._register_mime_types()
-
     def _register_mime_types(self):
         """Register additional MIME types not in the standard library"""
         mimetypes.add_type("text/x-python", ".py")
@@ -61,7 +55,6 @@ class MultiFileProcessor:
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation",
                 ".pptx",
             )
-
     async def process_multiple_files(
         self, files: List[Dict], prompt: str
     ) -> Dict[str, Any]:
@@ -86,7 +79,6 @@ class MultiFileProcessor:
             intent, specific_files or categorized_files, prompt
         )
         return result
-
     def _categorize_files(self, files: List[Dict]) -> Dict[str, List[Dict]]:
         """
         Categorize files based on their types.
@@ -142,7 +134,6 @@ class MultiFileProcessor:
             else:
                 result["other"].append(file_dict)
         return {k: v for k, v in result.items() if v}
-
     def _is_code_file(self, file_data: io.BytesIO) -> bool:
         """Check if a file is likely code based on content"""
         try:
@@ -171,7 +162,6 @@ class MultiFileProcessor:
         except Exception as e:
             self.logger.warning(f"Error determining if file is code: {e}")
             return False
-
     def _determine_intent_from_prompt(
         self, prompt: str, categorized_files: Dict[str, List[Dict]]
     ) -> Tuple[str, Optional[Dict[str, List[Dict]]]]:
@@ -256,7 +246,6 @@ class MultiFileProcessor:
         if specific_files_dict:
             specific_files = specific_files_dict
         return intent, specific_files
-
     async def _process_files_by_intent(
         self, intent: str, categorized_files: Dict[str, List[Dict]], prompt: str
     ) -> Dict[str, Any]:
@@ -324,7 +313,6 @@ class MultiFileProcessor:
                     for key, value in result.items():
                         results["results"][key] = value
         return results
-
     async def _process_image(self, image_file: Dict, prompt: str) -> Dict[str, str]:
         """Process an image file"""
         try:
@@ -340,7 +328,6 @@ class MultiFileProcessor:
             return {
                 image_file.get("filename", "image"): f"Error processing image: {str(e)}"
             }
-
     async def _process_document(
         self, document_file: Dict, prompt: str
     ) -> Dict[str, str]:
@@ -377,7 +364,6 @@ class MultiFileProcessor:
                     "filename", "document"
                 ): f"Error processing document: {str(e)}"
             }
-
     async def _process_code_file(self, code_file: Dict, prompt: str) -> Dict[str, str]:
         """Process a code file"""
         try:
@@ -398,21 +384,18 @@ class MultiFileProcessor:
             return {
                 code_file.get("filename", "code"): f"Error processing code: {str(e)}"
             }
-
     async def _process_audio(self, audio_file: Dict, prompt: str) -> Dict[str, str]:
         """Process an audio file"""
         filename = audio_file.get("filename", "audio")
         return {
             filename: f"Audio analysis is not fully supported yet. For {filename}, consider uploading as a voice message for transcription."
         }
-
     async def _process_video(self, video_file: Dict, prompt: str) -> Dict[str, str]:
         """Process a video file"""
         filename = video_file.get("filename", "video")
         return {
             filename: f"Video analysis is not fully supported yet. For {filename}, I can only analyze individual frames."
         }
-
     async def _process_other_file(
         self, other_file: Dict, prompt: str
     ) -> Dict[str, str]:
@@ -421,7 +404,6 @@ class MultiFileProcessor:
         return {
             filename: "This file type is not directly supported for detailed analysis. I can try to analyze as text if you'd like."
         }
-
     async def _compare_files(self, files: List[Dict], prompt: str) -> Dict[str, str]:
         """Compare multiple files of the same type"""
         try:
@@ -444,7 +426,6 @@ class MultiFileProcessor:
         except Exception as e:
             self.logger.error(f"Error comparing files: {e}")
             return {"comparison": f"Error comparing files: {str(e)}"}
-
     async def _compare_across_categories(
         self, categorized_files: Dict[str, List[Dict]], prompt: str
     ) -> Dict[str, str]:
@@ -464,7 +445,6 @@ class MultiFileProcessor:
         except Exception as e:
             self.logger.error(f"Error comparing across categories: {e}")
             return {"comparison": f"Error comparing files across categories: {str(e)}"}
-
     async def _extract_from_files(
         self, files: List[Dict], extraction_type: str, prompt: str
     ) -> Dict[str, str]:
@@ -502,7 +482,6 @@ class MultiFileProcessor:
                 self.logger.error(f"Error extracting from {filename}: {e}")
                 results[filename] = f"Error extracting {extraction_type}: {str(e)}"
         return results
-
     async def _translate_files(self, files: List[Dict], prompt: str) -> Dict[str, str]:
         """Translate text content in files"""
         results = {}
@@ -526,7 +505,6 @@ class MultiFileProcessor:
                 self.logger.error(f"Error translating {filename}: {e}")
                 results[filename] = f"Error translating file: {str(e)}"
         return results
-
     def _extract_target_language(self, prompt: str) -> Optional[str]:
         """Extract target language from prompt"""
         prompt_lower = prompt.lower()
@@ -554,7 +532,6 @@ class MultiFileProcessor:
             ):
                 return lang_value
         return None
-
     async def _process_code_files(
         self, code_files: List[Dict], intent: str, prompt: str
     ) -> Dict[str, str]:
@@ -581,7 +558,6 @@ class MultiFileProcessor:
                 self.logger.error(f"Error processing code file {filename}: {e}")
                 results[filename] = f"Error processing code: {str(e)}"
         return results
-
     async def _get_file_content_or_description(self, file: Dict) -> str:
         """Get file content as text or a description for non-text files"""
         filename = file.get("filename", "file")

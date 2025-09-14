@@ -2,16 +2,12 @@
 Web App opening command handlers.
 Contains commands to open and manage Telegram Mini Web App integration.
 """
-
 import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ContextTypes
-
-
 class OpenWebAppCommands:
     """Handles Web App opening and integration commands"""
-
     def __init__(self, user_data_manager, telegram_logger):
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
@@ -23,11 +19,9 @@ class OpenWebAppCommands:
             self.logger.info(f"Web App URL: {self.web_app_url}")
         else:
             self.logger.warning("No Web App URL configured")
-
     def _validate_web_app_url(self, url: str) -> bool:
         """Allow only HTTPS URLs"""
         return bool(url and url.startswith("https://"))
-
     async def open_web_app_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:

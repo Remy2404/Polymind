@@ -1,20 +1,16 @@
 import sys
 import os
-
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import logging
-
-
 class BasicCommands:
     def __init__(self, user_data_manager, telegram_logger):
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
         self.logger = logging.getLogger(__name__)
-
     async def start_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -53,7 +49,6 @@ class BasicCommands:
             )
         await self.user_data_manager.initialize_user(user_id)
         self.logger.info(f"New user started the bot: {user_id}")
-
     async def help_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -82,7 +77,6 @@ class BasicCommands:
             self.telegram_logger.log_message(
                 update.effective_user.id, "Help command requested"
             )
-
     async def reset_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:

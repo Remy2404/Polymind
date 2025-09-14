@@ -2,26 +2,19 @@
 Model Configuration System
 Defines all available models in a centralized configuration.
 """
-
 import json
 import os
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Any, List
 from enum import Enum
-
-
 class Provider(Enum):
     """Supported API providers."""
-
     GEMINI = "gemini"
     OPENROUTER = "openrouter"
     DEEPSEEK = "deepseek"
-
-
 @dataclass
 class ModelConfig:
     """Configuration for an AI model."""
-
     model_id: str
     display_name: str
     provider: Provider
@@ -38,11 +31,8 @@ class ModelConfig:
     type: str = "general_purpose"
     capabilities: List[str] = field(default_factory=list)
     supported_parameters: List[str] = field(default_factory=list)
-
-
 class ModelConfigurations:
     """Central configuration for all available models."""
-
     @staticmethod
     def get_all_models() -> Dict[str, ModelConfig]:
         """Get all available model configurations from JSON file, merged with hardcoded models."""
@@ -105,7 +95,6 @@ class ModelConfigurations:
             return ModelConfigurations._get_hardcoded_models()
         models.update(ModelConfigurations._get_hardcoded_models())
         return models
-
     @staticmethod
     def _get_hardcoded_models() -> Dict[str, ModelConfig]:
         """Fallback hardcoded models when JSON loading fails."""
@@ -153,7 +142,6 @@ class ModelConfigurations:
                 ],
             ),
         }
-
     @staticmethod
     def _determine_provider_from_id(model_id: str) -> Provider:
         """Determine provider from model ID."""
@@ -163,7 +151,6 @@ class ModelConfigurations:
             return Provider.DEEPSEEK
         else:
             return Provider.OPENROUTER
-
     @staticmethod
     def _extract_capabilities_from_model_data(model_data: Dict[str, Any]) -> List[str]:
         """Extract capabilities from model data (description + supported_parameters)."""
@@ -221,7 +208,6 @@ class ModelConfigurations:
         if not capabilities:
             capabilities.append("general_purpose")
         return capabilities
-
     @staticmethod
     def _extract_capabilities_from_description(description: str) -> List[str]:
         """Extract capabilities from model description."""
@@ -260,7 +246,6 @@ class ModelConfigurations:
         if not capabilities:
             capabilities.append("general_purpose")
         return capabilities
-
     @staticmethod
     def _determine_model_type(capabilities: List[str]) -> str:
         """Determine model type from capabilities."""
@@ -274,7 +259,6 @@ class ModelConfigurations:
             return "multilingual"
         else:
             return "general_purpose"
-
     @staticmethod
     def _generate_system_message(model_id: str, display_name: str) -> str:
         """Generate appropriate system message for the model."""
@@ -290,7 +274,6 @@ class ModelConfigurations:
             return f"You are {display_name}, a powerful and efficient AI assistant by Mistral AI."
         else:
             return f"You are {display_name}, a helpful AI assistant."
-
     @staticmethod
     def _get_indicator_emoji(provider: Provider, model_type: str) -> str:
         """Get appropriate indicator emoji based on provider and type."""
@@ -306,7 +289,6 @@ class ModelConfigurations:
             return "🤔"
         else:
             return "🤖"
-
     @staticmethod
     def get_models_by_provider(provider: Provider) -> Dict[str, ModelConfig]:
         """Get all models for a specific provider."""
@@ -316,7 +298,6 @@ class ModelConfigurations:
             )
         all_models = ModelConfigurations.get_all_models()
         return {k: v for k, v in all_models.items() if v.provider == provider}
-
     @staticmethod
     def get_models_with_tool_calls() -> Dict[str, ModelConfig]:
         """Get all models that support tool calls based on logic rather than configuration."""
@@ -326,7 +307,6 @@ class ModelConfigurations:
             for k, v in all_models.items()
             if ModelConfigurations._model_supports_tool_calls_logic(k, v)
         }
-
     @staticmethod
     def _model_supports_tool_calls_logic(
         model_id: str, model_config: ModelConfig
@@ -347,7 +327,6 @@ class ModelConfigurations:
         elif model_config.provider == Provider.GEMINI:
             return True
         return False
-
     @staticmethod
     def get_models_with_tool_calls_by_provider(
         provider: Provider,
@@ -359,7 +338,6 @@ class ModelConfigurations:
             )
         tool_call_models = ModelConfigurations.get_models_with_tool_calls()
         return {k: v for k, v in tool_call_models.items() if v.provider == provider}
-
     @staticmethod
     def model_supports_tool_calls(model_id: str) -> bool:
         """Check if a specific model supports tool calls."""
@@ -370,7 +348,6 @@ class ModelConfigurations:
         if not model:
             return False
         return ModelConfigurations._model_supports_tool_calls_logic(model_id, model)
-
     @staticmethod
     def get_free_models() -> Dict[str, ModelConfig]:
         """Get all free models (OpenRouter models with :free suffix)."""
@@ -382,7 +359,6 @@ class ModelConfigurations:
             and v.openrouter_model_key
             and ":free" in v.openrouter_model_key
         }
-
     @staticmethod
     def add_openrouter_models(additional_models: List[Dict[str, Any]]) -> None:
         """
@@ -418,7 +394,6 @@ class ModelConfigurations:
                 description=model_data.get("description", ""),
             )
             current_models[model_data["model_id"]] = model_config
-
     @staticmethod
     def get_model_with_fallback(model_id: str) -> str:
         """Get OpenRouter model key with fallback to reliable alternatives"""

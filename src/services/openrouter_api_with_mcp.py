@@ -3,7 +3,6 @@ Enhanced OpenRouter API with MCP Tool Integration
 This module extends the base OpenRouter API to include automatic MCP server
 integration, enabling LLMs to use MCP tools seamlessly.
 """
-
 import logging
 from typing import Dict, List, Optional, Any
 from src.services.openrouter_api import OpenRouterAPI
@@ -11,15 +10,12 @@ from src.services.mcp import MCPManager
 from src.services.model_handlers.model_configs import ModelConfigurations, Provider
 from src.utils.log.telegramlog import telegram_logger
 from src.services.gemini_api import GeminiAPI
-
-
 class OpenRouterAPIWithMCP(OpenRouterAPI):
     """
     Enhanced OpenRouter API with MCP (Model Context Protocol) integration.
     This class extends the base OpenRouterAPI to automatically load and use
     MCP server tools, converting them to OpenAI-compatible format.
     """
-
     def __init__(self, rate_limiter, mcp_config_path: str = "mcp.json"):
         """
         Initialize the enhanced OpenRouter API with MCP support and Gemini integration.
@@ -38,7 +34,6 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         except Exception as e:
             self.logger.warning(f"Failed to initialize Gemini API: {e}")
             self.gemini_api = None
-
     def _get_model_provider(self, model: str) -> Provider:
         """
         Determine which provider to use for a given model.
@@ -51,7 +46,6 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         if model_config:
             return model_config.provider
         return Provider.OPENROUTER
-
     def _should_use_gemini(self, model: str) -> bool:
         """
         Check if we should use Gemini for the given model.
@@ -64,7 +58,6 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
             return False
         provider = self._get_model_provider(model)
         return provider == Provider.GEMINI
-
     async def initialize_mcp_tools(self) -> bool:
         """
         Initialize and load MCP tools from configured servers.
@@ -91,7 +84,6 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
             self.logger.error(f"Error initializing MCP tools: {str(e)}")
             telegram_logger.log_error(f"Error initializing MCP tools: {str(e)}", 0)
             return False
-
     async def generate_response_with_mcp_tools(
         self,
         prompt: str,
@@ -185,7 +177,6 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
                 max_tokens=max_tokens,
                 timeout=timeout,
             )
-
     def _build_system_message(
         self,
         model_id: str,
@@ -224,7 +215,6 @@ You have access to the following tools: {', '.join(tool_names)}
 - Do not mention tool internal details or <think> tags in your final response
 Focus on providing the most helpful and accurate response possible using the available tools."""
         return base_message + context_hint + tool_instructions
-
     def _categorize_tools(self, tools: List[Dict[str, Any]]) -> Dict[str, List[str]]:
         """
         Categorize tools by their functionality for better organization.
@@ -304,7 +294,6 @@ Focus on providing the most helpful and accurate response possible using the ava
             else:
                 categories["Other"].append(tool["function"]["name"])
         return {k: v for k, v in categories.items() if v}
-
     async def generate_response_with_tools(
         self,
         prompt: str,
@@ -355,7 +344,6 @@ Focus on providing the most helpful and accurate response possible using the ava
                     try:
                         if isinstance(tool_args, str):
                             import json
-
                             tool_args = json.loads(tool_args)
                             self.logger.info(
                                 f"Parsed tool arguments for {tool_name}: {tool_args}"
@@ -466,7 +454,6 @@ Focus on providing the most helpful and accurate response possible using the ava
                     f"Bad request error for model '{openrouter_model}' - likely tool calling not supported"
                 )
             return "I encountered an error while processing your request. Please try again or use a different model."
-
     def _clean_response_content(self, content: str) -> str:
         """
         Clean response content by removing thinking tags and tool calls.
@@ -478,14 +465,12 @@ Focus on providing the most helpful and accurate response possible using the ava
         if not content:
             return content
         import re
-
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
         content = re.sub(r"<tool_call>.*?</tool_call>", "", content, flags=re.DOTALL)
         content = re.sub(r"<[^>]+>.*?</[^>]+>", "", content, flags=re.DOTALL)
         content = content.strip()
         content = re.sub(r"\n\s*\n\s*\n+", "\n\n", content)
         return content
-
     async def get_available_mcp_tools(self) -> List[Dict[str, Any]]:
         """
         Get all available MCP tools in OpenAI format.
@@ -498,7 +483,6 @@ Focus on providing the most helpful and accurate response possible using the ava
             return await self.mcp_manager.get_all_tools()
         else:
             return []
-
     def get_mcp_server_info(self) -> Dict[str, Any]:
         """
         Get information about connected MCP servers.
@@ -509,7 +493,6 @@ Focus on providing the most helpful and accurate response possible using the ava
             return self.mcp_manager.get_server_info()
         else:
             return {}
-
     async def close(self):
         """Close the API client and MCP connections."""
         await super().close()
@@ -517,7 +500,6 @@ Focus on providing the most helpful and accurate response possible using the ava
             await self.mcp_manager.disconnect_all()
         if self.gemini_api:
             await self.gemini_api.close()
-
     async def _generate_gemini_with_mcp_tools(
         self,
         prompt: str,

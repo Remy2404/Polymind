@@ -2,10 +2,8 @@
 AI Document generation command handlers.
 Contains AI document generation, format selection, and callback handling.
 """
-
 import sys
 import os
-
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
@@ -15,8 +13,6 @@ from datetime import datetime
 import logging
 import io
 from src.services.model_handlers.model_configs import ModelConfigurations
-
-
 class DocumentCommands:
     def __init__(
         self, gemini_api, user_data_manager, telegram_logger, api_manager=None
@@ -31,9 +27,7 @@ class DocumentCommands:
             from src.services.model_handlers.simple_api_manager import (
                 SuperSimpleAPIManager,
             )
-
             self.api_manager = SuperSimpleAPIManager(gemini_api=gemini_api)
-
     async def generate_ai_document_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -82,7 +76,6 @@ class DocumentCommands:
         context.user_data["aidoc_prompt"] = prompt
         context.user_data["aidoc_type"] = "article"
         await self._show_ai_document_format_selection(update, context)
-
     async def _show_ai_document_format_selection(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -147,7 +140,6 @@ class DocumentCommands:
             await update.message.reply_text(
                 message, reply_markup=reply_markup, parse_mode="Markdown"
             )
-
     async def handle_ai_document_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, data: str
     ) -> None:
@@ -185,7 +177,6 @@ class DocumentCommands:
                 return
             context.user_data["aidoc_model"] = new_model
             await self._show_ai_document_format_selection(update, context)
-
     async def _generate_and_send_ai_document(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -222,7 +213,6 @@ class DocumentCommands:
             return
         try:
             from src.utils.docgen.document_ai_generator import AIDocumentGenerator
-
             ai_doc_generator = AIDocumentGenerator(api_manager=self.api_manager)
             document_bytes, title = await ai_doc_generator.generate_ai_document(
                 prompt=prompt,

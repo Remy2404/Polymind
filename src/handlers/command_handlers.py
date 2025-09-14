@@ -1,6 +1,5 @@
 import sys
 import os
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from telegram import (
     Update,
@@ -38,8 +37,6 @@ from .commands import (
     MCPCommands,
     CallbackHandlers,
 )
-
-
 @dataclass
 class ImageRequest:
     prompt: str
@@ -47,38 +44,30 @@ class ImageRequest:
     height: int
     steps: int
     timestamp: float = field(default_factory=time.time)
-
-
 class ImageGenerationHandler:
     def __init__(self):
         self.request_cache = TTLCache(maxsize=100, ttl=3600)
         self.request_limiter = {}
         self.processing_queue = asyncio.Queue()
         self.rate_limit_time = 30
-
     def is_rate_limited(self, user_id: int) -> bool:
         if user_id in self.request_limiter:
             last_request = self.request_limiter[user_id]
             if datetime.now() - last_request < timedelta(seconds=self.rate_limit_time):
                 return True
         return False
-
     def update_rate_limit(self, user_id: int) -> None:
         self.request_limiter[user_id] = datetime.now()
-
     def get_cached_image(
         self, prompt: str, width: int, height: int, steps: int
     ) -> Optional[Image.Image]:
         cache_key = f"{prompt}_{width}_{height}_{steps}"
         return self.request_cache.get(cache_key)
-
     def cache_image(
         self, prompt: str, width: int, height: int, steps: int, image: Image.Image
     ) -> None:
         cache_key = f"{prompt}_{width}_{height}_{steps}"
         self.request_cache[cache_key] = image
-
-
 class CommandHandlers:
     def __init__(
         self,
@@ -127,64 +116,52 @@ class CommandHandlers:
             self.model_commands,
             self.export_commands,
         )
-
     async def start_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.basic_commands.start_command(update, context)
-
     async def help_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.basic_commands.help_command(update, context)
-
     async def reset_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.basic_commands.reset_command(update, context)
-
     async def generate_together_image(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.image_commands.generate_together_image(update, context)
-
     async def switch_model_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.model_commands.switchmodel_command(update, context)
-
     async def list_models_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.model_commands.list_models_command(update, context)
-
     async def current_model_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.model_commands.current_model_command(update, context)
-
     async def generate_ai_document_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.document_commands.generate_ai_document_command(
             update, context
         )
-
     async def export_to_document(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.export_commands.export_to_document(update, context)
-
     async def handle_export(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.export_commands.handle_export(update, context)
-
     async def handle_export_conversation(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.export_commands.handle_export_conversation(update, context)
-
     async def handle_callback_query(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -221,57 +198,46 @@ class CommandHandlers:
             await query.edit_message_text("Document export cancelled.")
         else:
             await self.callback_handlers.handle_callback_query(update, context)
-
     async def open_web_app_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.open_web_app_commands.open_web_app_command(update, context)
-
     async def create_poll_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.poll_commands.create_poll_command(update, context)
-
     async def group_settings_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.group_commands.group_settings_command(update, context)
-
     async def group_context_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.group_commands.group_context_command(update, context)
-
     async def group_threads_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.group_commands.group_threads_command(update, context)
-
     async def clean_threads_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.group_commands.clean_threads_command(update, context)
-
     async def mcp_status_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.mcp_commands.mcp_status_command(update, context)
-
     async def mcp_toggle_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.mcp_commands.mcp_toggle_command(update, context)
-
     async def mcp_tools_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.mcp_commands.mcp_tools_command(update, context)
-
     async def mcp_help_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         return await self.mcp_commands.mcp_help_command(update, context)
-
     def register_handlers(self, application: Application, cache=None) -> None:
         try:
             application.add_handler(CommandHandler("start", self.start_command))

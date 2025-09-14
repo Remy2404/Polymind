@@ -1,8 +1,6 @@
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
-
-
 async def handle_error(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.error("Exception while handling an update:", exc_info=context.error)
     if update and getattr(update, "message", None):

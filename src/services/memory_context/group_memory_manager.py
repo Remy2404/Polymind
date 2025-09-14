@@ -2,7 +2,6 @@
 🧠 Advanced Group Memory & Conversation Intelligence System
 Provides shared memory for team collaboration with contextual awareness
 """
-
 import logging
 from typing import Dict, List, Optional, Any, Set
 from datetime import datetime, timedelta
@@ -11,19 +10,14 @@ from dataclasses import dataclass, asdict
 import hashlib
 import sys
 import os
-
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 from database.connection import get_database
-
 logger = logging.getLogger(__name__)
-
-
 @dataclass
 class GroupConversationContext:
     """Enhanced context for group conversations"""
-
     group_id: int
     group_title: str
     active_participants: List[int]
@@ -36,12 +30,9 @@ class GroupConversationContext:
     key_decisions: List[str]
     action_items: List[Dict[str, Any]]
     expertise_map: Dict[int, List[str]]
-
-
 @dataclass
 class ConversationThread:
     """Individual conversation thread within a group"""
-
     thread_id: str
     topic: str
     participants: Set[int]
@@ -50,8 +41,6 @@ class ConversationThread:
     last_active: datetime
     status: str
     priority: str
-
-
 class GroupMemoryManager:
     """
     🧠 Advanced Group Memory System
@@ -61,7 +50,6 @@ class GroupMemoryManager:
     - Participant expertise tracking
     - Smart notification system
     - Decision tracking and action items"""
-
     def __init__(self, db=None):
         if db is None:
             try:
@@ -112,7 +100,6 @@ class GroupMemoryManager:
         self.notification_queue = deque()
         self._load_group_data()
         logger.info("🧠 Group Memory Manager initialized with advanced intelligence")
-
     async def initialize_group_context(
         self, group_id: int, group_title: str, participants: List[int]
     ) -> GroupConversationContext:
@@ -151,7 +138,6 @@ class GroupMemoryManager:
         except Exception as e:
             logger.error(f"❌ Error initializing group context: {e}")
             raise
-
     async def add_group_message(
         self,
         group_id: int,
@@ -189,7 +175,6 @@ class GroupMemoryManager:
         except Exception as e:
             logger.error(f"❌ Error adding group message: {e}")
             return {}
-
     async def get_group_context(
         self, group_id: int, user_id: int, context_length: int = 20
     ) -> Dict[str, Any]:
@@ -226,7 +211,6 @@ class GroupMemoryManager:
         except Exception as e:
             logger.error(f"❌ Error getting group context: {e}")
             return {"context": [], "summary": "Error retrieving context"}
-
     async def create_conversation_thread(
         self, group_id: int, topic: str, initiator_id: int, priority: str = "medium"
     ) -> str:
@@ -253,7 +237,6 @@ class GroupMemoryManager:
         except Exception as e:
             logger.error(f"❌ Error creating conversation thread: {e}")
             return ""
-
     async def switch_conversation_thread(self, group_id: int, thread_id: str) -> bool:
         """Switch to a different conversation thread"""
         try:
@@ -271,7 +254,6 @@ class GroupMemoryManager:
         except Exception as e:
             logger.error(f"❌ Error switching thread: {e}")
             return False
-
     async def get_group_summary(
         self, group_id: int, timeframe_hours: int = 24
     ) -> Dict[str, Any]:
@@ -327,7 +309,6 @@ class GroupMemoryManager:
         except Exception as e:
             logger.error(f"❌ Error generating group summary: {e}")
             return {}
-
     async def add_decision(
         self, group_id: int, decision: str, participants: List[int]
     ) -> bool:
@@ -349,7 +330,6 @@ class GroupMemoryManager:
         except Exception as e:
             logger.error(f"❌ Error adding decision: {e}")
             return False
-
     async def add_action_item(
         self,
         group_id: int,
@@ -378,7 +358,6 @@ class GroupMemoryManager:
         except Exception as e:
             logger.error(f"❌ Error adding action item: {e}")
             return False
-
     async def _analyze_sentiment(self, message: str) -> str:
         """Analyze message sentiment"""
         positive_words = [
@@ -408,7 +387,6 @@ class GroupMemoryManager:
             return "negative"
         else:
             return "neutral"
-
     async def _extract_topics(self, message: str) -> List[str]:
         """Extract topics from message"""
         topics = []
@@ -424,14 +402,11 @@ class GroupMemoryManager:
             if any(keyword in message_lower for keyword in keywords):
                 topics.append(topic)
         return topics
-
     async def _extract_mentions(self, message: str) -> List[str]:
         """Extract @mentions from message"""
         import re
-
         mentions = re.findall(r"@\w+", message)
         return mentions
-
     async def _extract_action_items(self, message: str) -> List[str]:
         """Extract potential action items from message"""
         action_patterns = [
@@ -442,11 +417,9 @@ class GroupMemoryManager:
         actions = []
         for pattern in action_patterns:
             import re
-
             matches = re.findall(pattern, message.lower())
             actions.extend(matches)
         return actions
-
     def _update_analytics(self, group_id: int, message: Dict[str, Any]):
         """Update group analytics"""
         analytics = self.group_analytics[group_id]
@@ -458,7 +431,6 @@ class GroupMemoryManager:
         analytics["collaboration_score"] = min(
             100.0, analytics["collaboration_score"] + 0.1
         )
-
     async def _update_conversation_thread(self, group_id: int, message: Dict[str, Any]):
         """Update the current conversation thread"""
         context = self.group_contexts[group_id]
@@ -468,7 +440,6 @@ class GroupMemoryManager:
             thread.messages.append(message)
             thread.participants.add(message["user_id"])
             thread.last_active = datetime.now()
-
     async def _process_smart_notifications(
         self, group_id: int, message: Dict[str, Any]
     ):
@@ -483,7 +454,6 @@ class GroupMemoryManager:
                 "timestamp": datetime.now().isoformat(),
             }
             self.notification_queue.append(notification)
-
     async def _update_expertise_map(self, group_id: int, user_id: int, message: str):
         """Update user expertise based on message content"""
         context = self.group_contexts[group_id]
@@ -499,7 +469,6 @@ class GroupMemoryManager:
             if any(keyword in message_lower for keyword in keywords):
                 if expertise not in context.expertise_map[user_id]:
                     context.expertise_map[user_id].append(expertise)
-
     async def _generate_context_summary(self, group_id: int, user_id: int) -> str:
         """Generate intelligent context summary"""
         context = self.group_contexts[group_id]
@@ -520,7 +489,6 @@ class GroupMemoryManager:
         return (
             " | ".join(summary_parts) if summary_parts else "Active group conversation"
         )
-
     async def _get_relevant_experts(
         self, group_id: int, messages: List[Dict]
     ) -> List[Dict]:
@@ -543,7 +511,6 @@ class GroupMemoryManager:
         return sorted(
             relevant_experts, key=lambda x: x["relevance_score"], reverse=True
         )
-
     async def _get_top_contributors(
         self, group_id: int, timeframe_hours: int
     ) -> List[Dict]:
@@ -559,7 +526,6 @@ class GroupMemoryManager:
         return sorted(top_contributors, key=lambda x: x["message_count"], reverse=True)[
             :5
         ]
-
     async def _get_trending_topics(
         self, group_id: int, timeframe_hours: int
     ) -> List[Dict]:
@@ -569,7 +535,6 @@ class GroupMemoryManager:
         for topic, count in analytics["popular_topics"].items():
             trending.append({"topic": topic, "mention_count": count})
         return sorted(trending, key=lambda x: x["mention_count"], reverse=True)[:5]
-
     async def _queue_action_notification(self, group_id: int, action_item: Dict):
         """Queue notification for action item"""
         notification = {
@@ -579,7 +544,6 @@ class GroupMemoryManager:
             "timestamp": datetime.now().isoformat(),
         }
         self.notification_queue.append(notification)
-
     def _load_group_data(self):
         """Load group data from MongoDB"""
         try:
@@ -638,7 +602,6 @@ class GroupMemoryManager:
             logger.info("📁 Loaded group data from MongoDB")
         except Exception as e:
             logger.error(f"❌ Error loading group data: {e}")
-
     async def _save_group_data(self):
         """Save group data to MongoDB"""
         try:
@@ -699,7 +662,6 @@ class GroupMemoryManager:
             logger.debug("💾 Saved group data to MongoDB")
         except Exception as e:
             logger.error(f"❌ Error saving group data: {e}")
-
     async def cleanup_old_data(self, days_old: int = 30):
         """Clean up old conversation data from MongoDB"""
         try:
@@ -730,7 +692,6 @@ class GroupMemoryManager:
             )
         except Exception as e:
             logger.error(f"❌ Error during cleanup: {e}")
-
     def _ensure_indexes(self):
         """Ensure database indexes are created for better performance"""
         try:
@@ -752,8 +713,6 @@ class GroupMemoryManager:
             logger.info("Group memory management database indexes ensured")
         except Exception as e:
             logger.error(f"Error creating group memory management indexes: {e}")
-
-
 try:
     db, client = get_database()
     group_memory_manager = GroupMemoryManager(db=db)

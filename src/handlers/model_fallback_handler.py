@@ -3,12 +3,9 @@ Model Fallback Handler
 This module handles automatic fallback to alternative models when the primary model
 fails or times out. It provides intelligent model selection and user notification.
 """
-
 import asyncio
 import logging
 from typing import List, Dict, Any, Tuple, Optional
-
-
 class ModelFallbackHandler:
     """
     Handles automatic fallback to alternative models when primary models fail.
@@ -19,7 +16,6 @@ class ModelFallbackHandler:
     - Progress updates for complex questions
     - Timeout management per model
     """
-
     def __init__(self, response_formatter):
         self.logger = logging.getLogger(__name__)
         self.response_formatter = response_formatter
@@ -105,7 +101,6 @@ class ModelFallbackHandler:
                 "deepseek/deepseek-chat-v3.1:free",
             ],
         }
-
     def get_fallback_models(self, primary_model: str) -> List[str]:
         """
         Get fallback models based on the primary model.
@@ -123,7 +118,6 @@ class ModelFallbackHandler:
                 "meta-llama/llama-4-maverick:free",
             ],
         )
-
     async def attempt_with_fallback(
         self,
         primary_model: str,
@@ -229,7 +223,6 @@ class ModelFallbackHandler:
                 self.logger.warning(f"Error with model {model_name}: {str(e)}")
                 continue
         raise Exception(f"All fallback models failed. Last error: {str(last_error)}")
-
     async def _handle_complex_question_with_progress(
         self,
         message,
@@ -263,7 +256,6 @@ class ModelFallbackHandler:
         ]
         progress_msg = None
         progress_task = None
-
         async def update_progress():
             """Update progress messages periodically"""
             nonlocal progress_msg
@@ -282,7 +274,6 @@ class ModelFallbackHandler:
                     except Exception:
                         pass
                 raise
-
         try:
             progress_task = asyncio.create_task(update_progress())
             response = await model_handler.generate_response(
@@ -319,7 +310,6 @@ class ModelFallbackHandler:
                 except Exception:
                     pass
             raise e
-
     async def _notify_fallback_usage(
         self, message, primary_model: str, fallback_model: str
     ):
@@ -346,7 +336,6 @@ class ModelFallbackHandler:
                     pass
         except Exception as e:
             self.logger.debug(f"Failed to send fallback notification: {e}")
-
     def add_custom_fallback_mapping(self, model: str, fallback_list: List[str]):
         """
         Add or update custom fallback mapping for a specific model.
@@ -356,7 +345,6 @@ class ModelFallbackHandler:
         """
         self.fallback_map[model] = fallback_list
         self.logger.info(f"Added custom fallback mapping for {model}: {fallback_list}")
-
     def get_available_models(self) -> List[str]:
         """
         Get list of all available models (primary + fallback models).
@@ -367,7 +355,6 @@ class ModelFallbackHandler:
         for fallback_list in self.fallback_map.values():
             all_models.update(fallback_list)
         return sorted(list(all_models))
-
     def get_fallback_stats(self) -> Dict[str, Any]:
         """
         Get statistics about the fallback configuration.

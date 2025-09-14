@@ -9,26 +9,19 @@ from typing import Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, Header, File, UploadFile
 from pydantic import BaseModel, Field
 from src.bot.telegram_bot import TelegramBot
-
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/webapp", tags=["webapp"])
 _BOT_INSTANCE: Optional[TelegramBot] = None
-
-
 def get_telegram_bot():
     """Get the global Telegram bot instance."""
     global _BOT_INSTANCE
     if _BOT_INSTANCE is None:
         raise RuntimeError("Bot instance not initialized")
     return _BOT_INSTANCE
-
-
 def set_bot_instance(bot: TelegramBot):
     """Set the global bot instance."""
     global _BOT_INSTANCE
     _BOT_INSTANCE = bot
-
-
 class WebAppUser(BaseModel):
     id: int
     first_name: str
@@ -36,8 +29,6 @@ class WebAppUser(BaseModel):
     username: Optional[str] = None
     language_code: Optional[str] = None
     is_premium: Optional[bool] = None
-
-
 class WebAppInitData(BaseModel):
     query_id: Optional[str] = None
     user: Optional[WebAppUser] = None
@@ -49,35 +40,25 @@ class WebAppInitData(BaseModel):
     can_send_after: Optional[int] = None
     auth_date: int
     hash: str
-
-
 class ChatMessage(BaseModel):
     content: str = Field(..., min_length=1, max_length=4000)
     model: Optional[str] = "deepseek-r1-0528"
     context: Optional[str] = None
-
-
 class ChatHistoryMessage(BaseModel):
     role: str
     content: str
     timestamp: float
     message_id: str
     model_used: Optional[str] = None
-
-
 class ChatResponse(BaseModel):
     content: str
     timestamp: float
     message_id: str
     model_used: str
-
-
 class ChatHistoryResponse(BaseModel):
     messages: list[ChatHistoryMessage]
     total_messages: int
     user_id: int
-
-
 def validate_webapp_data(init_data: str, bot_token: str) -> WebAppInitData:
     """
     Validate Telegram Web App initialization data.
@@ -125,8 +106,6 @@ def validate_webapp_data(init_data: str, bot_token: str) -> WebAppInitData:
     except (ValueError, KeyError, json.JSONDecodeError) as e:
         logger.error(f"WebApp data validation failed: {e}")
         raise HTTPException(status_code=401, detail=f"Invalid WebApp data: {str(e)}")
-
-
 async def get_webapp_auth(
     authorization: str = Header(None), bot: TelegramBot = Depends(get_telegram_bot)
 ) -> WebAppInitData:
@@ -161,8 +140,6 @@ async def get_webapp_auth(
                 hash="dev_hash",
             )
     return validate_webapp_data(init_data, bot.token)
-
-
 @router.post("/auth/validate")
 async def validate_auth(
     auth_data: WebAppInitData = Depends(get_webapp_auth),
@@ -242,8 +219,6 @@ async def validate_auth(
     except Exception as e:
         logger.error(f"Error in auth validation: {e}")
         raise HTTPException(status_code=500, detail="Authentication validation failed")
-
-
 @router.post("/chat", response_model=ChatResponse)
 async def chat_message(
     message: ChatMessage,
@@ -516,8 +491,6 @@ async def chat_message(
     except Exception as e:
         logger.error(f"Unexpected error in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
 @router.get("/chat/history", response_model=ChatHistoryResponse)
 async def get_chat_history(
     limit: int = 50,
@@ -646,8 +619,6 @@ async def get_chat_history(
     except Exception as e:
         logger.error(f"Unexpected error in chat history endpoint: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
 @router.delete("/chat/history")
 async def clear_chat_history(
     model: Optional[str] = None,
@@ -697,8 +668,6 @@ async def clear_chat_history(
     except Exception as e:
         logger.error(f"Unexpected error in clear history endpoint: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
 @router.get("/models")
 async def get_available_models(
     auth_data: WebAppInitData = Depends(get_webapp_auth),
@@ -710,7 +679,6 @@ async def get_available_models(
             raise HTTPException(status_code=401, detail="User data required")
         try:
             from src.services.model_handlers.model_configs import ModelConfigurations
-
             model_configs = ModelConfigurations()
             available_models = []
             for model_id, config in model_configs.get_all_models().items():
@@ -762,8 +730,6 @@ async def get_available_models(
     except Exception as e:
         logger.error(f"Unexpected error in models endpoint: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
 @router.post("/models/select")
 async def select_model(
     model_data: Dict[str, str],
@@ -817,8 +783,6 @@ async def select_model(
     except Exception as e:
         logger.error(f"Unexpected error in select model endpoint: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
 @router.post("/voice/transcribe")
 async def transcribe_voice(
     audio: UploadFile = File(...),
@@ -878,8 +842,6 @@ async def transcribe_voice(
     except Exception as e:
         logger.error(f"Unexpected error in voice transcription endpoint: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
 @router.get("/health")
 async def health_check() -> Dict[str, Any]:
     """Health check endpoint for the web app API."""
@@ -888,8 +850,6 @@ async def health_check() -> Dict[str, Any]:
         "timestamp": time.time(),
         "service": "telegram-webapp-api",
     }
-
-
 @router.get("/debug/chat/history/{user_id}")
 async def debug_get_chat_history(
     user_id: int, limit: int = 10, bot: TelegramBot = Depends(get_telegram_bot)

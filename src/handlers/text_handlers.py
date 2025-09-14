@@ -25,8 +25,6 @@ from src.services.mcp_bot_integration import (
     is_model_mcp_compatible,
 )
 from src.utils.bot_username_helper import BotUsernameHelper
-
-
 class TextHandler:
     def __init__(
         self,
@@ -58,17 +56,14 @@ class TextHandler:
         self.model_fallback_handler = ModelFallbackHandler(self.response_formatter)
         self.intent_detector = EnhancedIntentDetector()
         self.user_model_manager = None
-
     class MockMessage:
         def __init__(self, bot, chat_id):
             self.bot = bot
             self.chat_id = chat_id
-
         async def reply_text(self, text, **kwargs):
             return await self.bot.send_message(
                 chat_id=self.chat_id, text=text, **kwargs
             )
-
     async def handle_text_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -186,7 +181,6 @@ class TextHandler:
             await self.response_formatter.safe_send_message(
                 update.message, "Sorry, I encountered an error. Please try again later."
             )
-
     async def _handle_edited_message(self, update, context):
         """Handle when a user edits their previous message"""
         original_message_id = update.edited_message.message_id
@@ -200,7 +194,6 @@ class TextHandler:
                     except Exception as e:
                         self.logger.error(f"Error deleting old message: {str(e)}")
             del context.user_data["bot_messages"][original_message_id]
-
     async def _extract_media_files(self, update, context):
         """Extract media files from the update"""
         has_attached_media = False
@@ -345,7 +338,6 @@ class TextHandler:
                     )
                     return False, [], None
         return has_attached_media, media_files, media_type
-
     async def _process_complete_media_group(
         self, media_group_id, chat_id, user_id, caption, context
     ):
@@ -365,13 +357,11 @@ class TextHandler:
                 )
                 try:
                     from services.user_preferences_manager import UserPreferencesManager
-
                     preferences_manager = UserPreferencesManager(self.user_data_manager)
                     preferred_model = (
                         await preferences_manager.get_user_model_preference(user_id)
                     )
                     from services.media.multi_file_processor import MultiFileProcessor
-
                     multi_processor = MultiFileProcessor(self.gemini_api)
                     result = await multi_processor.process_multiple_files(
                         media_files, caption or "Analyze these files"
@@ -428,7 +418,6 @@ class TextHandler:
                         chat_id=chat_id,
                         text="Sorry, there was an error processing your files. Please try again later.",
                     )
-
     async def _handle_media_analysis(
         self,
         update,
@@ -443,7 +432,6 @@ class TextHandler:
         """Handle analysis of media files"""
         if len(media_files) > 1:
             from services.media.multi_file_processor import MultiFileProcessor
-
             multi_processor = MultiFileProcessor(self.gemini_api)
             result = await multi_processor.process_multiple_files(
                 media_files, message_text or "Analyze these files"
@@ -529,7 +517,6 @@ class TextHandler:
                 update.message,
                 "Sorry, I couldn't analyze the content you provided. Please try again.",
             )
-
     async def _send_appropriate_chat_action(
         self, update, context, has_attached_media, media_type
     ):
@@ -547,16 +534,13 @@ class TextHandler:
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id, action=action
         )
-
     async def _get_user_preferred_model(self, user_id):
         """Get user's preferred model"""
         from services.user_preferences_manager import UserPreferencesManager
-
         preferences_manager = UserPreferencesManager(self.user_data_manager)
         preferred_model = await preferences_manager.get_user_model_preference(user_id)
         self.logger.info(f"Preferred model for user {user_id}: {preferred_model}")
         return preferred_model
-
     async def _handle_text_conversation(
         self,
         update,
@@ -634,7 +618,6 @@ class TextHandler:
             indicator in message_text.lower() for indicator in long_form_indicators
         )
         from src.services.model_handlers.model_configs import ModelConfigurations
-
         model_config = ModelConfigurations.get_all_models().get(preferred_model)
         if (
             model_config
@@ -834,7 +817,6 @@ class TextHandler:
             else:
                 error_message = "❌ Sorry, there was an error processing your request. Please try again or rephrase your question."
             await self.response_formatter.safe_send_message(message, error_message)
-
     async def _send_formatted_response(
         self,
         update,
@@ -888,7 +870,6 @@ class TextHandler:
             context.user_data["bot_messages"][message.message_id] = [
                 msg.message_id for msg in sent_messages
             ]
-
     async def _load_user_context(self, user_id: int, update: Update) -> str:
         """Load user context including name and profile information from MongoDB."""
         try:
@@ -940,7 +921,6 @@ class TextHandler:
         except Exception as e:
             self.logger.error(f"Error loading user context: {e}")
             return ""
-
     def _clean_response_content(self, content: str) -> str:
         """
         Clean response content by removing thinking tags and tool calls.
@@ -952,7 +932,6 @@ class TextHandler:
         if not content:
             return content
         import re
-
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
         content = re.sub(r"<tool_call>.*?</tool_call>", "", content, flags=re.DOTALL)
         content = re.sub(r"<[^>]+>.*?</[^>]+>", "", content, flags=re.DOTALL)

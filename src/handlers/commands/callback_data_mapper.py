@@ -3,19 +3,14 @@ Callback Data Mapper for Telegram Bot
 Handles mapping between long model IDs and short callback data
 to comply with Telegram's 64-character limit for callback data.
 """
-
 import hashlib
 from typing import Dict, Optional
-
-
 class CallbackDataMapper:
     """Maps long model IDs to short callback data and vice versa."""
-
     def __init__(self):
         self._id_to_short: Dict[str, str] = {}
         self._short_to_id: Dict[str, str] = {}
         self._counter = 0
-
     def get_callback_data(self, model_id: str, prefix: str = "model") -> str:
         """
         Get short callback data for a model ID.
@@ -40,7 +35,6 @@ class CallbackDataMapper:
             self._id_to_short[model_id] = hash_id
             self._short_to_id[hash_id] = model_id
         return callback_data
-
     def get_model_id(self, callback_data: str) -> Optional[str]:
         """
         Get the original model ID from callback data.
@@ -54,7 +48,6 @@ class CallbackDataMapper:
             return None
         short_id = parts[1]
         return self._short_to_id.get(short_id)
-
     def _create_short_id(self, model_id: str) -> str:
         """Create a short, unique ID for the model."""
         if "/" in model_id:
@@ -77,10 +70,7 @@ class CallbackDataMapper:
             counter += 1
             short_id = f"{base_short_id}_{counter}"
         return short_id
-
     def get_all_mappings(self) -> Dict[str, str]:
         """Get all current mappings for debugging."""
         return self._id_to_short.copy()
-
-
 callback_mapper = CallbackDataMapper()

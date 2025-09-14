@@ -2,7 +2,6 @@
 AI-Powered Poll Creation Command Handler
 Generates and sends Telegram polls based on user prompts using AI models.
 """
-
 import sys
 import os
 import logging
@@ -10,23 +9,18 @@ from typing import Dict, Any, Optional
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
-
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
 from src.services.user_data_manager import UserDataManager
 from src.utils.log.telegramlog import TelegramLogger
-
 logger = logging.getLogger(__name__)
-
-
 class PollCommands:
     """
     Handles AI-powered poll creation commands.
     Follows single responsibility principle by focusing solely on poll generation and sending.
     """
-
     def __init__(
         self,
         api_manager: SuperSimpleAPIManager,
@@ -43,7 +37,6 @@ class PollCommands:
         self.api_manager = api_manager
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
-
     async def create_poll_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -85,7 +78,6 @@ class PollCommands:
             await update.message.reply_text(
                 f"❌ Sorry, there was an error creating your poll: {str(e)}"
             )
-
     async def _generate_poll_with_ai(
         self, prompt: str, user_id: int
     ) -> Optional[Dict[str, Any]]:
@@ -112,7 +104,6 @@ class PollCommands:
                 max_tokens=1000,
             )
             import json
-
             poll_data = json.loads(response.strip())
             if (
                 not isinstance(poll_data, dict)
@@ -134,7 +125,6 @@ class PollCommands:
         except Exception as e:
             logger.error(f"Error generating poll with AI: {e}")
             return None
-
     async def _send_poll(
         self,
         update: Update,
@@ -162,7 +152,6 @@ class PollCommands:
             await update.message.reply_text(
                 "❌ Sorry, there was an error sending the poll. Please try again."
             )
-
     async def _get_user_preferred_model(self, user_id: int) -> str:
         """
         Get user's preferred AI model for poll generation.
@@ -173,7 +162,6 @@ class PollCommands:
         """
         try:
             from src.services.user_preferences_manager import UserPreferencesManager
-
             preferences_manager = UserPreferencesManager(self.user_data_manager)
             preferred_model = await preferences_manager.get_user_model_preference(
                 user_id
@@ -181,7 +169,6 @@ class PollCommands:
             return preferred_model or "gemini"
         except Exception:
             return "gemini"
-
     async def _send_help_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:

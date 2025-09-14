@@ -1,15 +1,11 @@
 """
 Media analyzer module for processing different types of media in Telegram messages.
 """
-
 import os
 import logging
 from typing import List, Dict
 from services.gemini_api import GeminiAPI
-
 logger = logging.getLogger(__name__)
-
-
 class MediaAnalyzer:
     def __init__(self, gemini_api: GeminiAPI):
         """
@@ -19,7 +15,6 @@ class MediaAnalyzer:
         """
         self.gemini_api = gemini_api
         self.logger = logging.getLogger(__name__)
-
     async def analyze_media(
         self, media_files: List[Dict], prompt: str, model: str = "gemini"
     ) -> str:
@@ -51,7 +46,6 @@ class MediaAnalyzer:
         except Exception as e:
             self.logger.error(f"Error analyzing {media_type}: {str(e)}")
             return None
-
     def _get_default_prompt_for_media_type(self, media_type: str, media: Dict) -> str:
         """Generate a default prompt based on media type if user didn't provide one"""
         if media_type == "photo":
@@ -65,7 +59,6 @@ class MediaAnalyzer:
             return f"Analyze the contents of this {file_ext} file."
         else:
             return "Analyze this content."
-
     async def _analyze_image(self, media: Dict, prompt: str) -> str:
         """Process and analyze image media"""
         try:
@@ -73,15 +66,12 @@ class MediaAnalyzer:
         except Exception as e:
             self.logger.error(f"Error analyzing image: {str(e)}")
             return f"Error analyzing image: {str(e)}"
-
     async def _analyze_video(self, media: Dict, prompt: str) -> str:
         """Process and analyze video media"""
         return f"Analysis of video: {prompt}\n\nThis feature is currently in development. Soon Gemini will be able to fully analyze video files."
-
     async def _analyze_audio(self, media: Dict, prompt: str) -> str:
         """Process and analyze audio media"""
         return f"Analysis of audio: {prompt}\n\nThis feature is currently in development. Soon Gemini will be able to fully analyze audio files."
-
     async def _analyze_document(self, media: Dict, prompt: str) -> str:
         """Process and analyze document media"""
         filename = media.get("filename", "document")

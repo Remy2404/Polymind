@@ -1,13 +1,9 @@
 import logging
 from typing import Dict, Optional, Any
-
-
 class PromptFormatter:
     """Handles formatting prompts for AI model consumption."""
-
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-
     async def apply_response_guidelines(
         self, prompt: str, model_handler, context: Optional[Dict[str, Any]] = None
     ) -> str:
@@ -45,7 +41,6 @@ class PromptFormatter:
         except Exception as e:
             self.logger.error(f"Error applying response guidelines: {str(e)}")
             return prompt
-
     def add_context(self, prompt: str, context_type: str, context_text: str) -> str:
         """Optionally add specific types of context to the prompt."""
         if context_type == "image":

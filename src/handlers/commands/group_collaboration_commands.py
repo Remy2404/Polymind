@@ -2,19 +2,14 @@
 Group Collaboration Command Handlers
 Provides team chat integration with shared memory and collaborative features
 """
-
 import logging
 from typing import Dict, Any
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
-
 logger = logging.getLogger(__name__)
-
-
 class GroupCollaborationCommands:
     """Handles group collaboration features and team chat integration"""
-
     def __init__(self, conversation_manager, user_data_manager, telegram_logger):
         self.conversation_manager = conversation_manager
         self.user_data_manager = user_data_manager
@@ -22,7 +17,6 @@ class GroupCollaborationCommands:
         self.logger = logging.getLogger(__name__)
         self.active_group_sessions = {}
         self.group_permissions = {}
-
     async def start_group_session_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -86,7 +80,6 @@ class GroupCollaborationCommands:
             user_id,
             f"Started group session in {group_id} with topic: {topic or 'None'}",
         )
-
     async def group_summary_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -174,7 +167,6 @@ class GroupCollaborationCommands:
             await progress_msg.edit_text(
                 "❌ Failed to generate group summary. Please try again later."
             )
-
     async def group_memory_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -260,7 +252,6 @@ class GroupCollaborationCommands:
             await progress_msg.edit_text(
                 "❌ Failed to access group memory. Please try again later."
             )
-
     async def add_group_note_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -328,7 +319,6 @@ class GroupCollaborationCommands:
             await update.message.reply_text(
                 "❌ Failed to add note to group memory. Please try again later."
             )
-
     async def group_participants_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -415,7 +405,6 @@ class GroupCollaborationCommands:
             await update.message.reply_text(
                 "❌ Failed to get group participants. Please try again later."
             )
-
     async def group_search_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -511,7 +500,6 @@ class GroupCollaborationCommands:
             await progress_msg.edit_text(
                 "❌ Failed to search group history. Please try again later."
             )
-
     async def handle_group_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -539,7 +527,6 @@ class GroupCollaborationCommands:
             await query.message.reply_text(
                 "❌ Error processing request. Please try again."
             )
-
     async def _prompt_for_note(self, query, group_id: str):
         """Prompt user to add a note"""
         prompt_text = (
@@ -555,7 +542,6 @@ class GroupCollaborationCommands:
         await query.edit_message_text(
             prompt_text, reply_markup=reply_markup, parse_mode="Markdown"
         )
-
     async def _show_group_summary_menu(self, query, group_id: str):
         """Show group summary options"""
         menu_text = (
@@ -584,7 +570,6 @@ class GroupCollaborationCommands:
         await query.edit_message_text(
             menu_text, reply_markup=reply_markup, parse_mode="Markdown"
         )
-
     async def _show_memory_interface(self, query, group_id: str):
         """Show memory interface options"""
         interface_text = (
@@ -613,7 +598,6 @@ class GroupCollaborationCommands:
         await query.edit_message_text(
             interface_text, reply_markup=reply_markup, parse_mode="Markdown"
         )
-
     async def _show_participants_details(self, query, group_id: str):
         """Show detailed participant information"""
         try:
@@ -650,8 +634,6 @@ class GroupCollaborationCommands:
         except Exception as e:
             self.logger.error(f"Error showing participant details: {e}")
             await query.edit_message_text("❌ Error loading participant details.")
-
-
 async def is_group_admin(bot, group_id: str, user_id: int) -> bool:
     """Check if user is admin in the group"""
     try:
@@ -659,8 +641,6 @@ async def is_group_admin(bot, group_id: str, user_id: int) -> bool:
         return chat_member.status in ["administrator", "creator"]
     except Exception:
         return False
-
-
 async def get_group_info(bot, group_id: str) -> Dict[str, Any]:
     """Get group information"""
     try:

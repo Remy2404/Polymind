@@ -1,12 +1,10 @@
 """
 Shared imports and configuration for the docgen package.
 """
-
 import logging
 import os
 import warnings
 from dotenv import load_dotenv
-
 __all__ = [
     "logging",
     "GEMINI_API_KEY",
@@ -33,7 +31,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 WEASYPRINT_AVAILABLE = False
 try:
     import importlib.util
-
     if importlib.util.find_spec("weasyprint"):
         WEASYPRINT_AVAILABLE = True
     else:
@@ -62,7 +59,6 @@ try:
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
-
     REPORTLAB_AVAILABLE = True
 except ImportError:
     logging.warning(

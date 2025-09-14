@@ -3,7 +3,6 @@ MCP (Model Context Protocol) Integration for AI Agent Tool Calling
 This module provides automatic MCP server integration with OpenRouter,
 enabling LLMs to use MCP tools without hardcoded definitions.
 """
-
 import json
 import logging
 import os
@@ -14,15 +13,11 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import Tool as MCPTool
 from src.utils.log.telegramlog import telegram_logger
-
 try:
     from dotenv import load_dotenv
-
     load_dotenv()
 except ImportError:
     pass
-
-
 def substitute_env_vars(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Substitute environment variables in MCP configuration.
@@ -32,7 +27,6 @@ def substitute_env_vars(config: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Configuration with environment variables substituted
     """
-
     def substitute_value(value: Any) -> Any:
         if isinstance(value, str):
             if value.startswith("$"):
@@ -51,10 +45,7 @@ def substitute_env_vars(config: Dict[str, Any]) -> Dict[str, Any]:
             return [substitute_value(item) for item in value]
         else:
             return value
-
     return substitute_value(config)
-
-
 def validate_mcp_environment() -> bool:
     """
     Validate that required MCP environment variables are available.
@@ -76,11 +67,8 @@ def validate_mcp_environment() -> bool:
         return False
     logging.info("All required MCP environment variables are present")
     return True
-
-
 class MCPToolConverter:
     """Converts MCP tool definitions to OpenAI-compatible format."""
-
     @staticmethod
     def convert_mcp_tool_to_openai(mcp_tool: MCPTool) -> Dict[str, Any]:
         """
@@ -108,7 +96,6 @@ class MCPToolConverter:
                     mcp_tool.inputSchema["required"]
                 )
         return openai_tool
-
     @staticmethod
     def convert_mcp_tools_to_openai(mcp_tools: List[MCPTool]) -> List[Dict[str, Any]]:
         """
@@ -119,11 +106,8 @@ class MCPToolConverter:
             List of OpenAI-compatible tool definitions
         """
         return [MCPToolConverter.convert_mcp_tool_to_openai(tool) for tool in mcp_tools]
-
-
 class MCPServerClient:
     """Client for connecting to and managing MCP servers."""
-
     def __init__(self, server_config: Dict[str, Any], server_name: str = "unknown"):
         """
         Initialize MCP server client.
@@ -141,7 +125,6 @@ class MCPServerClient:
         self.openai_tools: List[Dict[str, Any]] = []
         self._connection_task = None
         self._cleanup_done = False
-
     async def connect(self) -> bool:
         """
         Connect to the MCP server and retrieve available tools.
@@ -185,7 +168,6 @@ class MCPServerClient:
                 f"Failed to connect to MCP server '{self.server_name}': {str(e)}", 0
             )
             return False
-
     async def _try_connect_with_config(self, config: Dict[str, Any]) -> bool:
         """
         Try to connect using a specific configuration.
@@ -262,7 +244,6 @@ class MCPServerClient:
                 f"Failed to connect to MCP server '{self.server_name}': {str(e)}", 0
             )
             return False
-
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
         Call a tool on the MCP server using reconnection for each call.
@@ -309,7 +290,6 @@ class MCPServerClient:
                 f"Exception args: {e.args if hasattr(e, 'args') else 'No args'}"
             )
             raise RuntimeError(error_msg) from e
-
     async def _call_tool_with_config(
         self, config: Dict[str, Any], tool_name: str, arguments: Dict[str, Any]
     ) -> Any:
@@ -364,7 +344,6 @@ class MCPServerClient:
             raise RuntimeError(
                 f"Unsupported server type for tool calls: {config.get('type')}"
             )
-
     async def disconnect(self):
         """Disconnect from the MCP server."""
         try:
@@ -385,11 +364,8 @@ class MCPServerClient:
             self.openai_tools = []
         except Exception as e:
             self.logger.warning(f"Error during disconnect: {str(e)}")
-
-
 class MCPManager:
     """Manages multiple MCP server connections and tool aggregation."""
-
     def __init__(self, mcp_config_path: str = "mcp.json"):
         """
         Initialize MCP manager.
@@ -401,7 +377,6 @@ class MCPManager:
         self.logger = logging.getLogger(__name__)
         self.all_openai_tools: List[Dict[str, Any]] = []
         self.tool_to_server_map: Dict[str, str] = {}
-
     async def load_servers(self) -> bool:
         """
         Load and connect to all MCP servers from configuration.
@@ -477,7 +452,6 @@ class MCPManager:
             self.logger.error(f"Error loading MCP servers: {str(e)}")
             telegram_logger.log_error(f"Error loading MCP servers: {str(e)}", 0)
             return False
-
     async def _connect_single_server(
         self, server_name: str, server_config: Dict[str, Any]
     ) -> bool:
@@ -523,7 +497,6 @@ class MCPManager:
                 f"Error connecting to MCP server '{server_name}': {str(e)}"
             )
             return False
-
     async def get_all_tools(self) -> List[Dict[str, Any]]:
         """
         Get all available tools from connected MCP servers in OpenAI format.
@@ -531,7 +504,6 @@ class MCPManager:
             List of OpenAI-compatible tool definitions
         """
         return self.all_openai_tools.copy()
-
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
         Execute a tool by name.
@@ -548,7 +520,6 @@ class MCPManager:
         server_name = self.tool_to_server_map[tool_name]
         server = self.servers[server_name]
         return await server.call_tool(tool_name, arguments)
-
     async def disconnect_all(self):
         """Disconnect from all MCP servers."""
         disconnect_tasks = []
@@ -568,7 +539,6 @@ class MCPManager:
         self.servers.clear()
         self.all_openai_tools.clear()
         self.tool_to_server_map.clear()
-
     def get_server_info(self) -> Dict[str, Any]:
         """
         Get information about connected servers and their tools.

@@ -11,11 +11,8 @@ import uuid
 from collections import defaultdict
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-
-
 class KnowledgeGraph:
     """Maintains a knowledge graph of entities from processed documents and conversations"""
-
     def __init__(
         self, db=None, storage_path="./data/knowledge_graph", memory_manager=None
     ):
@@ -31,7 +28,6 @@ class KnowledgeGraph:
         )
         self.vectorizer = TfidfVectorizer(stop_words="english", max_features=1000)
         self.context_vectors = {}
-
     def _init_extraction_patterns(self):
         """Initialize regex patterns for entity extraction"""
         self.patterns = {
@@ -74,7 +70,6 @@ class KnowledgeGraph:
                 "entity2",
             ),
         ]
-
     async def add_document_entities(
         self,
         document_id: str,
@@ -152,7 +147,6 @@ class KnowledgeGraph:
         except Exception as e:
             self.logger.error(f"Error adding document entities: {str(e)}")
             return None
-
     async def extract_entities(self, text: str) -> Dict[str, List[str]]:
         """Extract entities from text using fast regex patterns (production optimized)"""
         entities = {}
@@ -160,7 +154,6 @@ class KnowledgeGraph:
             entities[entity_type] = []
         self._apply_regex_extraction(text, entities)
         return {k: v for k, v in entities.items() if v}
-
     def _apply_regex_extraction(
         self,
         text: str,
@@ -182,7 +175,6 @@ class KnowledgeGraph:
                 entities[entity_type] = list(current)
             else:
                 entities[entity_type] = found_entities
-
     async def extract_relationships(
         self, text: str, entities: Dict[str, List[str]]
     ) -> List[Dict[str, Any]]:
@@ -212,7 +204,6 @@ class KnowledgeGraph:
                 except Exception as e:
                     self.logger.error(f"Error extracting relationship: {str(e)}")
         return relationships
-
     def _find_best_entity_match(
         self, text: str, entities: Dict[str, List[str]]
     ) -> Optional[Dict[str, Any]]:
@@ -246,13 +237,11 @@ class KnowledgeGraph:
         if best_match and best_score >= 0.5:
             return best_match
         return None
-
     def _normalize_entity_name(self, name: str) -> str:
         """Normalize entity name for consistent identification"""
         normalized = re.sub(r"[^\w\s]", "", name.lower())
         normalized = re.sub(r"\s+", "_", normalized.strip())
         return normalized
-
     async def query_related_documents(
         self, entity_name: str, user_id: Optional[str] = None, limit: int = 5
     ) -> List[Dict[str, Any]]:
@@ -287,7 +276,6 @@ class KnowledgeGraph:
                     )
         related_docs.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         return related_docs[:limit]
-
     async def get_entity_network(
         self, entity_name: str, depth: int = 2
     ) -> Dict[str, Any]:
@@ -342,7 +330,6 @@ class KnowledgeGraph:
                 }
             )
         return {"nodes": nodes, "edges": edges}
-
     async def get_document_summary(self, document_id: str) -> Dict[str, Any]:
         """Get a summary of entities contained in a document"""
         doc_node = f"doc:{document_id}"
@@ -382,7 +369,6 @@ class KnowledgeGraph:
             "user_id": self.graph.nodes[doc_node].get("user_id", ""),
             "doc_type": self.graph.nodes[doc_node].get("doc_type", "document"),
         }
-
     async def _save_graph(self):
         """Save the knowledge graph to storage"""
         try:
@@ -416,7 +402,6 @@ class KnowledgeGraph:
                     self.logger.error(f"Failed to save to database: {str(db_error)}")
         except Exception as e:
             self.logger.error(f"Error saving knowledge graph: {str(e)}")
-
     async def load_graph(self):
         """Load the knowledge graph from storage"""
         try:
@@ -458,7 +443,6 @@ class KnowledgeGraph:
         except Exception as e:
             self.logger.error(f"Error loading knowledge graph: {str(e)}")
             self.logger.info("Starting with empty knowledge graph")
-
     def _get_entity_summary(
         self,
         entities: Dict[str, List[str]],
@@ -493,7 +477,6 @@ class KnowledgeGraph:
                 top_rels.append(f"{source_name} {rel_type} {target_name}")
             result["top_relationships"] = top_rels
         return result
-
     async def find_connections(self, entity1: str, entity2: str) -> List[List[str]]:
         """Find all paths connecting two entities"""
         nodes1 = []
@@ -544,7 +527,6 @@ class KnowledgeGraph:
                         formatted_path.append(f"<--{rel}--")
             formatted_paths.append(formatted_path)
         return formatted_paths
-
     async def add_conversation_entities(
         self,
         conversation_id: str,
@@ -587,7 +569,6 @@ class KnowledgeGraph:
         except Exception as e:
             self.logger.error(f"Error adding conversation entities: {str(e)}")
             return None
-
     async def find_contextually_relevant_entities(
         self, query_text: str, user_id: Optional[str] = None, limit: int = 5
     ) -> List[Dict[str, Any]]:
@@ -690,7 +671,6 @@ class KnowledgeGraph:
         except Exception as e:
             self.logger.error(f"Error finding contextually relevant entities: {str(e)}")
             return []
-
     async def _update_context_vectors(self):
         """Update TF-IDF vectors for context similarity matching"""
         try:
@@ -710,7 +690,6 @@ class KnowledgeGraph:
                 self.context_vectors[entity_id] = self.vectorizer.transform([text])
         except Exception as e:
             self.logger.error(f"Error updating context vectors: {str(e)}")
-
     async def get_entity_suggestions(
         self, text: str, user_id: Optional[str] = None, limit: int = 3
     ) -> Dict[str, Any]:
@@ -763,7 +742,6 @@ class KnowledgeGraph:
                 "document_suggestions": [],
                 "entity_connections": [],
             }
-
     async def integrate_with_memory(self, memory_manager):
         """Integrate with memory manager for enhanced functionality"""
         self.memory_manager = memory_manager

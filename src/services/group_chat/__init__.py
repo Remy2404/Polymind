@@ -7,9 +7,7 @@ Advanced group chat functionality for Telegram bots including:
 - Enhanced UI components
 - Collaborative features
 """
-
 from .group_manager import GroupManager
 from .ui_components import GroupUIManager
 from .integration import GroupChatIntegration
-
 __all__ = ["GroupManager", "GroupUIManager", "GroupChatIntegration"]

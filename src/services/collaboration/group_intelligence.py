@@ -2,21 +2,16 @@
 👥 Advanced Group Chat Intelligence System
 Provides sophisticated group collaboration, shared memory, and team coordination features
 """
-
 import logging
 from typing import Dict, List, Any, Optional, Set
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from collections import defaultdict
 import time
-
 logger = logging.getLogger(__name__)
-
-
 @dataclass
 class GroupMember:
     """Represents a group member with their participation metrics"""
-
     user_id: int
     username: Optional[str] = None
     join_date: datetime = field(default_factory=datetime.now)
@@ -26,12 +21,9 @@ class GroupMember:
     expertise_areas: List[str] = field(default_factory=list)
     role: str = "member"
     preferences: Dict[str, Any] = field(default_factory=dict)
-
-
 @dataclass
 class GroupSession:
     """Represents an active group collaboration session"""
-
     session_id: str
     group_id: str
     topic: Optional[str] = None
@@ -44,12 +36,9 @@ class GroupSession:
     collaborative_notes: List[Dict[str, Any]] = field(default_factory=list)
     decisions: List[Dict[str, Any]] = field(default_factory=list)
     action_items: List[Dict[str, Any]] = field(default_factory=list)
-
-
 @dataclass
 class GroupKnowledge:
     """Represents shared knowledge within a group"""
-
     knowledge_id: str
     content: str
     category: str
@@ -59,11 +48,8 @@ class GroupKnowledge:
     importance_score: float = 0.5
     tags: List[str] = field(default_factory=list)
     related_sessions: List[str] = field(default_factory=list)
-
-
 class GroupIntelligenceSystem:
     """Advanced group chat intelligence with collaboration features"""
-
     def __init__(self, memory_manager=None):
         self.logger = logging.getLogger(__name__)
         self.memory_manager = memory_manager
@@ -76,7 +62,6 @@ class GroupIntelligenceSystem:
         self.group_analytics: Dict[str, Dict[str, Any]] = {}
         self.active_discussions: Dict[str, Dict[str, Any]] = {}
         self.pending_decisions: Dict[str, List[Dict[str, Any]]] = {}
-
     async def initialize_group(
         self, group_id: str, group_info: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -115,7 +100,6 @@ class GroupIntelligenceSystem:
         except Exception as e:
             self.logger.error(f"Error initializing group {group_id}: {e}")
             raise
-
     async def add_group_member(
         self, group_id: str, user_id: int, member_info: Dict[str, Any]
     ) -> GroupMember:
@@ -139,7 +123,6 @@ class GroupIntelligenceSystem:
         except Exception as e:
             self.logger.error(f"Error adding member {user_id} to group {group_id}: {e}")
             raise
-
     async def start_collaboration_session(
         self, group_id: str, initiator_id: int, session_config: Dict[str, Any]
     ) -> GroupSession:
@@ -172,7 +155,6 @@ class GroupIntelligenceSystem:
         except Exception as e:
             self.logger.error(f"Error starting session in group {group_id}: {e}")
             raise
-
     async def process_group_message(
         self, group_id: str, user_id: int, message: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -213,7 +195,6 @@ class GroupIntelligenceSystem:
         except Exception as e:
             self.logger.error(f"Error processing group message in {group_id}: {e}")
             return {"error": str(e)}
-
     async def get_group_intelligence_summary(self, group_id: str) -> Dict[str, Any]:
         """Get comprehensive intelligence summary for a group"""
         try:
@@ -233,7 +214,6 @@ class GroupIntelligenceSystem:
                 f"Error generating intelligence summary for group {group_id}: {e}"
             )
             return {"error": str(e)}
-
     async def create_shared_knowledge_item(
         self, group_id: str, contributor_id: int, knowledge_data: Dict[str, Any]
     ) -> GroupKnowledge:
@@ -264,7 +244,6 @@ class GroupIntelligenceSystem:
         except Exception as e:
             self.logger.error(f"Error creating knowledge item in group {group_id}: {e}")
             raise
-
     async def search_group_knowledge(
         self, group_id: str, query: str, category: Optional[str] = None
     ) -> List[GroupKnowledge]:
@@ -292,7 +271,6 @@ class GroupIntelligenceSystem:
         except Exception as e:
             self.logger.error(f"Error searching knowledge in group {group_id}: {e}")
             return []
-
     async def get_collaboration_insights(
         self, group_id: str, timeframe_days: int = 7
     ) -> Dict[str, Any]:
@@ -356,7 +334,6 @@ class GroupIntelligenceSystem:
                 f"Error generating collaboration insights for group {group_id}: {e}"
             )
             return {"error": str(e)}
-
     async def _update_member_activity(
         self, group_id: str, user_id: int, message: Dict[str, Any]
     ) -> None:
@@ -374,7 +351,6 @@ class GroupIntelligenceSystem:
                 member.contribution_score += quality_bonus
         except Exception as e:
             self.logger.error(f"Error updating member activity: {e}")
-
     async def _analyze_message_content(
         self, group_id: str, content: str, message_type: str
     ) -> Dict[str, Any]:
@@ -440,7 +416,6 @@ class GroupIntelligenceSystem:
                 analysis["decisions"].append(content[:200])
                 break
         return analysis
-
     async def _extract_knowledge_items(
         self, group_id: str, user_id: int, content: str
     ) -> List[Dict[str, Any]]:
@@ -489,7 +464,6 @@ class GroupIntelligenceSystem:
                 )
                 break
         return knowledge_items
-
     async def _detect_collaboration_signals(
         self, group_id: str, user_id: int, content: str
     ) -> List[Dict[str, Any]]:
@@ -517,7 +491,6 @@ class GroupIntelligenceSystem:
                     )
                     break
         return signals
-
     async def _update_interaction_patterns(
         self, group_id: str, user_id: int, analysis: Dict[str, Any]
     ) -> None:
@@ -562,7 +535,6 @@ class GroupIntelligenceSystem:
             )
         except Exception as e:
             self.logger.error(f"Error updating interaction patterns: {e}")
-
     async def _generate_smart_suggestions(
         self, group_id: str, user_id: int, content: str, analysis: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
@@ -610,7 +582,6 @@ class GroupIntelligenceSystem:
                 }
             )
         return suggestions
-
     async def _update_active_discussion(
         self,
         group_id: str,
@@ -649,7 +620,6 @@ class GroupIntelligenceSystem:
                     )
         except Exception as e:
             self.logger.error(f"Error updating active discussion: {e}")
-
     async def _get_member_insights(self, group_id: str) -> Dict[str, Any]:
         """Get insights about group members"""
         insights = {
@@ -679,7 +649,6 @@ class GroupIntelligenceSystem:
             for m in sorted_members[:5]
         ]
         return insights
-
     async def _assess_collaboration_health(self, group_id: str) -> Dict[str, Any]:
         """Assess the health of group collaboration"""
         health = {
@@ -730,7 +699,6 @@ class GroupIntelligenceSystem:
         except Exception as e:
             self.logger.error(f"Error assessing collaboration health: {e}")
         return health
-
     async def _get_knowledge_summary(self, group_id: str) -> Dict[str, Any]:
         """Get summary of group knowledge"""
         summary = {
@@ -759,7 +727,6 @@ class GroupIntelligenceSystem:
             )[:5]
         ]
         return summary
-
     async def _get_recent_activity_summary(
         self, group_id: str, days: int = 7
     ) -> Dict[str, Any]:
@@ -783,7 +750,6 @@ class GroupIntelligenceSystem:
             1 for item in knowledge_items if item.creation_date > cutoff_date
         )
         return summary
-
     async def _generate_group_recommendations(
         self, group_id: str
     ) -> List[Dict[str, Any]]:
