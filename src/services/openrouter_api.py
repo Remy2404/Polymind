@@ -103,19 +103,28 @@ class OpenRouterAPI:
                 else:
                     max_tokens = 32768
             system_message = self._build_system_message(model, context)
-            messages = [{"role": "system", "content": system_message}]
+            messages = []
+            # Use the new capability detection system
+            safe_config = ModelConfigurations.get_safe_model_config(model)
+            if safe_config["use_system_message"]:
+                messages.append({"role": "system", "content": system_message})
             if context:
                 messages.extend(
                     [msg for msg in context if "role" in msg and "content" in msg]
                 )
             messages.append({"role": "user", "content": prompt})
-            response = await self.client.chat.completions.create(
-                model=openrouter_model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=timeout,
-            )
+
+            # Adapt the request parameters based on model capabilities
+            request_params = {
+                "model": openrouter_model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "timeout": timeout,
+            }
+            adapted_params = ModelConfigurations.adapt_request_for_model(model, request_params)
+
+            response = await self.client.chat.completions.create(**adapted_params)
             if response.choices and len(response.choices) > 0:
                 message_content = response.choices[0].message.content
                 finish_reason = response.choices[0].finish_reason
@@ -183,17 +192,26 @@ class OpenRouterAPI:
                 system_message
                 or "You are an advanced AI assistant that helps users with various tasks. Be concise, helpful, and accurate."
             )
-            messages = [{"role": "system", "content": final_system_message}]
+            messages = []
+            # Use the new capability detection system
+            safe_config = ModelConfigurations.get_safe_model_config(openrouter_model_key)
+            if safe_config["use_system_message"]:
+                messages.append({"role": "system", "content": final_system_message})
             if context:
                 messages.extend(context)
             messages.append({"role": "user", "content": prompt})
-            response = await self.client.chat.completions.create(
-                model=openrouter_model_key,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=timeout,
-            )
+
+            # Adapt the request parameters based on model capabilities
+            request_params = {
+                "model": openrouter_model_key,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "timeout": timeout,
+            }
+            adapted_params = ModelConfigurations.adapt_request_for_model(openrouter_model_key, request_params)
+
+            response = await self.client.chat.completions.create(**adapted_params)
             if response.choices and len(response.choices) > 0:
                 content = response.choices[0].message.content
                 self.api_failures = 0

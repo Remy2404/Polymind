@@ -523,9 +523,11 @@ class GeminiAPI:
             base_message = model_config.system_message
         else:
             base_message = "You are Gemini, Google's advanced multimodal AI assistant. You can analyze text, images, documents, and other media types. Provide helpful, accurate, and detailed responses based on all provided content."
-        context_hint = (
-            " Use conversation history/context when relevant." if context else ""
-        )
+        context_hint = ""
+        if context:
+            context_hint = " You have access to conversation history and context. Remember previous interactions, user preferences, and information shared earlier in the conversation. Use this context to provide personalized and contextually aware responses."
+        else:
+            context_hint = ""
         tool_instructions = ""
         if tools:
             tool_categories = self._categorize_tools(tools)
@@ -861,9 +863,11 @@ Focus on providing the most helpful and accurate response possible using the ava
         from google.genai import types
         contents = []
         if context:
-            for msg in context[-10:]:
+            self.logger.info(f"🔧 Building conversation context with {len(context)} messages")
+            for i, msg in enumerate(context[-10:]):
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
+                self.logger.debug(f"Context message {i}: role={role}, content={content[:100]}...")
                 if content:
                     if role == "user":
                         contents.append(
@@ -877,6 +881,8 @@ Focus on providing the most helpful and accurate response possible using the ava
                                 role="model", parts=[types.Part.from_text(text=content)]
                             )
                         )
+        else:
+            self.logger.warning("🔧 No conversation context provided to Gemini")
         if content_parts:
             parts = []
             for part in content_parts:
@@ -885,6 +891,8 @@ Focus on providing the most helpful and accurate response possible using the ava
                 else:
                     parts.append(part)
             contents.append(types.Content(role="user", parts=parts))
+        
+        self.logger.info(f"🔧 Final conversation context has {len(contents)} total messages")
         return contents if contents else content_parts
     def get_system_message(self) -> str:
         """

@@ -320,18 +320,27 @@ Focus on providing the most helpful and accurate response possible using the ava
         try:
             openrouter_model = self.available_models.get(model, model)
             system_message = self._build_system_message(model, context, tools)
-            messages = [{"role": "system", "content": system_message}]
+            messages = []
+            # Use the new capability detection system
+            safe_config = ModelConfigurations.get_safe_model_config(openrouter_model)
+            if safe_config["use_system_message"]:
+                messages.append({"role": "system", "content": system_message})
             if context:
                 messages.extend(context)
             messages.append({"role": "user", "content": prompt})
-            response = await self.client.chat.completions.create(
-                model=openrouter_model,
-                messages=messages,
-                tools=tools,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=timeout,
-            )
+
+            # Adapt the request parameters based on model capabilities
+            request_params = {
+                "model": openrouter_model,
+                "messages": messages,
+                "tools": tools,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "timeout": timeout,
+            }
+            adapted_params = ModelConfigurations.adapt_request_for_model(openrouter_model, request_params)
+
+            response = await self.client.chat.completions.create(**adapted_params)
             if (
                 hasattr(response.choices[0].message, "tool_calls")
                 and response.choices[0].message.tool_calls
@@ -383,13 +392,17 @@ Focus on providing the most helpful and accurate response possible using the ava
                                 "content": f"Error executing tool: {str(e)}",
                             }
                         )
-                final_response = await self.client.chat.completions.create(
-                    model=openrouter_model,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    timeout=timeout,
-                )
+                # Adapt the request parameters for the final response call
+                final_request_params = {
+                    "model": openrouter_model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "timeout": timeout,
+                }
+                final_adapted_params = ModelConfigurations.adapt_request_for_model(openrouter_model, final_request_params)
+
+                final_response = await self.client.chat.completions.create(**final_adapted_params)
                 cleaned_content = self._clean_response_content(
                     final_response.choices[0].message.content
                 )

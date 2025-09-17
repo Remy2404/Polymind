@@ -76,6 +76,25 @@ class TextHandler:
         user_id = update.effective_user.id
         message = update.message or update.edited_message
         message_text = message.text
+        # --- NEW: Save user question to history ---
+        if "user_questions" not in context.user_data:
+            context.user_data["user_questions"] = []
+        # Only save non-empty, non-command messages
+        if message_text and not message_text.startswith("/"):
+            context.user_data["user_questions"].append(message_text)
+            # Limit to last 10 questions
+            context.user_data["user_questions"] = context.user_data["user_questions"][-10:]
+        # --- NEW: Detect "previous question" intent ---
+        if self._is_previous_question_intent(message_text):
+            prev_questions = context.user_data.get("user_questions", [])
+            if prev_questions:
+                response = "Here are your last questions:\n\n" + "\n".join(
+                    [f"{i+1}. {q}" for i, q in enumerate(prev_questions[:-1])]
+                )
+            else:
+                response = "I don't have any previous questions from you yet."
+            await self.response_formatter.safe_send_message(message, response)
+            return
         chat = update.effective_chat
         is_group = chat and chat.type in ["group", "supergroup"]
         if (
@@ -689,6 +708,7 @@ class TextHandler:
                     model=preferred_model,
                     temperature=0.7,
                     max_tokens=max_tokens,
+                    context=history_context,
                 )
                 if mcp_response:
                     self.logger.info(f"Using MCP-enhanced response for user {user_id}")
@@ -938,3 +958,19 @@ class TextHandler:
         content = content.strip()
         content = re.sub(r"\n\s*\n\s*\n+", "\n\n", content)
         return content
+
+    def _is_previous_question_intent(self, message_text: str) -> bool:
+        """
+        Detects if the user is asking about their previous questions.
+        """
+        if not message_text:
+            return False
+        lowered = message_text.lower()
+        # Simple keyword-based check, can be improved with NLP
+        return (
+            "previous question" in lowered
+            or "last question" in lowered
+            or "which question did i ask" in lowered
+            or "what did i ask" in lowered
+            or "history of my questions" in lowered
+        )

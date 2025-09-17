@@ -196,6 +196,8 @@ class CommandHandlers:
             context.user_data["awaiting_doc_text"] = True
         elif data == "export_cancel":
             await query.edit_message_text("Document export cancelled.")
+        elif data in ("confirm_reset", "cancel_reset"):
+            await self.basic_commands.handle_reset_confirmation(update, context, data)
         else:
             await self.callback_handlers.handle_callback_query(update, context)
     async def open_web_app_command(
