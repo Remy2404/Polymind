@@ -134,7 +134,7 @@ GEMINI_API_KEY=your_gemini_api_key
 OPENROUTER_API_KEY=your_openrouter_api_key
 TOGETHER_API_KEY=your_together_api_key
 
-# 🔧 MCP Integration (Micro-service Control Protocol)
+# 🔧 MCP Integration
 # - Smithery: https://smithery.ai/
 MCP_API_KEY=your_mcp_api_key
 
