@@ -836,7 +836,7 @@ class TextHandler:
                 context,
                 message,
                 response,
-                actual_model_handler.get_model_indicator(),
+                actual_model_handler.get_model_indicator(actual_model_used),
                 quoted_text,
                 quoted_message_id,
             )

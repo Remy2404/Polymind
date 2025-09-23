@@ -1091,9 +1091,18 @@ Focus on providing the most helpful and accurate response possible using the ava
         self.logger.info("Gemini API client closed")
         if self.mcp_tools_loaded:
             await self.mcp_manager.disconnect_all()
-    def get_model_indicator(self) -> str:
+    def get_model_indicator(self, model: str = None) -> str:
         """Get the model indicator emoji and name for Gemini models."""
-        return "✨ Gemini"
+        if not model:
+            return "✨ Gemini"
+            
+        # Get model configuration for display name
+        from src.services.model_handlers.model_configs import ModelConfigurations
+        model_config = ModelConfigurations.get_all_models().get(model)
+        if model_config:
+            return f"✨ {model_config.display_name}"
+        else:
+            return f"✨ {model}"
 def create_image_input(
     image_data: Union[bytes, io.BytesIO], filename: Optional[str] = None
 ) -> MediaInput:

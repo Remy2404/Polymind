@@ -424,9 +424,31 @@ class OpenRouterAPI:
             self.logger.error(f"OpenRouter API vision error: {str(e)}", exc_info=True)
             return f"Unexpected error when calling OpenRouter API for vision: {str(e)}"
 
-    def get_model_indicator(self) -> str:
+    def get_model_indicator(self, model: str = None) -> str:
         """
         Return the model indicator for OpenRouter models.
         This is used by text handlers for response formatting.
+        
+        Args:
+            model: Model ID to get indicator for
+            
+        Returns:
+            Formatted string like "🤖 x-ai/grok-4-fast:free"
         """
-        return ""
+        if not model:
+            return "🤖 OpenRouter"
+            
+        # Get model configuration
+        model_config = ModelConfigurations.get_all_models().get(model)
+        if not model_config:
+            return f"🤖 {model}"
+            
+        # Get emoji from configuration system
+        emoji = ModelConfigurations._get_indicator_emoji(model_config.provider, model_config.type)
+        
+        # Get display name or model key
+        display_name = model_config.display_name
+        if model_config.openrouter_model_key:
+            display_name = model_config.openrouter_model_key
+            
+        return f"{emoji} {display_name}"

@@ -18,7 +18,7 @@ class ModelHandler(ABC):
         """Get the system message for the model."""
         pass
     @abstractmethod
-    def get_model_indicator(self) -> str:
+    def get_model_indicator(self, model: str = None) -> str:
         """Get the model indicator emoji and name."""
         pass
     def format_quoted_message(self, prompt: str, quoted_message: Optional[str]) -> str:
