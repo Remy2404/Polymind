@@ -174,7 +174,6 @@ class TelegramBot:
         """Initialize utility classes for message handling."""
         from src.handlers.message_context_handler import MessageContextHandler
         from src.handlers.response_formatter import ResponseFormatter
-        from src.handlers.media_context_extractor import MediaContextExtractor
         from src.services.media.image_processor import ImageProcessor
         from src.services.media.voice_processor import VoiceProcessor
         from src.services.model_handlers.prompt_formatter import PromptFormatter
@@ -183,16 +182,12 @@ class TelegramBot:
         self.telegram_logger = telegram_logger
         self.context_handler = MessageContextHandler()
         self.response_formatter = ResponseFormatter()
-        self.media_context_extractor = MediaContextExtractor()
         self.image_processor = ImageProcessor(self.gemini_api)
         self.voice_processor = VoiceProcessor()
         self.prompt_formatter = PromptFormatter()
         self.preferences_manager = UserPreferencesManager(self.user_data_manager)
         self.application.bot_data["context_handler"] = self.context_handler
         self.application.bot_data["response_formatter"] = self.response_formatter
-        self.application.bot_data["media_context_extractor"] = (
-            self.media_context_extractor
-        )
         self.application.bot_data["image_processor"] = self.image_processor
         self.application.bot_data["voice_processor"] = self.voice_processor
         self.application.bot_data["prompt_formatter"] = self.prompt_formatter

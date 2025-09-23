@@ -118,7 +118,6 @@ class ConversationManager:
             "media_type": media_type,
             "prompt": prompt,
             "timestamp": metadata.get("timestamp"),
-            "group_id": group_id,
             "analysis_quality": await self._assess_response_quality(response),
             **metadata,
         }

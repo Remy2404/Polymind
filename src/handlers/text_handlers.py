@@ -10,7 +10,6 @@ from src.services.user_data_manager import UserDataManager
 import asyncio
 from .message_context_handler import MessageContextHandler
 from .response_formatter import ResponseFormatter
-from .media_context_extractor import MediaContextExtractor
 from src.services.memory_context.memory_manager import MemoryManager
 from src.services.memory_context.model_history_manager import ModelHistoryManager
 from src.services.model_handlers.factory import ModelHandlerFactory
@@ -48,7 +47,6 @@ class TextHandler:
         self.context_handler = MessageContextHandler()
         self.response_formatter = ResponseFormatter()
         self.prompt_formatter = PromptFormatter()
-        self.media_context_extractor = MediaContextExtractor()
         self.conversation_manager = ConversationManager(
             self.memory_manager, self.model_history_manager
         )
@@ -499,6 +497,14 @@ class TextHandler:
                         response,
                         preferred_model,
                     )
+                    
+                    # Also save to main conversation history for follow-up questions  
+                    await self.conversation_manager.save_message_pair(
+                        user_id,
+                        message_text or "[Multiple files uploaded]",
+                        response,
+                        preferred_model
+                    )
                     return
             await update.message.reply_text(
                 "Sorry, I couldn't analyze the content you provided. Please try again with a clearer prompt."
@@ -529,8 +535,19 @@ class TextHandler:
             await self.conversation_manager.save_media_interaction(
                 user_id, media_type, media_description, result, preferred_model
             )
+            
+            # Also save to main conversation history for follow-up questions
+            await self.conversation_manager.save_message_pair(
+                user_id, 
+                message_text or f"[{media_type.capitalize()} uploaded]", 
+                result, 
+                preferred_model
+            )
+            
             if self.user_data_manager:
-                await self.user_data_manager.update_stats(user_id, **{media_type: True})
+                # Map media_type to the correct stat parameter
+                stat_param = "image" if media_type == "photo" else media_type
+                await self.user_data_manager.update_stats(user_id, **{stat_param: True})
         else:
             await self.response_formatter.safe_send_message(
                 update.message,
@@ -579,32 +596,31 @@ class TextHandler:
             enhanced_prompt = self.prompt_formatter.add_context(
                 message_text, "quote", quoted_text
             )
-        is_referring_to_image = self.context_handler.detect_reference_to_image(
-            message_text
-        ) or self.media_context_extractor.is_referring_to_image(message_text)
-        if is_referring_to_image and "image_history" in context.user_data:
-            image_context = await self.media_context_extractor.get_image_context(
-                context.user_data
-            )
-            instruction = (
-                "The user is referring to an image they previously shared. "
-                "Use the following image information to answer their question. "
-                "DO NOT say you don't have access to images - you've previously analyzed "
-                "these images and should use that analysis to answer."
-            )
-            enhanced_prompt = self.prompt_formatter.add_context(
-                enhanced_prompt, "image", f"{instruction}\n\n{image_context}"
-            )
-        if (
-            self.context_handler.detect_reference_to_document(message_text)
-            and "document_history" in context.user_data
-        ):
-            document_context = await self.media_context_extractor.get_document_context(
-                context.user_data
-            )
-            enhanced_prompt = self.prompt_formatter.add_context(
-                enhanced_prompt, "document", document_context
-            )
+        
+        # Get intelligent context including recent media interactions and conversation history
+        intelligent_context = await self.conversation_manager.get_intelligent_context(user_id, message_text)
+        
+        # Format context if available
+        if intelligent_context and intelligent_context.get("relevant_memory"):
+            # Extract relevant text from context data
+            context_texts = []
+            for item in intelligent_context["relevant_memory"]:
+                if isinstance(item, dict):
+                    if 'content' in item:
+                        context_texts.append(item['content'])
+                    elif 'assistant_message' in item:
+                        context_texts.append(item['assistant_message'])
+                    elif 'user_message' in item:
+                        context_texts.append(f"Previous: {item['user_message']}")
+                elif isinstance(item, str):
+                    context_texts.append(item)
+            
+            if context_texts:
+                formatted_context = "\n".join(context_texts)
+                self.logger.info(f"Adding intelligent context for user {user_id} (length: {len(formatted_context)})")
+                enhanced_prompt = self.prompt_formatter.add_context(
+                    enhanced_prompt, "context", formatted_context
+                )
         enhanced_prompt_with_guidelines = (
             await self.prompt_formatter.apply_response_guidelines(
                 enhanced_prompt,

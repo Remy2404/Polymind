@@ -4,7 +4,7 @@ Media analyzer module for processing different types of media in Telegram messag
 import os
 import logging
 from typing import List, Dict
-from services.gemini_api import GeminiAPI
+from src.services.gemini_api import GeminiAPI, create_image_input, create_document_input
 logger = logging.getLogger(__name__)
 class MediaAnalyzer:
     def __init__(self, gemini_api: GeminiAPI):
@@ -62,7 +62,20 @@ class MediaAnalyzer:
     async def _analyze_image(self, media: Dict, prompt: str) -> str:
         """Process and analyze image media"""
         try:
-            return await self.gemini_api.analyze_image(media["data"], prompt)
+            # Create MediaInput for Gemini API using the module-level function
+            image_input = create_image_input(media["data"], media.get("filename"))
+            
+            # Use process_multimodal_input for image analysis
+            result = await self.gemini_api.process_multimodal_input(
+                text_prompt=prompt,
+                media_inputs=[image_input]
+            )
+            
+            if result.success and result.content:
+                return result.content
+            else:
+                error_msg = result.error if result.error else "Unknown error"
+                return f"Error analyzing image: {error_msg}"
         except Exception as e:
             self.logger.error(f"Error analyzing image: {str(e)}")
             return f"Error analyzing image: {str(e)}"
@@ -75,4 +88,21 @@ class MediaAnalyzer:
     async def _analyze_document(self, media: Dict, prompt: str) -> str:
         """Process and analyze document media"""
         filename = media.get("filename", "document")
-        return f"Analysis of document {filename}: {prompt}\n\nThis feature is currently in development. Soon Gemini will be able to fully analyze document files."
+        try:
+            # Create MediaInput for Gemini API using the module-level function
+            doc_input = create_document_input(media["data"], filename)
+            
+            # Use process_multimodal_input for document analysis
+            result = await self.gemini_api.process_multimodal_input(
+                text_prompt=prompt,
+                media_inputs=[doc_input]
+            )
+            
+            if result.success and result.content:
+                return result.content
+            else:
+                error_msg = result.error if result.error else "Unknown error"
+                return f"Error analyzing document {filename}: {error_msg}"
+        except Exception as e:
+            self.logger.error(f"Error analyzing document {filename}: {str(e)}")
+            return f"Error analyzing document {filename}: {str(e)}"

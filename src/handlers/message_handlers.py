@@ -123,6 +123,59 @@ class MessageHandlers:
         else:
             self.logger.warning(f"Unknown model ID: {model_id}, using default")
             return "🤖 Unknown Model", None
+
+    async def check_model_supports_media(self, user_id: int, media_type: str) -> tuple[bool, str, str]:
+        """
+        Check if the user's preferred model supports a specific media type.
+
+        Args:
+            user_id: The user's ID
+            media_type: Type of media ('image', 'document', 'audio', 'video')
+
+        Returns:
+            tuple: (supports_media, model_id, error_message)
+        """
+        try:
+            # Get user's preferred model
+            preferred_model = await self.user_data_manager.get_user_preference(
+                user_id, "preferred_model", default="gemini"
+            )
+
+            model_config = self.get_model_config(preferred_model)
+            if not model_config:
+                return False, preferred_model, f"Model '{preferred_model}' not found."
+
+            # Check capabilities based on media type
+            if media_type == "image":
+                supports_media = getattr(model_config, 'supports_images', False)
+                capability_name = "images"
+            elif media_type == "document":
+                supports_media = getattr(model_config, 'supports_documents', False)
+                capability_name = "documents"
+            elif media_type in ["audio", "voice"]:
+                supports_media = getattr(model_config, 'supports_audio', False)
+                capability_name = "audio"
+            elif media_type == "video":
+                supports_media = getattr(model_config, 'supports_video', False)
+                capability_name = "video"
+            else:
+                return False, preferred_model, f"Unsupported media type: {media_type}"
+
+            if not supports_media:
+                error_message = (
+                    f"❌ **{model_config.display_name}** doesn't support {capability_name}.\n\n"
+                    f"💡 **To process {capability_name}, please switch to a vision-capable model:**\n"
+                    f"• Use `/switchmodel` command\n"
+                    f"• Look for models with 👁️ or ✨ emoji\n"
+                    f"• Recommended: **Gemini 2.5 Flash** (supports images & documents)"
+                )
+                return False, preferred_model, error_message
+
+            return True, preferred_model, ""
+
+        except Exception as e:
+            self.logger.error(f"Error checking model media support: {str(e)}")
+            return False, "unknown", f"Error checking model capabilities: {str(e)}"
     async def generate_ai_response(
         self,
         prompt: str,
@@ -358,11 +411,12 @@ class MessageHandlers:
     async def _handle_image_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Handle incoming image messages using the new multimodal system."""
+        """Handle incoming image messages using unified conversation system."""
         try:
             user_id = update.effective_user.id
             self.logger.info(f"Processing image from user {user_id}")
             self.telegram_logger.log_message("Received image message", user_id)
+
             if (
                 not update.message
                 or not update.message.photo
@@ -370,44 +424,63 @@ class MessageHandlers:
             ):
                 await update.message.reply_text("Sorry, I couldn't process this image.")
                 return
-            processing_message = await update.message.reply_text(
-                "🖼️ Processing your image. Please wait..."
+
+            # Check if user's model supports images
+            supports_images, model_id, error_message = await self.check_model_supports_media(user_id, "image")
+            if not supports_images:
+                await update.message.reply_text(error_message, parse_mode="Markdown")
+                return
+
+            # Route through TextHandler for unified conversation processing
+            text_handler = TextHandler(
+                self.gemini_api,
+                self.user_data_manager,
+                openrouter_api=self.openrouter_api,
+                deepseek_api=self.deepseek_api,
             )
-            await context.bot.send_chat_action(
-                chat_id=update.effective_chat.id, action=ChatAction.TYPING
-            )
-            try:
-                context_messages = []
+
+            # Extract media files using TextHandler's method
+            has_attached_media, media_files, media_type = await text_handler._extract_media_files(update, context)
+
+            if has_attached_media and media_files:
+                # Send processing message
+                processing_message = await update.message.reply_text(
+                    "🖼️ Processing your image. Please wait..."
+                )
+                await context.bot.send_chat_action(
+                    chat_id=update.effective_chat.id, action=ChatAction.TYPING
+                )
+
                 try:
-                    if hasattr(self, "conversation_manager"):
-                        context_messages = await self.conversation_manager.get_context(
-                            user_id
-                        )
-                except Exception:
-                    pass
-                result = await self.multimodal_processor.process_telegram_message(
-                    message=update.message, context=context_messages
-                )
-                if result.success and result.content:
-                    formatted_response = await self.response_formatter.format_response(
-                        result.content, user_id, model_name="gemini-2.0-flash"
+                    # Use TextHandler's media analysis with conversation context
+                    await text_handler._handle_media_analysis(
+                        update,
+                        context,
+                        processing_message,
+                        media_files,
+                        media_type,
+                        update.message.caption or "Analyze this image",  # Use caption as prompt
+                        user_id,
+                        model_id,
                     )
-                    await processing_message.delete()
-                    await self.response_formatter.safe_send_message(
-                        update.message, formatted_response
-                    )
+
                     self.telegram_logger.log_message(
-                        "Image processed successfully", user_id
+                        "Image processed successfully via unified system", user_id
                     )
-                else:
-                    await processing_message.edit_text(
-                        f"❌ Sorry, I couldn't process your image: {result.error or 'Unknown error'}"
-                    )
-            except Exception as e:
-                self.logger.error(f"Image processing error: {str(e)}")
-                await processing_message.edit_text(
-                    "❌ Sorry, there was an error processing your image. Please try again."
-                )
+
+                except Exception as e:
+                    self.logger.error(f"Image processing error: {str(e)}")
+                    try:
+                        await processing_message.edit_text(
+                            "❌ Sorry, there was an error processing your image. Please try again."
+                        )
+                    except Exception:
+                        await update.message.reply_text(
+                            "❌ Sorry, there was an error processing your image. Please try again."
+                        )
+            else:
+                await update.message.reply_text("Sorry, I couldn't extract the image data.")
+
         except Exception as e:
             self.logger.error(f"Error in image message handler: {str(e)}")
             await self._error_handler(update, context)
@@ -677,59 +750,70 @@ class MessageHandlers:
     async def _handle_document_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        """Handle incoming document messages using the new multimodal system."""
+        """Handle incoming document messages using unified conversation system."""
         user_id = update.effective_user.id
         self.logger.info(f"Processing document for user: {user_id}")
         self.telegram_logger.log_message("Received document message", user_id)
+
         try:
             if not update.message or not update.message.document:
                 await update.message.reply_text(
                     "Sorry, I couldn't process this document."
                 )
                 return
+
             document = update.message.document
             if document.file_size and document.file_size > 50 * 1024 * 1024:
                 await update.message.reply_text(
                     "📄 Sorry, this document is too large (max 50MB). Please send a smaller file."
                 )
                 return
-            processing_message = await update.message.reply_text(
-                f"📄 Processing your document: {document.file_name}. Please wait..."
+
+            # Check if user's model supports documents
+            supports_documents, model_id, error_message = await self.check_model_supports_media(user_id, "document")
+            if not supports_documents:
+                await update.message.reply_text(error_message, parse_mode="Markdown")
+                return
+
+            # Route through TextHandler for unified conversation processing
+            text_handler = TextHandler(
+                self.gemini_api,
+                self.user_data_manager,
+                openrouter_api=self.openrouter_api,
+                deepseek_api=self.deepseek_api,
             )
-            await context.bot.send_chat_action(
-                chat_id=update.effective_chat.id, action=ChatAction.TYPING
-            )
-            try:
-                context_messages = []
-                try:
-                    if hasattr(self, "conversation_manager"):
-                        context_messages = await self.conversation_manager.get_context(
-                            user_id
-                        )
-                except Exception:
-                    pass
-                result = await self.multimodal_processor.process_telegram_message(
-                    message=update.message, context=context_messages
+
+            # Extract media files using TextHandler's method
+            has_attached_media, media_files, media_type = await text_handler._extract_media_files(update, context)
+
+            if has_attached_media and media_files:
+                # Send processing message
+                processing_message = await update.message.reply_text(
+                    f"📄 Processing your document: {document.file_name}. Please wait..."
                 )
-                if result.success and result.content:
-                    formatted_response = await self.response_formatter.format_response(
-                        result.content, user_id, model_name="gemini-2.0-flash"
+                await context.bot.send_chat_action(
+                    chat_id=update.effective_chat.id, action=ChatAction.TYPING
+                )
+
+                try:
+                    # Use TextHandler's media analysis with conversation context
+                    prompt = update.message.caption or f"Please analyze this {document.file_name} file."
+                    await text_handler._handle_media_analysis(
+                        update,
+                        context,
+                        processing_message,
+                        media_files,
+                        media_type,
+                        prompt,
+                        user_id,
+                        model_id,
                     )
-                    await processing_message.delete()
-                    response_chunks = await self.response_formatter.split_long_message(
-                        formatted_response
-                    )
-                    for chunk in response_chunks:
-                        await update.message.reply_text(
-                            chunk,
-                            parse_mode=(
-                                "Markdown" if "```" in chunk or "*" in chunk else None
-                            ),
-                        )
+
                     self.telegram_logger.log_message(
-                        f"Document processed successfully: {document.file_name}",
+                        f"Document processed successfully via unified system: {document.file_name}",
                         user_id,
                     )
+
                     try:
                         await self.user_data_manager.update_stats(
                             user_id, document=True
@@ -738,15 +822,20 @@ class MessageHandlers:
                         self.logger.warning(
                             f"Failed to update stats: {str(stats_error)}"
                         )
-                else:
-                    await processing_message.edit_text(
-                        f"❌ Sorry, I couldn't process your document: {result.error or 'Unknown error'}"
-                    )
-            except Exception as e:
-                self.logger.error(f"Document processing error: {str(e)}")
-                await processing_message.edit_text(
-                    "❌ Sorry, there was an error processing your document. Please try again."
-                )
+
+                except Exception as e:
+                    self.logger.error(f"Document processing error: {str(e)}")
+                    try:
+                        await processing_message.edit_text(
+                            "❌ Sorry, there was an error processing your document. Please try again."
+                        )
+                    except Exception:
+                        await update.message.reply_text(
+                            "❌ Sorry, there was an error processing your document. Please try again."
+                        )
+            else:
+                await update.message.reply_text("Sorry, I couldn't extract the document data.")
+
         except Exception as e:
             self.logger.error(f"Error in document message handler: {str(e)}")
             if "RATE_LIMIT_EXCEEDED" in str(e).upper():

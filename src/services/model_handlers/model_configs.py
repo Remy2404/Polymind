@@ -449,7 +449,7 @@ class ModelConfigurations:
         """
         # Known models that don't support system messages
         unsupported_system_message_models = [
-            "google/gemma",  # Gemma models on Google AI Studio don't support system messages
+            "google/gemma",
         ]
 
         for unsupported_prefix in unsupported_system_message_models:
