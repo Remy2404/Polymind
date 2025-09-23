@@ -20,6 +20,9 @@ class MediaUtilities:
             ".png": "image/png",
             ".gif": "image/gif",
             ".webp": "image/webp",
+            ".bmp": "image/bmp",
+            ".tiff": "image/tiff",
+            ".tif": "image/tiff",
             ".mp4": "video/mp4",
             ".mov": "video/quicktime",
             ".avi": "video/x-msvideo",
@@ -35,7 +38,43 @@ class MediaUtilities:
             ".json": "application/json",
             ".zip": "application/zip",
         }
-        return mime_types.get(file_extension.lower(), "application/octet-stream")
+        
+        # Ensure we have a valid extension
+        if not file_extension:
+            logger.warning("Empty file extension provided to get_mime_type")
+            return "application/octet-stream"
+            
+        result = mime_types.get(file_extension.lower(), "application/octet-stream")
+        logger.debug(f"MIME type for extension '{file_extension}': {result}")
+        return result
+    
+    @staticmethod
+    def detect_mime_from_content(file_data: bytes) -> str:
+        """
+        Detect MIME type from file content (magic bytes)
+        Args:
+            file_data: First few bytes of the file
+        Returns:
+            MIME type string
+        """
+        if not file_data or len(file_data) < 4:
+            return "application/octet-stream"
+            
+        # Check magic bytes for common image formats
+        if file_data.startswith(b'\x89PNG\r\n\x1a\n'):
+            return "image/png"
+        elif file_data.startswith(b'\xff\xd8\xff'):
+            return "image/jpeg"
+        elif file_data.startswith(b'GIF87a') or file_data.startswith(b'GIF89a'):
+            return "image/gif"
+        elif file_data.startswith(b'RIFF') and b'WEBP' in file_data[:12]:
+            return "image/webp"
+        elif file_data.startswith(b'BM'):
+            return "image/bmp"
+        elif file_data.startswith(b'%PDF'):
+            return "application/pdf"
+            
+        return "application/octet-stream"
     @staticmethod
     def is_image_file(file_extension: str) -> bool:
         """Check if file extension is for an image"""

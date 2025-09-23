@@ -254,9 +254,179 @@ class OpenRouterAPI:
             "You are an advanced AI assistant that helps users with various tasks. "
             "Be concise, helpful, and accurate."
         )
+    @rate_limit
+    async def generate_vision_response(
+        self,
+        prompt: str,
+        image_data: bytes,
+        model: str = None,
+        context: Optional[List[Dict]] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        timeout: float = 300.0,
+    ) -> Optional[str]:
+        """
+        Generate response for vision/multimodal content using OpenRouter.
+        
+        Args:
+            prompt: Text prompt for image analysis
+            image_data: Raw image bytes
+            model: Model to use for generation
+            context: Optional conversation context
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            timeout: Request timeout
+            
+        Returns:
+            Generated response text or None if failed
+        """
+        try:
+            if not model or not isinstance(model, str) or not model.strip():
+                self.logger.error("Invalid model parameter: must be a non-empty string")
+                return "Error: Invalid model specified"
+                
+            openrouter_model = ModelConfigurations.get_model_with_fallback(model)
+            if (
+                not openrouter_model
+                or not isinstance(openrouter_model, str)
+                or not openrouter_model.strip()
+            ):
+                self.logger.error(
+                    f"Invalid OpenRouter model key returned for {model}: {openrouter_model}"
+                )
+                return f"Error: Could not determine model for {model}"
+                
+            if max_tokens is None:
+                model_configs = ModelConfigurations.get_all_models()
+                model_config = model_configs.get(model)
+                if model_config and hasattr(model_config, "max_tokens"):
+                    max_tokens = model_config.max_tokens
+                else:
+                    max_tokens = 32768
+                    
+            # Handle BytesIO object and encode image as base64
+            import base64
+            import io
+            
+            # Extract bytes from BytesIO if needed
+            if isinstance(image_data, io.BytesIO):
+                image_data.seek(0)  # Reset position to beginning
+                image_bytes = image_data.read()
+            else:
+                image_bytes = image_data
+                
+            base64_image = base64.b64encode(image_bytes).decode('utf-8')
+            
+            # Determine image format from data
+            image_format = "jpeg"  # default
+            if image_bytes.startswith(b'\x89PNG'):
+                image_format = "png"
+            elif image_bytes.startswith(b'\xff\xd8'):
+                image_format = "jpeg"
+            elif image_bytes.startswith(b'GIF'):
+                image_format = "gif"
+            elif image_bytes.startswith(b'RIFF') and b'WEBP' in image_bytes[:12]:
+                image_format = "webp"
+                
+            system_message = self._build_system_message(model, context)
+            messages = []
+            
+            # Use the new capability detection system
+            safe_config = ModelConfigurations.get_safe_model_config(model)
+            if safe_config["use_system_message"]:
+                messages.append({"role": "system", "content": system_message})
+                
+            if context:
+                messages.extend(
+                    [msg for msg in context if "role" in msg and "content" in msg]
+                )
+                
+            # Create multimodal message with image
+            user_message = {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/{image_format};base64,{base64_image}"
+                        }
+                    }
+                ]
+            }
+            messages.append(user_message)
+            
+            # Adapt the request parameters based on model capabilities
+            request_params = {
+                "model": openrouter_model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "timeout": timeout,
+            }
+            adapted_params = ModelConfigurations.adapt_request_for_model(model, request_params)
+            
+            self.logger.info(f"Sending vision request to OpenRouter model: {openrouter_model}")
+            response = await self.client.chat.completions.create(**adapted_params)
+            
+            if response.choices and len(response.choices) > 0:
+                message_content = response.choices[0].message.content
+                finish_reason = response.choices[0].finish_reason
+                if finish_reason != "stop":
+                    self.logger.warning(f"Finish reason: {finish_reason}")
+                self.logger.info(
+                    f"OpenRouter vision response length: {len(message_content) if message_content else 0} characters"
+                )
+                self.api_failures = 0
+                return message_content
+                
+            self.logger.warning("No valid response from OpenRouter API for vision request")
+            self.api_failures += 1
+            return None
+            
+        except AuthenticationError as e:
+            self.api_failures += 1
+            self.api_last_failure = time.time()
+            error_message = (
+                "Authentication error. Please check your OpenRouter API key."
+            )
+            self.logger.error(f"OpenRouter API authentication error: {str(e)}")
+            return f"OpenRouter API error: {error_message}"
+        except RateLimitError as e:
+            self.api_failures += 1
+            self.api_last_failure = time.time()
+            error_message = "Rate limit exceeded. Please try again later."
+            self.logger.error(f"OpenRouter API rate limit error: {str(e)}")
+            return f"OpenRouter API error: {error_message}"
+        except APIError as e:
+            self.api_failures += 1
+            self.api_last_failure = time.time()
+            error_message = f"API error: {e.message}"
+            if hasattr(e, "status") and e.status == 404:
+                error_message = (
+                    f"Model not found: {model}. Model may be temporarily unavailable."
+                )
+                self.logger.warning(
+                    f"Model {openrouter_model} not found on OpenRouter. This may be temporary."
+                )
+            elif hasattr(e, "status") and e.status == 400:
+                error_message = f"Bad request for model {model}. The model may not support vision or the current request format."
+            self.logger.error(
+                f"OpenRouter API vision error for model {model}: {error_message}"
+            )
+            return f"OpenRouter API error: {error_message}"
+        except Exception as e:
+            self.api_failures += 1
+            self.api_last_failure = time.time()
+            self.logger.error(f"OpenRouter API vision error: {str(e)}", exc_info=True)
+            return f"Unexpected error when calling OpenRouter API for vision: {str(e)}"
+
     def get_model_indicator(self) -> str:
         """
         Return the model indicator for OpenRouter models.
         This is used by text handlers for response formatting.
         """
-        return "🔗"
+        return ""

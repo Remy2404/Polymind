@@ -50,7 +50,7 @@ class TextHandler:
         self.conversation_manager = ConversationManager(
             self.memory_manager, self.model_history_manager
         )
-        self.media_analyzer = MediaAnalyzer(gemini_api)
+        self.media_analyzer = MediaAnalyzer(gemini_api, openrouter_api)
         self.model_fallback_handler = ModelFallbackHandler(self.response_formatter)
         self.intent_detector = EnhancedIntentDetector()
         self.user_model_manager = None
@@ -272,14 +272,34 @@ class TextHandler:
                 document = update.message.document
                 document_file = await context.bot.get_file(document.file_id)
                 document_bytes = await document_file.download_as_bytearray()
-                file_ext = os.path.splitext(document.file_name)[1].lower()
+                
+                # Debug logging for MIME type detection
+                self.logger.info(f"Document filename: {document.file_name}")
+                file_ext = os.path.splitext(document.file_name)[1].lower() if document.file_name else ""
+                self.logger.info(f"Extracted file extension: '{file_ext}'")
                 mime_type = MediaUtilities.get_mime_type(file_ext)
+                self.logger.info(f"MIME type from extension: {mime_type}")
+                
+                # Fallback to content-based detection if extension detection fails
+                if mime_type == "application/octet-stream" and document_bytes:
+                    content_mime = MediaUtilities.detect_mime_from_content(document_bytes[:50])
+                    if content_mime != "application/octet-stream":
+                        mime_type = content_mime
+                        self.logger.info(f"MIME type from content: {mime_type}")
+                
+                self.logger.info(f"Final MIME type: {mime_type}")
+                
+                # Special handling for image documents
+                if MediaUtilities.is_image_file(file_ext):
+                    self.logger.info("Document is an image, reclassifying as photo")
+                    media_type = "photo"  # Reclassify image documents as photos
+                
                 media_files.append(
                     {
-                        "type": "document",
+                        "type": media_type,
                         "data": io.BytesIO(document_bytes),
                         "mime": mime_type,
-                        "filename": document.file_name,
+                        "filename": document.file_name or f"document_{document.file_id}",
                     }
                 )
             elif update.message.media_group_id:
@@ -305,14 +325,18 @@ class TextHandler:
                         document = update.message.document
                         document_file = await context.bot.get_file(document.file_id)
                         document_bytes = await document_file.download_as_bytearray()
-                        file_ext = os.path.splitext(document.file_name)[1].lower()
+                        file_ext = os.path.splitext(document.file_name)[1].lower() if document.file_name else ""
                         mime_type = MediaUtilities.get_mime_type(file_ext)
+                        
+                        # Special handling for image documents in media groups
+                        doc_type = "photo" if MediaUtilities.is_image_file(file_ext) else "document"
+                        
                         context.bot_data["media_groups"][media_group_id].append(
                             {
-                                "type": "document",
+                                "type": doc_type,
                                 "data": io.BytesIO(document_bytes),
                                 "mime": mime_type,
-                                "filename": document.file_name,
+                                "filename": document.file_name or f"document_{document.file_id}",
                             }
                         )
                     return False, [], None
@@ -334,14 +358,18 @@ class TextHandler:
                         document = update.message.document
                         document_file = await context.bot.get_file(document.file_id)
                         document_bytes = await document_file.download_as_bytearray()
-                        file_ext = os.path.splitext(document.file_name)[1].lower()
+                        file_ext = os.path.splitext(document.file_name)[1].lower() if document.file_name else ""
                         mime_type = MediaUtilities.get_mime_type(file_ext)
+                        
+                        # Special handling for image documents in media groups (initialization)
+                        doc_type = "photo" if MediaUtilities.is_image_file(file_ext) else "document"
+                        
                         context.bot_data["media_groups"][media_group_id].append(
                             {
-                                "type": "document",
+                                "type": doc_type,
                                 "data": io.BytesIO(document_bytes),
                                 "mime": mime_type,
-                                "filename": document.file_name,
+                                "filename": document.file_name or f"document_{document.file_id}",
                             }
                         )
                     asyncio.create_task(

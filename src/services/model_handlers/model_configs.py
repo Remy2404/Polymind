@@ -92,6 +92,8 @@ class ModelConfigurations:
                                             provider, model_type
                                         ),
                                         max_tokens=max_tokens,
+                                        supports_images="supports_images" in capabilities,
+                                        supports_documents="supports_documents" in capabilities,
                                     )
                                     models[model_id] = config
                 # Handle legacy format (simple list)
@@ -139,6 +141,8 @@ class ModelConfigurations:
                                     provider, model_type
                                 ),
                                 max_tokens=max_tokens,
+                                supports_images="supports_images" in capabilities,
+                                supports_documents="supports_documents" in capabilities,
                             )
                             models[model_id] = config
         except (json.JSONDecodeError, FileNotFoundError, KeyError) as e:
