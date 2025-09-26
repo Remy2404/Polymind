@@ -553,7 +553,7 @@ You have access to the following tools: {', '.join(tool_names)}
 2. **Identify the Right Tool**: Choose the most appropriate tool based on the user's request
 3. **Provide Complete Arguments**: Ensure all required parameters are included in your function calls
 4. **Handle Results**: Use the tool results to provide comprehensive, accurate responses
-5. **Combine Tools**: Use multiple tools when needed to provide complete answers
+5. **Combine Tools**: Use multiple tools in parallel when possible to provide comprehensive answers. Call all relevant tools in one response to gather complete information.
 {chr(10).join([f"- **{category}**: {', '.join(category_tools)}" for category, category_tools in tool_categories.items()])}
 - **URLs/Links → fetch_html** (ALWAYS for web content)
 - **Search queries → web_search_exa**

@@ -207,9 +207,10 @@ You have access to the following tools: {', '.join(tool_names)}
 1. **Identify the Right Tool**: Choose the most appropriate tool based on the user's request
 2. **Provide Complete Arguments**: Ensure all required parameters are included in your tool calls
 3. **Handle Results**: Use the tool results to provide comprehensive, accurate responses
-4. **Combine Tools**: Use multiple tools when needed to provide complete answers
+4. **Combine Tools**: Use multiple tools in parallel when possible to provide comprehensive answers. Call all relevant tools in one response to gather complete information.
 {chr(10).join([f"- **{category}**: {', '.join(category_tools)}" for category, category_tools in tool_categories.items()])}
 - Always use tools when they can provide more accurate or current information
+- When multiple tools are relevant, use them together in one response for thorough analysis
 - Provide detailed, helpful responses based on tool results
 - If a tool fails, try alternative approaches or inform the user
 - Do not mention tool internal details or <think> tags in your final response
