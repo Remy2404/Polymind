@@ -401,12 +401,12 @@ class TextHandler:
                     chat_id=chat_id, text="Processing multiple files... 🧠"
                 )
                 try:
-                    from services.user_preferences_manager import UserPreferencesManager
+                    from src.services.user_preferences_manager import UserPreferencesManager
                     preferences_manager = UserPreferencesManager(self.user_data_manager)
                     preferred_model = (
                         await preferences_manager.get_user_model_preference(user_id)
                     )
-                    from services.media.multi_file_processor import MultiFileProcessor
+                    from src.services.media.multi_file_processor import MultiFileProcessor
                     multi_processor = MultiFileProcessor(self.gemini_api)
                     result = await multi_processor.process_multiple_files(
                         media_files, caption or "Analyze these files"
@@ -476,7 +476,7 @@ class TextHandler:
     ):
         """Handle analysis of media files"""
         if len(media_files) > 1:
-            from services.media.multi_file_processor import MultiFileProcessor
+            from src.services.media.multi_file_processor import MultiFileProcessor
             multi_processor = MultiFileProcessor(self.gemini_api)
             result = await multi_processor.process_multiple_files(
                 media_files, message_text or "Analyze these files"
@@ -600,7 +600,7 @@ class TextHandler:
         )
     async def _get_user_preferred_model(self, user_id):
         """Get user's preferred model"""
-        from services.user_preferences_manager import UserPreferencesManager
+        from src.services.user_preferences_manager import UserPreferencesManager
         preferences_manager = UserPreferencesManager(self.user_data_manager)
         preferred_model = await preferences_manager.get_user_model_preference(user_id)
         self.logger.info(f"Preferred model for user {user_id}: {preferred_model}")

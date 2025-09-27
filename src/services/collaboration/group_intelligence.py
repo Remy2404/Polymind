@@ -48,6 +48,104 @@ class GroupKnowledge:
     importance_score: float = 0.5
     tags: List[str] = field(default_factory=list)
     related_sessions: List[str] = field(default_factory=list)
+
+
+async def _analyze_message_content(
+        group_id: str, content: str, message_type: str
+) -> Dict[str, Any]:
+    """Analyze message content for intelligence insights"""
+    analysis = {
+        "sentiment": 0.0,
+        "topics": [],
+        "action_items": [],
+        "questions": [],
+        "decisions": [],
+    }
+    content_lower = content.lower()
+    positive_words = [
+        "good",
+        "great",
+        "excellent",
+        "awesome",
+        "perfect",
+        "love",
+        "like",
+    ]
+    negative_words = [
+        "bad",
+        "terrible",
+        "awful",
+        "hate",
+        "dislike",
+        "problem",
+        "issue",
+    ]
+    positive_count = sum(1 for word in positive_words if word in content_lower)
+    negative_count = sum(1 for word in negative_words if word in content_lower)
+    if positive_count + negative_count > 0:
+        analysis["sentiment"] = (positive_count - negative_count) / (
+            positive_count + negative_count
+        )
+    topic_keywords = [
+        "project",
+        "task",
+        "idea",
+        "plan",
+        "goal",
+        "issue",
+        "problem",
+        "solution",
+    ]
+    for keyword in topic_keywords:
+        if keyword in content_lower:
+            analysis["topics"].append(keyword)
+    action_indicators = ["todo", "need to", "should", "must", "action", "task"]
+    for indicator in action_indicators:
+        if indicator in content_lower:
+            start_idx = content_lower.find(indicator)
+            end_idx = min(start_idx + 100, len(content))
+            action_text = content[start_idx:end_idx]
+            analysis["action_items"].append(action_text.strip())
+    if "?" in content:
+        questions = [q.strip() + "?" for q in content.split("?") if q.strip()]
+        analysis["questions"] = questions[:-1]
+    decision_indicators = ["decided", "agreed", "concluded", "final", "chosen"]
+    for indicator in decision_indicators:
+        if indicator in content_lower:
+            analysis["decisions"].append(content[:200])
+            break
+    return analysis
+
+
+async def _detect_collaboration_signals(
+        group_id: str, user_id: int, content: str
+) -> List[Dict[str, Any]]:
+    """Detect collaboration signals in content"""
+    signals = []
+    content_lower = content.lower()
+    collaboration_patterns = {
+        "request_help": ["help", "assist", "support", "can you", "could you"],
+        "offer_help": ["i can", "let me", "i'll help", "i will"],
+        "agreement": ["agree", "yes", "correct", "exactly", "right"],
+        "disagreement": ["disagree", "no", "wrong", "incorrect", "but"],
+        "question": ["?", "how", "what", "when", "where", "why"],
+        "suggestion": ["suggest", "recommend", "propose", "maybe", "perhaps"],
+        "decision": ["decide", "choose", "final", "concluded", "agreed"],
+    }
+    for signal_type, indicators in collaboration_patterns.items():
+        for indicator in indicators:
+            if indicator in content_lower:
+                signals.append(
+                    {
+                        "type": signal_type,
+                        "confidence": 0.8,
+                        "content_excerpt": content[:100],
+                    }
+                )
+                break
+    return signals
+
+
 class GroupIntelligenceSystem:
     """Advanced group chat intelligence with collaboration features"""
     def __init__(self, memory_manager=None):
@@ -171,14 +269,14 @@ class GroupIntelligenceSystem:
             content = message.get("content", "")
             message_type = message.get("type", "text")
             await self._update_member_activity(group_id, user_id, message)
-            analysis = await self._analyze_message_content(
+            analysis = await _analyze_message_content(
                 group_id, content, message_type
             )
             knowledge_items = await self._extract_knowledge_items(
                 group_id, user_id, content
             )
             analysis["knowledge_updates"] = knowledge_items
-            collaboration_signals = await self._detect_collaboration_signals(
+            collaboration_signals = await _detect_collaboration_signals(
                 group_id, user_id, content
             )
             analysis["collaboration_signals"] = collaboration_signals
@@ -351,71 +449,7 @@ class GroupIntelligenceSystem:
                 member.contribution_score += quality_bonus
         except Exception as e:
             self.logger.error(f"Error updating member activity: {e}")
-    async def _analyze_message_content(
-        self, group_id: str, content: str, message_type: str
-    ) -> Dict[str, Any]:
-        """Analyze message content for intelligence insights"""
-        analysis = {
-            "sentiment": 0.0,
-            "topics": [],
-            "action_items": [],
-            "questions": [],
-            "decisions": [],
-        }
-        content_lower = content.lower()
-        positive_words = [
-            "good",
-            "great",
-            "excellent",
-            "awesome",
-            "perfect",
-            "love",
-            "like",
-        ]
-        negative_words = [
-            "bad",
-            "terrible",
-            "awful",
-            "hate",
-            "dislike",
-            "problem",
-            "issue",
-        ]
-        positive_count = sum(1 for word in positive_words if word in content_lower)
-        negative_count = sum(1 for word in negative_words if word in content_lower)
-        if positive_count + negative_count > 0:
-            analysis["sentiment"] = (positive_count - negative_count) / (
-                positive_count + negative_count
-            )
-        topic_keywords = [
-            "project",
-            "task",
-            "idea",
-            "plan",
-            "goal",
-            "issue",
-            "problem",
-            "solution",
-        ]
-        for keyword in topic_keywords:
-            if keyword in content_lower:
-                analysis["topics"].append(keyword)
-        action_indicators = ["todo", "need to", "should", "must", "action", "task"]
-        for indicator in action_indicators:
-            if indicator in content_lower:
-                start_idx = content_lower.find(indicator)
-                end_idx = min(start_idx + 100, len(content))
-                action_text = content[start_idx:end_idx]
-                analysis["action_items"].append(action_text.strip())
-        if "?" in content:
-            questions = [q.strip() + "?" for q in content.split("?") if q.strip()]
-            analysis["questions"] = questions[:-1]
-        decision_indicators = ["decided", "agreed", "concluded", "final", "chosen"]
-        for indicator in decision_indicators:
-            if indicator in content_lower:
-                analysis["decisions"].append(content[:200])
-                break
-        return analysis
+
     async def _extract_knowledge_items(
         self, group_id: str, user_id: int, content: str
     ) -> List[Dict[str, Any]]:
@@ -464,33 +498,7 @@ class GroupIntelligenceSystem:
                 )
                 break
         return knowledge_items
-    async def _detect_collaboration_signals(
-        self, group_id: str, user_id: int, content: str
-    ) -> List[Dict[str, Any]]:
-        """Detect collaboration signals in content"""
-        signals = []
-        content_lower = content.lower()
-        collaboration_patterns = {
-            "request_help": ["help", "assist", "support", "can you", "could you"],
-            "offer_help": ["i can", "let me", "i'll help", "i will"],
-            "agreement": ["agree", "yes", "correct", "exactly", "right"],
-            "disagreement": ["disagree", "no", "wrong", "incorrect", "but"],
-            "question": ["?", "how", "what", "when", "where", "why"],
-            "suggestion": ["suggest", "recommend", "propose", "maybe", "perhaps"],
-            "decision": ["decide", "choose", "final", "concluded", "agreed"],
-        }
-        for signal_type, indicators in collaboration_patterns.items():
-            for indicator in indicators:
-                if indicator in content_lower:
-                    signals.append(
-                        {
-                            "type": signal_type,
-                            "confidence": 0.8,
-                            "content_excerpt": content[:100],
-                        }
-                    )
-                    break
-        return signals
+
     async def _update_interaction_patterns(
         self, group_id: str, user_id: int, analysis: Dict[str, Any]
     ) -> None:
@@ -799,3 +807,25 @@ class GroupIntelligenceSystem:
                 }
             )
         return recommendations
+
+    def _get_knowledge_categories(self, group_id):
+        """Return a set of all knowledge categories for the given group."""
+        knowledge_items = self.group_knowledge.get(group_id, [])
+        categories = set()
+        for item in knowledge_items:
+            categories.add(item.category)
+        return categories
+
+    async def _calculate_interaction_frequency(self, group_id, timeframe_days):
+        """Calculate the number of member interactions in the given timeframe."""
+        cutoff_date = datetime.now() - timedelta(days=timeframe_days)
+        if group_id not in self.group_members:
+            return {}
+        frequency = {}
+        for user_id, member in self.group_members[group_id].items():
+            # Count messages sent after cutoff_date
+            if hasattr(member, 'last_activity') and member.last_activity > cutoff_date:
+                frequency[user_id] = member.message_count
+            else:
+                frequency[user_id] = 0
+        return frequency

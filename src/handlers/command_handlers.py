@@ -10,12 +10,12 @@ from telegram.ext import (
     CallbackQueryHandler,
     Application,
 )
-from services.user_data_manager import UserDataManager
-from services.gemini_api import GeminiAPI
-from services.model_handlers.simple_api_manager import SuperSimpleAPIManager
-from utils.log.telegramlog import TelegramLogger as telegram_logger
+from src.services.user_data_manager import UserDataManager
+from src.services.gemini_api import GeminiAPI
+from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
+from src.utils.log.telegramlog import TelegramLogger as telegram_logger
 import logging
-from services.flux_lora_img import (
+from src.services.flux_lora_img import (
     FluxLoraImageGenerator as flux_lora_image_generator,
 )
 import time
