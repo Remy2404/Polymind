@@ -6,13 +6,15 @@ enabling LLMs to use MCP tools without hardcoded definitions.
 import json
 import logging
 import os
+import time
 import asyncio
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import Tool as MCPTool
 from src.utils.log.telegramlog import telegram_logger
+from .tool_memory_manager import tool_memory_manager
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -504,12 +506,15 @@ class MCPManager:
             List of OpenAI-compatible tool definitions
         """
         return self.all_openai_tools.copy()
-    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any], user_id: Optional[str] = None, conversation_id: Optional[str] = None, context_keywords: Optional[List[str]] = None) -> Any:
         """
-        Execute a tool by name.
+        Execute a tool by name with memory tracking.
         Args:
             tool_name: Name of the tool to execute
             arguments: Arguments to pass to the tool
+            user_id: ID of the user making the call (for memory tracking)
+            conversation_id: ID of the conversation (for memory tracking)
+            context_keywords: Keywords from conversation context (for learning)
         Returns:
             Tool execution result
         """
@@ -517,9 +522,43 @@ class MCPManager:
             raise ValueError(
                 f"Tool '{tool_name}' not found in any connected MCP server"
             )
+
         server_name = self.tool_to_server_map[tool_name]
         server = self.servers[server_name]
-        return await server.call_tool(tool_name, arguments)
+
+        # Record tool call start
+        start_time = time.time()
+        success = False
+        result = None
+        error_message = None
+
+        try:
+            # Execute the tool
+            result = await server.call_tool(tool_name, arguments)
+            success = True
+
+        except Exception as e:
+            error_message = str(e)
+            success = False
+            raise  # Re-raise the exception after recording
+
+        finally:
+            # Record the tool call in memory
+            execution_time = time.time() - start_time
+            await tool_memory_manager.record_tool_call(
+                tool_name=tool_name,
+                server_name=server_name,
+                arguments=arguments,
+                result=result,
+                success=success,
+                execution_time=execution_time,
+                error_message=error_message,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                context_keywords=context_keywords or []
+            )
+
+        return result
     async def disconnect_all(self):
         """Disconnect from all MCP servers."""
         disconnect_tasks = []
@@ -552,3 +591,79 @@ class MCPManager:
                 "tools": [tool.name for tool in server.available_tools],
             }
         return info
+
+    async def get_tool_recommendations(
+        self,
+        context_keywords: List[str],
+        limit: int = 5
+    ) -> List[Tuple[str, float, Dict[str, Any]]]:
+        """
+        Get tool recommendations based on context and historical performance.
+
+        Args:
+            context_keywords: Keywords from current conversation context
+            limit: Maximum number of recommendations to return
+
+        Returns:
+            List of (tool_name, confidence_score, metadata) tuples
+        """
+        return await tool_memory_manager.get_tool_recommendations(context_keywords, limit)
+
+    async def get_tool_insights(self, tool_name: str) -> Dict[str, Any]:
+        """
+        Get detailed insights and analytics for a specific tool.
+
+        Args:
+            tool_name: Name of the tool to analyze
+
+        Returns:
+            Dictionary containing tool performance metrics and history
+        """
+        return await tool_memory_manager.get_tool_insights(tool_name)
+
+    async def get_workspace_tool_stats(self) -> Dict[str, Any]:
+        """
+        Get workspace-wide tool usage statistics.
+
+        Returns:
+            Dictionary with overall tool usage analytics
+        """
+        try:
+            all_stats = await tool_memory_manager.get_all_tool_stats()
+
+            total_calls = sum(stats.total_calls for stats in all_stats.values())
+            successful_calls = sum(stats.successful_calls for stats in all_stats.values())
+
+            # Get most used tools
+            most_used = sorted(
+                [(name, stats.total_calls) for name, stats in all_stats.items()],
+                key=lambda x: x[1],
+                reverse=True
+            )[:10]
+
+            # Get most successful tools
+            most_successful = sorted(
+                [(name, stats.success_rate) for name, stats in all_stats.items() if stats.total_calls > 0],
+                key=lambda x: x[1],
+                reverse=True
+            )[:10]
+
+            return {
+                "total_tools": len(all_stats),
+                "total_calls": total_calls,
+                "overall_success_rate": successful_calls / total_calls if total_calls > 0 else 0,
+                "most_used_tools": most_used,
+                "most_successful_tools": most_successful,
+                "tool_details": {
+                    name: {
+                        "calls": stats.total_calls,
+                        "success_rate": stats.success_rate,
+                        "avg_execution_time": stats.average_execution_time
+                    }
+                    for name, stats in all_stats.items()
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"Failed to get workspace tool stats: {e}")
+            return {"error": str(e)}
