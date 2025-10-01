@@ -3,6 +3,7 @@ Enhanced OpenRouter API with MCP Tool Integration
 This module extends the base OpenRouter API to include automatic MCP server
 integration, enabling LLMs to use MCP tools seamlessly.
 """
+import asyncio
 import logging
 from typing import Dict, List, Optional, Any
 from src.services.openrouter_api import OpenRouterAPI
@@ -230,6 +231,7 @@ Focus on providing the most helpful and accurate response possible using the ava
             "Development": [],
             "Analysis": [],
             "Communication": [],
+            "Document Processing": [],
             "Other": [],
         }
         for tool in tools:
@@ -289,7 +291,9 @@ Focus on providing the most helpful and accurate response possible using the ava
                 categories["Analysis"].append(tool["function"]["name"])
             elif any(
                 keyword in tool_name or keyword in description
-                for keyword in ["chat", "message", "email", "notify", "communication"]
+                for keyword in [
+                    "chat", "message", "email", "notify", "communication"
+                ]
             ):
                 categories["Communication"].append(tool["function"]["name"])
             else:
@@ -361,6 +365,12 @@ Focus on providing the most helpful and accurate response possible using the ava
                         self.logger.info(
                             f"Executing MCP tool: {tool_name} with args: {tool_args}"
                         )
+                        
+                        # Small delay to prevent overwhelming MCP server with rapid calls
+                        # especially important for document operations
+                        if len(tool_calls) > 1:
+                            await asyncio.sleep(0.5)
+                        
                         tool_result = await self.mcp_manager.execute_tool(
                             tool_name, tool_args
                         )

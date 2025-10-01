@@ -24,6 +24,7 @@ from src.services.mcp_bot_integration import (
     is_model_mcp_compatible,
 )
 from src.utils.bot_username_helper import BotUsernameHelper
+from .document_sender import DocumentSender
 class TextHandler:
     def __init__(
         self,
@@ -54,6 +55,9 @@ class TextHandler:
         self.model_fallback_handler = ModelFallbackHandler(self.response_formatter)
         self.intent_detector = EnhancedIntentDetector()
         self.user_model_manager = None
+        
+        # Initialize document sender for MCP-generated documents
+        self.document_sender = DocumentSender()
     class MockMessage:
         def __init__(self, bot, chat_id):
             self.bot = bot
@@ -758,6 +762,14 @@ class TextHandler:
                     self.logger.info(f"Using MCP-enhanced response for user {user_id}")
                     response = mcp_response
                     actual_model_used = preferred_model
+                    
+                    # Check for recently created documents from MCP tools (e.g., office-word-mcp-server)
+                    await self._handle_mcp_document_output(
+                        context=context,
+                        user_id=user_id,
+                        message=message,
+                        mcp_response=mcp_response
+                    )
                 else:
                     self.logger.debug(
                         f"MCP response failed for user {user_id}, using regular processing"
@@ -1018,3 +1030,78 @@ class TextHandler:
             or "what did i ask" in lowered
             or "history of my questions" in lowered
         )
+
+    async def _handle_mcp_document_output(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        user_id: int,
+        message,
+        mcp_response: str
+    ) -> None:
+        """
+        Handle document outputs from MCP tools (e.g., office-word-mcp-server).
+        Detects if documents were created and sends them to the user.
+        
+        Args:
+            context: Telegram context
+            user_id: User ID
+            message: Original message object
+            mcp_response: Response from MCP tool execution
+        """
+        try:
+            # Check if the response indicates document creation
+            document_indicators = [
+                'document created',
+                'saved to',
+                'file created',
+                '.docx',
+                '.pdf',
+                '.xlsx',
+                '.pptx'
+            ]
+            
+            if not any(indicator in mcp_response.lower() for indicator in document_indicators):
+                self.logger.debug("No document creation indicators found in MCP response")
+                return
+            
+            # Search for recently created documents (within last 5 minutes)
+            recent_documents = self.document_sender.find_recent_documents(
+                directory=".",
+                max_age_seconds=300
+            )
+            
+            if not recent_documents:
+                self.logger.info("No recent documents found despite document creation indicators")
+                return
+            
+            # Send the most recent document
+            document_path = recent_documents[0]
+            self.logger.info(f"Found recent document for user {user_id}: {document_path}")
+            
+            # Prepare caption from document name
+            import os
+            file_name = os.path.basename(document_path)
+            caption = f"📄 {file_name}"
+            
+            # Send document to user
+            success = await self.document_sender.send_document(
+                bot=context.bot,
+                chat_id=message.chat_id,
+                file_path=document_path,
+                caption=caption,
+                reply_to_message_id=message.message_id
+            )
+            
+            if success:
+                self.logger.info(f"Successfully sent document {document_path} to user {user_id}")
+                telegram_logger.log_message(
+                    f"Document sent: {file_name}",
+                    user_id
+                )
+            else:
+                self.logger.warning(f"Failed to send document {document_path} to user {user_id}")
+                
+        except Exception as e:
+            self.logger.error(f"Error handling MCP document output: {str(e)}")
+            # Don't raise the exception - document sending is supplementary functionality
+

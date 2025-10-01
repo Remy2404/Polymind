@@ -247,49 +247,82 @@ class MCPServerClient:
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
         Call a tool on the MCP server using reconnection for each call.
+        Implements retry mechanism with exponential backoff for reliability.
+        
         Args:
             tool_name: Name of the tool to call
             arguments: Arguments to pass to the tool
         Returns:
             Tool execution result
         """
-        try:
-            self.logger.info(
-                f"Calling tool '{tool_name}' on server '{self.server_name}' with arguments: {arguments}"
-            )
+        max_retries = 3
+        retry_delays = [1.0, 2.0, 4.0]  # Exponential backoff
+        
+        for attempt in range(max_retries):
             try:
-                return await self._call_tool_with_config(
-                    self.server_config, tool_name, arguments
-                )
-            except Exception as primary_error:
-                self.logger.warning(
-                    f"Primary tool call failed for '{tool_name}': {str(primary_error)}"
-                )
-                fallback_config = self.server_config.get("fallback")
-                if fallback_config:
+                if attempt > 0:
                     self.logger.info(
-                        f"Trying fallback configuration for tool '{tool_name}'"
+                        f"Retry attempt {attempt + 1}/{max_retries} for tool '{tool_name}'"
                     )
-                    try:
-                        return await self._call_tool_with_config(
-                            fallback_config, tool_name, arguments
+                
+                self.logger.info(
+                    f"Calling tool '{tool_name}' on server '{self.server_name}' with arguments: {arguments}"
+                )
+                try:
+                    return await self._call_tool_with_config(
+                        self.server_config, tool_name, arguments
+                    )
+                except Exception as primary_error:
+                    self.logger.warning(
+                        f"Primary tool call failed for '{tool_name}': {str(primary_error)}"
+                    )
+                    fallback_config = self.server_config.get("fallback")
+                    if fallback_config:
+                        self.logger.info(
+                            f"Trying fallback configuration for tool '{tool_name}'"
                         )
-                    except Exception as fallback_error:
-                        self.logger.error(
-                            f"Fallback tool call also failed for '{tool_name}': {str(fallback_error)}"
-                        )
-                        raise RuntimeError(
-                            f"Both primary and fallback tool calls failed for '{tool_name}'"
-                        )
-                raise primary_error
-        except Exception as e:
-            error_msg = f"Error calling tool '{tool_name}' on server '{self.server_name}': {str(e) or 'Unknown error'}"
-            self.logger.error(error_msg)
-            self.logger.error(f"Exception type: {type(e).__name__}")
-            self.logger.error(
-                f"Exception args: {e.args if hasattr(e, 'args') else 'No args'}"
-            )
-            raise RuntimeError(error_msg) from e
+                        try:
+                            return await self._call_tool_with_config(
+                                fallback_config, tool_name, arguments
+                            )
+                        except Exception as fallback_error:
+                            self.logger.error(
+                                f"Fallback tool call also failed for '{tool_name}': {str(fallback_error)}"
+                            )
+                            # Don't raise immediately, allow retry
+                            if attempt < max_retries - 1:
+                                delay = retry_delays[attempt]
+                                self.logger.info(f"Waiting {delay}s before retry...")
+                                await asyncio.sleep(delay)
+                                continue
+                            raise RuntimeError(
+                                f"Both primary and fallback tool calls failed for '{tool_name}'"
+                            )
+                    # Retry on primary error if no fallback
+                    if attempt < max_retries - 1:
+                        delay = retry_delays[attempt]
+                        self.logger.info(f"Waiting {delay}s before retry...")
+                        await asyncio.sleep(delay)
+                        continue
+                    raise primary_error
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    # Retry on any error except the last attempt
+                    delay = retry_delays[attempt]
+                    self.logger.warning(
+                        f"Attempt {attempt + 1} failed, retrying in {delay}s: {str(e)}"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    # Final attempt failed
+                    error_msg = f"Error calling tool '{tool_name}' on server '{self.server_name}' after {max_retries} attempts: {str(e) or 'Unknown error'}"
+                    self.logger.error(error_msg)
+                    self.logger.error(f"Exception type: {type(e).__name__}")
+                    self.logger.error(
+                        f"Exception args: {e.args if hasattr(e, 'args') else 'No args'}"
+                    )
+                    raise RuntimeError(error_msg) from e
     async def _call_tool_with_config(
         self, config: Dict[str, Any], tool_name: str, arguments: Dict[str, Any]
     ) -> Any:
@@ -309,24 +342,29 @@ class MCPServerClient:
                 env={**os.environ, **config.get("env", {})},
             )
             try:
-                async with asyncio.timeout(30.0):
+                # Extended timeouts for document operations (Word, PDF, etc.)
+                # which require more processing time for large content
+                connection_timeout = 90.0  
+                init_timeout = 20.0  
+                execution_timeout = 60.0
+                async with asyncio.timeout(connection_timeout):
                     async with stdio_client(server_params) as (stdio, write):
                         async with ClientSession(stdio, write) as session:
                             try:
-                                async with asyncio.timeout(10.0):
+                                async with asyncio.timeout(init_timeout):
                                     await session.initialize()
                             except asyncio.TimeoutError:
                                 raise RuntimeError(
-                                    f"Timeout initializing session for tool call '{tool_name}'"
+                                    f"Timeout initializing session for tool call '{tool_name}' after {init_timeout}s"
                                 )
                             try:
-                                async with asyncio.timeout(20.0):
+                                async with asyncio.timeout(execution_timeout):
                                     result = await session.call_tool(
                                         tool_name, arguments
                                     )
                             except asyncio.TimeoutError:
                                 raise RuntimeError(
-                                    f"Timeout executing tool '{tool_name}' after 20 seconds"
+                                    f"Timeout executing tool '{tool_name}' after {execution_timeout}s"
                                 )
                             self.logger.info(
                                 f"Tool '{tool_name}' executed successfully"
@@ -334,7 +372,7 @@ class MCPServerClient:
                             return result.content
             except asyncio.TimeoutError:
                 raise RuntimeError(
-                    f"Timeout during tool call '{tool_name}' after 30 seconds"
+                    f"Timeout during tool call '{tool_name}' after {connection_timeout}s"
                 )
             except Exception as conn_error:
                 raise RuntimeError(

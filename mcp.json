@@ -53,6 +53,19 @@
           "@modelcontextprotocol/server-sequential-thinking@latest"
         ]
       }
+    },
+    "office-word-mcp-server": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@jackxzxz/office-word-mcp-server",
+        "--key",
+        "$MCP_API_KEY"
+      ],
+      "enabled": true
     }
   },
   "inputs": []

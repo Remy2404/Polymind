@@ -329,7 +329,46 @@ class GeminiAPI:
         Returns:
             Parameters in Gemini format
         """
-        return mcp_parameters
+        def sanitize_schema(schema: Any) -> Any:
+            """Recursively sanitize JSON schema for Gemini compatibility"""
+            if not isinstance(schema, dict):
+                return schema
+            
+            sanitized = {}
+            for key, value in schema.items():
+                # Skip unsupported fields
+                if key in ['const', 'contentMediaType', 'contentEncoding']:
+                    continue
+                
+                # Handle anyOf - simplify to first valid type or merge properties
+                if key == 'anyOf' and isinstance(value, list):
+                    # Try to extract a simple type from anyOf
+                    for option in value:
+                        if isinstance(option, dict):
+                            # Skip const-only definitions
+                            if 'const' in option and len(option) == 2:  # const + type
+                                continue
+                            # Use first valid option
+                            if 'type' in option:
+                                sanitized['type'] = option['type']
+                                if 'minimum' in option:
+                                    sanitized['minimum'] = option['minimum']
+                                if 'maximum' in option:
+                                    sanitized['maximum'] = option['maximum']
+                                break
+                    continue
+                
+                # Recursively sanitize nested objects
+                if isinstance(value, dict):
+                    sanitized[key] = sanitize_schema(value)
+                elif isinstance(value, list):
+                    sanitized[key] = [sanitize_schema(item) if isinstance(item, dict) else item for item in value]
+                else:
+                    sanitized[key] = value
+            
+            return sanitized
+        
+        return sanitize_schema(mcp_parameters)
     async def _generate_with_tools(
         self,
         prompt: str,
