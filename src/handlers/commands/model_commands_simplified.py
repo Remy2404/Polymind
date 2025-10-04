@@ -102,10 +102,10 @@ class ModelCommands:
     ) -> None:
         """Handle the /listmodels command to show all available models."""
         providers_data = {
-            APIProvider.GEMINI: {"title": "*📱 Gemini Models:*", "models": []},
-            APIProvider.DEEPSEEK: {"title": "*🧠 DeepSeek Models:*", "models": []},
+            APIProvider.GEMINI: {"title": "*Gemini Models:*", "models": []},
+            APIProvider.DEEPSEEK: {"title": "*DeepSeek Models:*", "models": []},
             APIProvider.OPENROUTER: {
-                "title": "*🌐 OpenRouter Models (Free):*",
+                "title": "*OpenRouter Models (Free):*",
                 "models": [],
             },
         }

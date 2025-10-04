@@ -19,88 +19,16 @@ class ModelFallbackHandler:
     def __init__(self, response_formatter):
         self.logger = logging.getLogger(__name__)
         self.response_formatter = response_formatter
+        # Simplified fallback map - uses qwen/qwen3-8b:free as primary fallback
         self.fallback_map = {
-            "deepseek/deepseek-r1:free": [
-                "deepseek/deepseek-r1-0528:free",
-                "deepseek/deepseek-chat-v3.1:free",
-            ],
-            "deepseek/deepseek-r1-0528:free": [
-                "deepseek/deepseek-r1:free",
-                "deepseek/deepseek-chat-v3.1:free",
-            ],
-            "deepseek/deepseek-chat-v3.1:free": [
-                "deepseek/deepseek-r1-distill-llama-70b:free",
-                "deepseek/deepseek-chat-v3-0324:free",
-            ],
-            "deepseek/deepseek-r1-distill-llama-70b:free": [
-                "deepseek/deepseek-chat-v3.1:free",
-                "deepseek/deepseek-r1-distill-qwen-14b:free",
-            ],
-            "deepseek/deepseek-chat-v3-0324:free": [
-                "deepseek/deepseek-chat-v3.1:free",
-                "gemini",
-            ],
-            "deepseek/deepseek-r1-distill-qwen-14b:free": [
-                "deepseek/deepseek-r1-distill-llama-70b:free",
-                "qwen/qwen3-14b:free",
-            ],
-            "openrouter/sonoma-sky-alpha": [
-                "openrouter/sonoma-dusk-alpha",
-                "nvidia/nemotron-nano-9b-v2:free",
-            ],
-            "openrouter/sonoma-dusk-alpha": [
-                "openrouter/sonoma-sky-alpha",
-                "nvidia/nemotron-nano-9b-v2:free",
-            ],
-            "nvidia/nemotron-nano-9b-v2:free": [
-                "z-ai/glm-4.5-air:free",
-                "qwen/qwen3-coder:free",
-            ],
-            "qwen/qwen3-coder:free": [
-                "qwen/qwen3-235b-a22b:free",
-                "moonshotai/kimi-k2:free",
-            ],
-            "qwen/qwen3-235b-a22b:free": [
-                "qwen/qwen3-14b:free",
-                "qwen/qwen3-8b:free",
-            ],
-            "qwen/qwen3-14b:free": [
-                "qwen/qwen3-8b:free",
-                "meta-llama/llama-4-maverick:free",
-            ],
-            "qwen/qwen3-8b:free": [
-                "qwen/qwen3-4b:free",
-                "meta-llama/llama-3.3-8b-instruct:free",
-            ],
-            "meta-llama/llama-4-maverick:free": [
-                "meta-llama/llama-4-scout:free",
-                "meta-llama/llama-3.3-70b-instruct:free",
-            ],
-            "meta-llama/llama-3.3-70b-instruct:free": [
-                "meta-llama/llama-3.3-8b-instruct:free",
-                "gemini",
-            ],
-            "mistralai/mistral-small-3.2-24b-instruct:free": [
-                "mistralai/mistral-small-3.1-24b-instruct:free",
-                "mistralai/devstral-small-2505:free",
-            ],
-            "google/gemini-2.0-flash-exp:free": [
-                "google/gemma-3-27b-it:free",
-                "google/gemma-3-12b-it:free",
-            ],
-            "google/gemma-3-27b-it:free": [
-                "google/gemma-3-12b-it:free",
-                "gemini",
-            ],
             "gemini": [
-                "google/gemini-2.0-flash-exp:free",
-                "deepseek/deepseek-chat-v3.1:free",
+                "qwen/qwen3-8b:free",
             ],
             "deepseek": [
-                "deepseek/deepseek-r1:free",
-                "deepseek/deepseek-chat-v3.1:free",
+                "qwen/qwen3-8b:free",
             ],
         }
+    
     def get_fallback_models(self, primary_model: str) -> List[str]:
         """
         Get fallback models based on the primary model.
@@ -113,9 +41,7 @@ class ModelFallbackHandler:
         return self.fallback_map.get(
             primary_model,
             [
-                "deepseek/deepseek-chat-v3.1:free",
-                "google/gemini-2.0-flash-exp:free",
-                "meta-llama/llama-4-maverick:free",
+                "qwen/qwen3-8b:free",  # Default fallback for any model
             ],
         )
     async def attempt_with_fallback(

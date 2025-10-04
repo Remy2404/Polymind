@@ -684,8 +684,10 @@ class TextHandler:
         is_long_form_request = any(
             indicator in message_text.lower() for indicator in long_form_indicators
         )
-        from src.services.model_handlers.model_configs import ModelConfigurations
+        from src.services.model_handlers.model_configs import ModelConfigurations, Provider
         model_config = ModelConfigurations.get_all_models().get(preferred_model)
+        # Determine max_tokens based on model and request type
+        # Different models have different context length limits
         if (
             model_config
             and hasattr(model_config, "max_tokens")
@@ -693,16 +695,27 @@ class TextHandler:
         ):
             base_max_tokens = model_config.max_tokens
         else:
-            if "deepseek" in preferred_model.lower():
-                base_max_tokens = 4000
-            elif "gemini" in preferred_model.lower():
-                base_max_tokens = 8000
-            else:
-                base_max_tokens = 6000
+            # Fallback to conservative default
+            base_max_tokens = 6000
+        
+        # Adjust max_tokens based on request type and provider limits
+        # DeepSeek has 8193 token limit (input + output combined)
+        is_deepseek = model_config and model_config.provider == Provider.DEEPSEEK
+        
         if is_long_form_request:
-            max_tokens = min(base_max_tokens, 12000)
+            # For DeepSeek, cap at 7500 to stay within 8193 total limit
+            # This leaves ~693 tokens minimum for input context
+            if is_deepseek:
+                max_tokens = min(base_max_tokens, 7500)
+            else:
+                max_tokens = min(base_max_tokens, 12000)
         else:
-            max_tokens = min(base_max_tokens, 8000)
+            # For DeepSeek, cap at 7500 to stay within 8193 total limit
+            # Error: "inputs tokens + max_new_tokens must be <= 8193"
+            if is_deepseek:
+                max_tokens = min(base_max_tokens, 7500)
+            else:
+                max_tokens = min(base_max_tokens, 8000)
         base_timeout = 60.0
         model_timeout = base_timeout
         complex_indicators = [
@@ -727,12 +740,12 @@ class TextHandler:
             indicator in message_text.lower() for indicator in complex_indicators
         )
         if is_complex_question:
-            if "deepseek" in preferred_model.lower():
+            if is_deepseek:
                 model_timeout = 300.0
             else:
                 model_timeout = 120.0
         elif is_long_form_request:
-            if "deepseek" in preferred_model.lower():
+            if is_deepseek:
                 model_timeout = 240.0
             else:
                 model_timeout = 90.0
@@ -762,8 +775,7 @@ class TextHandler:
                     self.logger.info(f"Using MCP-enhanced response for user {user_id}")
                     response = mcp_response
                     actual_model_used = preferred_model
-                    
-                    # Check for recently created documents from MCP tools (e.g., office-word-mcp-server)
+    
                     await self._handle_mcp_document_output(
                         context=context,
                         user_id=user_id,
@@ -868,7 +880,7 @@ class TextHandler:
         except asyncio.TimeoutError:
             if thinking_message is not None:
                 await thinking_message.delete()
-            if "deepseek" in preferred_model.lower():
+            if is_deepseek:
                 if is_complex_question:
                     timeout_message = "⏱️ DeepSeek R1 is thoroughly analyzing your complex question but needs more time. This usually means a very detailed response is being prepared. Please try again or break the question into smaller parts."
                 else:
@@ -1103,5 +1115,4 @@ class TextHandler:
                 
         except Exception as e:
             self.logger.error(f"Error handling MCP document output: {str(e)}")
-            # Don't raise the exception - document sending is supplementary functionality
 

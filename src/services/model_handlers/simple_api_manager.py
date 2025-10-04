@@ -3,7 +3,7 @@
 This single file replaces:
 - factory.py
 - gemini_handler.py
-- deepseek_handler.py
+-             "reasoning": {"name": "Reasoning Models", "emoji": "🤔", "models": {}},eepseek_handler.py
 - model_configs.py
 - unified_handler.py
 Benefits:
@@ -39,17 +39,17 @@ class ModelConfig:
     max_tokens: int = 32000
     type: str = "general_purpose"
 PROVIDER_GROUPS = {
-    "🤖 Gemini Models": {
+    "Gemini Models": {
         "provider": APIProvider.GEMINI,
         "description": "Google's Gemini AI models",
         "models": [],
     },
-    "🧠 DeepSeek Models": {
+    "DeepSeek Models": {
         "provider": APIProvider.DEEPSEEK,
         "description": "DeepSeek reasoning models",
         "models": [],
     },
-    "🔄 OpenRouter Models": {
+    "OpenRouter Models": {
         "provider": APIProvider.OPENROUTER,
         "description": "Multiple AI models via OpenRouter",
         "models": [],
@@ -105,20 +105,20 @@ class SuperSimpleAPIManager:
     def get_models_by_category(self) -> Dict[str, Dict[str, Any]]:
         """Get models organized by category/provider for hierarchical selection"""
         categories = {
-            "gemini": {"name": "🧠 Gemini Models", "emoji": "🧠", "models": {}},
-            "deepseek": {"name": "🔮 DeepSeek Models", "emoji": "🔮", "models": {}},
-            "meta_llama": {"name": "🦙 Meta Llama Models", "emoji": "🦙", "models": {}},
-            "qwen": {"name": "🌟 Qwen Models", "emoji": "🌟", "models": {}},
-            "microsoft": {"name": "🔬 Microsoft Models", "emoji": "🔬", "models": {}},
-            "mistral": {"name": "🌊 Mistral Models", "emoji": "🌊", "models": {}},
+            "gemini": {"name": "Gemini Models", "emoji": "✨", "models": {}},
+            "deepseek": {"name": "DeepSeek Models", "emoji": "🧠", "models": {}},
+            "meta_llama": {"name": "Meta Llama Models", "emoji": "🦙", "models": {}},
+            "qwen": {"name": "Qwen Models", "emoji": "🌟", "models": {}},
+            "microsoft": {"name": "Microsoft Models", "emoji": "🔬", "models": {}},
+            "mistral": {"name": "Mistral Models", "emoji": "🌊", "models": {}},
             "gemma": {"name": "💎 Google Gemma", "emoji": "💎", "models": {}},
-            "nvidia": {"name": "⚡ NVIDIA Models", "emoji": "⚡", "models": {}},
-            "thudm": {"name": "🔥 THUDM Models", "emoji": "🔥", "models": {}},
-            "coding": {"name": "💻 Coding Specialists", "emoji": "💻", "models": {}},
-            "vision": {"name": "👁️ Vision Models", "emoji": "👁️", "models": {}},
-            "reasoning": {"name": "🧠 Reasoning Models", "emoji": "🧠", "models": {}},
+            "nvidia": {"name": "NVIDIA Models", "emoji": "⚡", "models": {}},
+            "thudm": {"name": "THUDM Models", "emoji": "🔥", "models": {}},
+            "coding": {"name": "Coding Specialists", "emoji": "💻", "models": {}},
+            "vision": {"name": "Vision Models", "emoji": "👁️", "models": {}},
+            "reasoning": {"name": "� Reasoning Models", "emoji": "�", "models": {}},
             "creative": {
-                "name": "🎭 Creative & Specialized",
+                "name": "Creative & Specialized",
                 "emoji": "🎭",
                 "models": {},
             },

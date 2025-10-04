@@ -2,11 +2,6 @@
 
 A powerful, multi-modal Telegram bot leveraging cutting-edge AI technologies including Gemini, DeepSeek, OpenRouter, and 50+ AI models for comprehensive conversational assistance, media processing, and collaborative features with MCP (Model Context Protocol) integration.
 
-<div align="center">
-  <img src="assets/templates/Project_report_group5.png" alt="Telegram Gemini Bot Project Report" width="400" />
-  <img src="assets/templates/mermiad.png" alt="Mermaid Diagram Example" width="400" />
-</div>
-
 ## 📑 Table of Contents
 - [🤖 Telegram Gemini Bot](#-telegram-gemini-bot)
   - [📑 Table of Contents](#-table-of-contents)

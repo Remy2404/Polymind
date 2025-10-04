@@ -330,31 +330,37 @@ class GeminiAPI:
             Parameters in Gemini format
         """
         def sanitize_schema(schema: Any) -> Any:
-            """Recursively sanitize JSON schema for Gemini compatibility"""
+    
             if not isinstance(schema, dict):
                 return schema
             
             sanitized = {}
             for key, value in schema.items():
-                # Skip unsupported fields
+                # Skip unsupported fields - Gemini doesn't understand these
                 if key in ['const', 'contentMediaType', 'contentEncoding']:
                     continue
                 
-                # Handle anyOf - simplify to first valid type or merge properties
+                # Handle anyOf - Gemini requires a single type, not unions
+                # We select the first option that doesn't use 'const'
                 if key == 'anyOf' and isinstance(value, list):
                     # Try to extract a simple type from anyOf
                     for option in value:
                         if isinstance(option, dict):
-                            # Skip const-only definitions
-                            if 'const' in option and len(option) == 2:  # const + type
+                            # Skip const-only definitions (Gemini doesn't support const)
+                            # Example: {"const": "dynamic", "type": "string"}
+                            if 'const' in option:
+                                # Skip this option entirely - const not supported
                                 continue
-                            # Use first valid option
+                            # Use first valid option without const
                             if 'type' in option:
                                 sanitized['type'] = option['type']
+                                # Preserve constraints from the selected option
                                 if 'minimum' in option:
                                     sanitized['minimum'] = option['minimum']
                                 if 'maximum' in option:
                                     sanitized['maximum'] = option['maximum']
+                                if 'description' in option:
+                                    sanitized['description'] = option['description']
                                 break
                     continue
                 
@@ -1078,8 +1084,21 @@ Focus on providing the most helpful and accurate response possible using the ava
         document_context: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 32768,
+        model: Optional[str] = None,  # Added for compatibility with fallback handler
     ) -> Optional[str]:
-        """Legacy method for backward compatibility with temperature and max_tokens support"""
+        """Legacy method for backward compatibility with temperature and max_tokens support
+        
+        Args:
+            prompt: The user prompt
+            context: Conversation context
+            image_context: Optional image context
+            document_context: Optional document context
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            model: Model name (optional, ignored - uses self.model_name instead)
+        """
+        # Note: model parameter is accepted but ignored for compatibility
+        # GeminiAPI uses self.model_name set during initialization
         config = types.GenerateContentConfig(
             temperature=temperature,
             top_p=self.generation_config.top_p,
