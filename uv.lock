@@ -3051,6 +3051,7 @@ dependencies = [
     { name = "scipy" },
     { name = "soundfile" },
     { name = "spire-doc" },
+    { name = "telegram-init-data", extra = ["fastapi"] },
     { name = "telegramify-markdown" },
     { name = "tenacity" },
     { name = "tifffile" },
@@ -3118,6 +3119,7 @@ requires-dist = [
     { name = "scipy", specifier = "==1.15.2" },
     { name = "soundfile", specifier = ">=0.12.1" },
     { name = "spire-doc", specifier = ">=13.4.6" },
+    { name = "telegram-init-data", extras = ["fastapi"], specifier = ">=1.0.0" },
     { name = "telegramify-markdown", extras = ["mermaid"], specifier = "==0.1.17" },
     { name = "tenacity", specifier = "==9.0.0" },
     { name = "tifffile", specifier = "==2025.2.18" },
@@ -3126,6 +3128,20 @@ requires-dist = [
     { name = "tqdm", specifier = "==4.67.1" },
     { name = "uvicorn", specifier = "==0.24.0.post1" },
     { name = "weasyprint", specifier = "==65.1" },
+]
+
+[[package]]
+name = "telegram-init-data"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/47/b56c72cb3b3188e15cf17c1201c38437a0c8869d8381af7a152cf5735d99/telegram_init_data-1.0.1.tar.gz", hash = "sha256:f54aa6e881b9744e4feadc3c191c3a5d896058db9ad184e89cb91e2c9e2e6757", size = 19305 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/24/23/de17c1243d85d346fed7774895e0926e01a50bafa76f952102cafff44fdc/telegram_init_data-1.0.1-py3-none-any.whl", hash = "sha256:c530edd74973881ba18c8ac48b2f3c7db41bac6cc073c2828e696a47e3a7ce05", size = 18606 },
+]
+
+[package.optional-dependencies]
+fastapi = [
+    { name = "fastapi" },
 ]
 
 [[package]]

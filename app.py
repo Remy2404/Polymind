@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from src.api.app_factory import create_application
 import uvicorn
 
-# Aggressive garbage collection for memory optimization
+
 import gc
 
 gc.set_threshold(50, 5, 5)
@@ -31,4 +31,4 @@ thread_pool = ThreadPoolExecutor(max_workers=1)
 app = create_application()
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=8000)
