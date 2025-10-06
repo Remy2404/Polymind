@@ -112,7 +112,7 @@ class PollCommands:
                 temperature=0.7,
                 max_tokens=1000,
             )
-            
+
             # Clean the response - remove any markdown formatting or extra text
             response = response.strip()
             if response.startswith('```json'):
@@ -122,10 +122,10 @@ class PollCommands:
             if response.endswith('```'):
                 response = response[:-3]
             response = response.strip()
-            
+
             import json
             poll_data = json.loads(response)
-            
+
             if (
                 not isinstance(poll_data, dict)
                 or "question" not in poll_data
@@ -133,7 +133,7 @@ class PollCommands:
             ):
                 logger.warning(f"Invalid poll data structure from AI: {poll_data}")
                 return None
-            
+
             if (
                 not isinstance(poll_data["options"], list)
                 or len(poll_data["options"]) < 2
@@ -141,22 +141,22 @@ class PollCommands:
             ):
                 logger.warning(f"Invalid options in poll data: {poll_data}")
                 return None
-            
+
             # Validate that question and options are strings
             if not isinstance(poll_data["question"], str) or not poll_data["question"].strip():
                 logger.warning(f"Invalid question in poll data: {poll_data}")
                 return None
-                
+
             poll_data["options"] = [str(opt).strip() for opt in poll_data["options"] if str(opt).strip()]
             if len(poll_data["options"]) < 2:
                 logger.warning(f"Not enough valid options after cleanup: {poll_data}")
                 return None
-            
+
             return poll_data
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse AI response as JSON: {e}")
             logger.error(f"AI response was: {response}")
-            
+
             # Try to extract JSON from the response if it contains extra text
             import re
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
@@ -174,7 +174,7 @@ class PollCommands:
                         return poll_data
                 except json.JSONDecodeError:
                     pass
-            
+
             # Fallback: Create a simple poll based on the prompt
             logger.info("Using fallback poll generation")
             return self._create_fallback_poll(prompt)
@@ -243,7 +243,7 @@ class PollCommands:
             "`/createpoll <your poll description>`\n\n"
             "💡 *Examples:*\n"
             "• `/createpoll What new feature should we add next?`\n"
-            "• `/createpoll Which programming language do you prefer?`\n"
+            "• `/createpoll Ask users their favorite programming language: Python, JavaScript, Java, or C++`\n"
             "• `/createpoll Should we implement dark mode?`\n"
             "• `/createpoll What's your favorite way to learn coding?`\n\n"
             "🎯 *Features:*\n"
@@ -263,16 +263,16 @@ class PollCommands:
             question = question[:97] + "..."
         if not question.endswith("?"):
             question += "?"
-        
+
         # Create simple yes/no options
         options = ["Yes", "No"]
-        
+
         # Try to make it more relevant based on the prompt
         if any(word in prompt.lower() for word in ["what", "which", "choose", "prefer"]):
             options = ["Option A", "Option B", "Option C"]
         elif any(word in prompt.lower() for word in ["rate", "how", "scale"]):
             options = ["1", "2", "3", "4", "5"]
-        
+
         return {
             "question": question,
             "options": options
