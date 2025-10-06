@@ -71,11 +71,11 @@ COPY --from=builder /usr/include/node /usr/include/node
 # Install .NET runtime for Spire.Doc support
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    curl -fsSL https://packages.microsoft.com/config/debian/11/packages-microsoft-prod.deb -o packages-microsoft-prod.deb && \
+    curl -fsSL https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb -o packages-microsoft-prod.deb && \
     dpkg -i packages-microsoft-prod.deb && \
     rm packages-microsoft-prod.deb && \
     apt-get update && \
-    apt-get install -y --no-install-recommends libicu && \
+    apt-get install -y --no-install-recommends libicu72 && \
     apt-get install -y --no-install-recommends dotnet-runtime-8.0 fonts-liberation fonts-dejavu fonts-dejavu-core fonts-dejavu-extra && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
