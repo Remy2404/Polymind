@@ -85,10 +85,6 @@ COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
 COPY --from=builder /usr/local/bin/uvx /usr/local/bin/uvx
 COPY --from=builder /app/.venv /app/.venv
 
-# Create non-root user for security
-RUN groupadd -r appuser && useradd --no-log-init -r -g appuser appuser && \
-    chown -R appuser:appuser /app
-
 ENV PATH="/app/.venv/bin:/usr/local/bin:$PATH" \
     PORT=8000 \
     INSIDE_DOCKER="true" \
@@ -96,7 +92,11 @@ ENV PATH="/app/.venv/bin:/usr/local/bin:$PATH" \
     DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
     DOTNET_NOLOGO=1 
 
-COPY --chown=appuser:appuser . .
+COPY . .
+
+# Create non-root user for security and fix permissions
+RUN groupadd -r appuser && useradd --no-log-init -r -g appuser appuser && \
+    chown -R appuser:appuser /app
 
 USER appuser
 
