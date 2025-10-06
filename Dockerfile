@@ -1,3 +1,6 @@
+# syntax=docker/dockerfile:1.4
+
+# Base stage: minimal image for runtime
 FROM python:3.11-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -44,21 +47,11 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ffmpeg curl ca-certificates libnss3 libatk-bridge2.0-0 libxcomposite1 libxdamage1 \
       libxrandr2 libxss1 libasound2 libxkbcommon0 libdrm2 libgbm1 \
-      libatk1.0-0 libcups2 libnspr4 chromium && \
+      libatk1.0-0 libcups2 libnspr4 fonts-dejavu-core fonts-liberation chromium && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     npm install -g @mermaid-js/mermaid-cli puppeteer @smithery/cli @upstash/context7-mcp @modelcontextprotocol/server-sequential-thinking && \
     npm cache clean --force && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-# Install .NET runtime for Spire.Doc support
-RUN curl -fsSL https://packages.microsoft.com/config/debian/11/packages-microsoft-prod.deb -o packages-microsoft-prod.deb && \
-    dpkg -i packages-microsoft-prod.deb && \
-    rm packages-microsoft-prod.deb && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends libicu && \
-    apt-get install -y --no-install-recommends dotnet-runtime-8.0 fonts-liberation fonts-dejavu fonts-dejavu-core fonts-dejavu-extra && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -69,10 +62,7 @@ COPY --from=builder /app/.venv /app/.venv
 
 ENV PATH="/app/.venv/bin:/usr/local/bin:$PATH" \
     PORT=8000 \
-    INSIDE_DOCKER="true" \
-    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
-    DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
-    DOTNET_NOLOGO=1 
+    INSIDE_DOCKER="true" 
 
 COPY . .
 
