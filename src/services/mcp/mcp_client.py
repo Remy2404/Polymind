@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import asyncio
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable
 from pathlib import Path
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -68,34 +68,84 @@ def validate_mcp_environment() -> bool:
     logging.info("All required MCP environment variables are present")
     return True
 class MCPToolConverter:
-    """Converts MCP tool definitions to OpenAI-compatible format."""
+    """Converts MCP tool definitions to OpenAI-compatible format with structured schemas."""
+    
     @staticmethod
     def convert_mcp_tool_to_openai(mcp_tool: MCPTool) -> Dict[str, Any]:
         """
-        Convert an MCP tool definition to OpenAI tool format.
+        Convert an MCP tool definition to OpenAI tool format with enhanced schemas.
         Args:
             mcp_tool: MCP tool definition
         Returns:
-            OpenAI-compatible tool definition
+            OpenAI-compatible tool definition with structured schemas
         """
         openai_tool = {
             "type": "function",
             "function": {
                 "name": mcp_tool.name,
-                "description": mcp_tool.description,
-                "parameters": {"type": "object", "properties": {}, "required": []},
+                "description": mcp_tool.description or f"Execute {mcp_tool.name} tool",
+                "parameters": MCPToolConverter._convert_input_schema(mcp_tool.inputSchema),
             },
         }
-        if hasattr(mcp_tool, "inputSchema") and mcp_tool.inputSchema:
-            if "properties" in mcp_tool.inputSchema:
-                openai_tool["function"]["parameters"]["properties"] = (
-                    mcp_tool.inputSchema["properties"]
-                )
-            if "required" in mcp_tool.inputSchema:
-                openai_tool["function"]["parameters"]["required"] = (
-                    mcp_tool.inputSchema["required"]
-                )
+        
+        # Add output schema if available for better validation
+        if hasattr(mcp_tool, "outputSchema") and mcp_tool.outputSchema:
+            openai_tool["function"]["output_schema"] = MCPToolConverter._convert_output_schema(mcp_tool.outputSchema)
+        
+        # Add additional metadata for robustness
+        openai_tool["function"]["strict"] = True  # Enable strict mode for better validation
+        
         return openai_tool
+    
+    @staticmethod
+    def _convert_input_schema(input_schema: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Convert MCP input schema to OpenAI format with validation.
+        """
+        if not input_schema:
+            return {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        
+        # Ensure required fields
+        schema = {
+            "type": input_schema.get("type", "object"),
+            "properties": input_schema.get("properties", {}),
+            "required": input_schema.get("required", [])
+        }
+        
+        return schema
+    
+    @staticmethod
+    def _convert_output_schema(output_schema: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Convert MCP output schema to structured format.
+        """
+        if not output_schema:
+            return {
+                "type": "object",
+                "properties": {
+                    "result": {"type": "string", "description": "Tool execution result"},
+                    "success": {"type": "boolean", "description": "Whether the operation succeeded"}
+                }
+            }
+        
+        # Ensure the output schema is well-structured
+        schema = dict(output_schema)
+        
+        # Add standard fields for consistency
+        if schema.get("type") == "object" and "properties" in schema:
+            properties = schema["properties"]
+            # Ensure success indicator
+            if "success" not in properties:
+                properties["success"] = {"type": "boolean", "description": "Operation success status"}
+            # Ensure error field for failed operations
+            if "error" not in properties:
+                properties["error"] = {"type": "string", "description": "Error message if operation failed"}
+        
+        return schema
     @staticmethod
     def convert_mcp_tools_to_openai(mcp_tools: List[MCPTool]) -> List[Dict[str, Any]]:
         """
@@ -107,10 +157,11 @@ class MCPToolConverter:
         """
         return [MCPToolConverter.convert_mcp_tool_to_openai(tool) for tool in mcp_tools]
 class MCPServerClient:
-    """Client for connecting to and managing MCP servers."""
+    """Client for connecting to and managing MCP servers with enhanced capabilities."""
+    
     def __init__(self, server_config: Dict[str, Any], server_name: str = "unknown"):
         """
-        Initialize MCP server client.
+        Initialize MCP server client with enhanced capabilities.
         Args:
             server_config: MCP server configuration from mcp.json
             server_name: Name of the MCP server
@@ -125,6 +176,96 @@ class MCPServerClient:
         self.openai_tools: List[Dict[str, Any]] = []
         self._connection_task = None
         self._cleanup_done = False
+        
+        # Enhanced capabilities
+        self._progress_callbacks: List[Callable[[str, float, str], None]] = []
+        self._context_providers: List[Callable[[], Dict[str, Any]]] = []
+        
+        # Circuit breaker for reliability
+        self._circuit_breaker_failures = 0
+        self._circuit_breaker_last_failure = 0
+        self._circuit_breaker_timeout = 60.0  # 1 minute circuit breaker
+        self._max_consecutive_failures = 5
+        
+        # Adaptive timeouts based on operation type
+        self._timeout_multipliers = {
+            "search": 2.0,  # Search operations take longer
+            "fetch": 1.5,   # Network fetch operations
+            "process": 3.0, # Document processing
+            "analyze": 2.0, # Analysis operations
+            "default": 1.0
+        }
+        
+    def add_progress_callback(self, callback: Callable[[str, float, str], None]):
+        """
+        Add a progress callback function.
+        Args:
+            callback: Function called with (operation, progress, message)
+        """
+        self._progress_callbacks.append(callback)
+    
+    def add_context_provider(self, provider: Callable[[], Dict[str, Any]]):
+        """
+        Add a context provider function.
+        Args:
+            provider: Function that returns context dictionary
+        """
+        self._context_providers.append(provider)
+    
+    def _report_progress(self, operation: str, progress: float, message: str = ""):
+        """Report progress to all registered callbacks."""
+        for callback in self._progress_callbacks:
+            try:
+                callback(operation, progress, message)
+            except Exception as e:
+                self.logger.warning(f"Progress callback failed: {e}")
+    
+    def _get_context(self) -> Dict[str, Any]:
+        """Get combined context from all providers."""
+        context = {}
+        for provider in self._context_providers:
+            try:
+                provider_context = provider()
+                context.update(provider_context)
+            except Exception as e:
+                self.logger.warning(f"Context provider failed: {e}")
+        return context
+    
+    def _is_circuit_breaker_open(self) -> bool:
+        """Check if circuit breaker is open (failing)."""
+        if self._circuit_breaker_failures >= self._max_consecutive_failures:
+            current_time = asyncio.get_event_loop().time()
+            if current_time - self._circuit_breaker_last_failure < self._circuit_breaker_timeout:
+                return True
+            else:
+                # Reset circuit breaker after timeout
+                self._circuit_breaker_failures = 0
+                self.logger.info(f"Circuit breaker reset for server {self.server_name}")
+        return False
+    
+    def _record_failure(self):
+        """Record a failure for circuit breaker."""
+        self._circuit_breaker_failures += 1
+        self._circuit_breaker_last_failure = asyncio.get_event_loop().time()
+    
+    def _record_success(self):
+        """Record a success to reset circuit breaker."""
+        self._circuit_breaker_failures = 0
+    
+    def _get_adaptive_timeout(self, tool_name: str) -> float:
+        """Get adaptive timeout based on tool type."""
+        base_timeout = 60.0 if os.getenv("INSIDE_DOCKER") else 30.0
+        
+        # Determine operation type from tool name
+        tool_lower = tool_name.lower()
+        multiplier = self._timeout_multipliers["default"]
+        
+        for op_type, mult in self._timeout_multipliers.items():
+            if op_type in tool_lower:
+                multiplier = mult
+                break
+        
+        return base_timeout * multiplier
     async def connect(self) -> bool:
         """
         Connect to the MCP server and retrieve available tools.
@@ -183,15 +324,16 @@ class MCPServerClient:
                 env={**os.environ, **config.get("env", {})},
             )
             try:
-                conn_timeout = 60.0 if os.getenv("INSIDE_DOCKER") else 30.0
+                conn_timeout = 120.0 if os.getenv("INSIDE_DOCKER") else 60.0
                 async with asyncio.timeout(conn_timeout):
                     async with stdio_client(server_params) as (stdio, write):
                         self.stdio, self.write = stdio, write
                         async with ClientSession(self.stdio, self.write) as session:
                             self.session = session
                             try:
+                                # Extended initialization timeout for heavy servers like office-word-mcp-server
                                 init_timeout = (
-                                    30.0 if os.getenv("INSIDE_DOCKER") else 15.0
+                                    90.0 if os.getenv("INSIDE_DOCKER") else 45.0
                                 )
                                 async with asyncio.timeout(init_timeout):
                                     await session.initialize()
@@ -202,7 +344,7 @@ class MCPServerClient:
                                 return False
                             try:
                                 list_timeout = (
-                                    20.0 if os.getenv("INSIDE_DOCKER") else 10.0
+                                    60.0 if os.getenv("INSIDE_DOCKER") else 30.0
                                 )
                                 async with asyncio.timeout(list_timeout):
                                     response = await session.list_tools()
@@ -246,8 +388,9 @@ class MCPServerClient:
             return False
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
-        Call a tool on the MCP server using reconnection for each call.
+        Call a tool on the MCP server with enhanced capabilities.
         Implements retry mechanism with exponential backoff for reliability.
+        Supports progress reporting and context injection for long-running operations.
         
         Args:
             tool_name: Name of the tool to call
@@ -258,73 +401,104 @@ class MCPServerClient:
         max_retries = 3
         retry_delays = [1.0, 2.0, 4.0]  # Exponential backoff
         
+        # Inject context if providers are available
+        enhanced_args = dict(arguments)
+        context = self._get_context()
+        if context:
+            enhanced_args["_context"] = context
+        
         for attempt in range(max_retries):
             try:
                 if attempt > 0:
                     self.logger.info(
                         f"Retry attempt {attempt + 1}/{max_retries} for tool '{tool_name}'"
                     )
+                    self._report_progress(
+                        f"retry_{tool_name}", 
+                        attempt / max_retries, 
+                        f"Retrying tool execution (attempt {attempt + 1})"
+                    )
                 
-                self.logger.info(
-                    f"Calling tool '{tool_name}' on server '{self.server_name}' with arguments: {arguments}"
+                # Check circuit breaker
+                if self._is_circuit_breaker_open():
+                    raise RuntimeError(
+                        f"Circuit breaker is open for server '{self.server_name}' due to consecutive failures"
+                    )
+                
+                # Get adaptive timeout for this tool
+                adaptive_timeout = self._get_adaptive_timeout(tool_name)
+                        
+                # Report initial progress
+                self._report_progress(tool_name, 0.0, f"Starting {tool_name} execution")
+                        
+                result = await self._call_tool_with_config(
+                    self.server_config, tool_name, enhanced_args, adaptive_timeout
                 )
-                try:
-                    return await self._call_tool_with_config(
-                        self.server_config, tool_name, arguments
+                        
+                # Record success for circuit breaker
+                self._record_success()
+                        
+                # Report completion
+                self._report_progress(tool_name, 1.0, f"Completed {tool_name} execution")
+                        
+                return result
+                        
+            except Exception as primary_error:
+                self.logger.warning(
+                    f"Primary tool call failed for '{tool_name}': {str(primary_error)}"
+                )
+                        
+                # Report error progress
+                self._report_progress(
+                    tool_name, 
+                    -1.0, 
+                    f"Primary execution failed: {str(primary_error)}"
+                )
+                        
+                fallback_config = self.server_config.get("fallback")
+                if fallback_config:
+                    self.logger.info(
+                        f"Trying fallback configuration for tool '{tool_name}'"
                     )
-                except Exception as primary_error:
-                    self.logger.warning(
-                        f"Primary tool call failed for '{tool_name}': {str(primary_error)}"
+                    self._report_progress(
+                        tool_name, 
+                        0.5, 
+                        "Trying fallback configuration"
                     )
-                    fallback_config = self.server_config.get("fallback")
-                    if fallback_config:
-                        self.logger.info(
-                            f"Trying fallback configuration for tool '{tool_name}'"
+                    try:
+                        result = await self._call_tool_with_config(
+                            fallback_config, tool_name, enhanced_args
                         )
-                        try:
-                            return await self._call_tool_with_config(
-                                fallback_config, tool_name, arguments
-                            )
-                        except Exception as fallback_error:
-                            self.logger.error(
-                                f"Fallback tool call also failed for '{tool_name}': {str(fallback_error)}"
-                            )
-                            # Don't raise immediately, allow retry
-                            if attempt < max_retries - 1:
-                                delay = retry_delays[attempt]
-                                self.logger.info(f"Waiting {delay}s before retry...")
-                                await asyncio.sleep(delay)
-                                continue
-                            raise RuntimeError(
-                                f"Both primary and fallback tool calls failed for '{tool_name}'"
-                            )
-                    # Retry on primary error if no fallback
-                    if attempt < max_retries - 1:
-                        delay = retry_delays[attempt]
-                        self.logger.info(f"Waiting {delay}s before retry...")
-                        await asyncio.sleep(delay)
-                        continue
-                    raise primary_error
-            except Exception as e:
+                        self._report_progress(
+                            tool_name, 
+                            1.0, 
+                            "Fallback execution successful"
+                        )
+                        return result
+                    except Exception as fallback_error:
+                        self.logger.error(
+                            f"Fallback tool call also failed for '{tool_name}': {str(fallback_error)}"
+                        )
+                        # Continue to retry logic below
+                        
+                # Retry logic for both primary and fallback failures
                 if attempt < max_retries - 1:
-                    # Retry on any error except the last attempt
                     delay = retry_delays[attempt]
-                    self.logger.warning(
-                        f"Attempt {attempt + 1} failed, retrying in {delay}s: {str(e)}"
-                    )
+                    self.logger.info(f"Waiting {delay}s before retry...")
                     await asyncio.sleep(delay)
                     continue
-                else:
-                    # Final attempt failed
-                    error_msg = f"Error calling tool '{tool_name}' on server '{self.server_name}' after {max_retries} attempts: {str(e) or 'Unknown error'}"
-                    self.logger.error(error_msg)
-                    self.logger.error(f"Exception type: {type(e).__name__}")
-                    self.logger.error(
-                        f"Exception args: {e.args if hasattr(e, 'args') else 'No args'}"
-                    )
-                    raise RuntimeError(error_msg) from e
+                        
+                # Final failure - record and raise
+                error_msg = f"Tool '{tool_name}' failed after {max_retries} attempts"
+                if fallback_config:
+                    error_msg += " (including fallback)"
+                error_msg += f": {str(primary_error)}"
+                        
+                self.logger.error(error_msg)
+                self._record_failure()
+                raise RuntimeError(error_msg) from primary_error
     async def _call_tool_with_config(
-        self, config: Dict[str, Any], tool_name: str, arguments: Dict[str, Any]
+        self, config: Dict[str, Any], tool_name: str, arguments: Dict[str, Any], timeout: Optional[float] = None
     ) -> Any:
         """
         Call a tool using a specific configuration.
@@ -344,9 +518,9 @@ class MCPServerClient:
             try:
                 # Extended timeouts for document operations (Word, PDF, etc.)
                 # which require more processing time for large content
-                connection_timeout = 90.0  
-                init_timeout = 20.0  
-                execution_timeout = 60.0
+                connection_timeout = 180.0  
+                init_timeout = 60.0  
+                execution_timeout = timeout or 120.0
                 async with asyncio.timeout(connection_timeout):
                     async with stdio_client(server_params) as (stdio, write):
                         async with ClientSession(stdio, write) as session:
@@ -542,22 +716,183 @@ class MCPManager:
             List of OpenAI-compatible tool definitions
         """
         return self.all_openai_tools.copy()
-    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute a tool by name.
+        Execute a tool by name with robust error handling and fallback mechanisms.
         Args:
             tool_name: Name of the tool to execute
             arguments: Arguments to pass to the tool
         Returns:
-            Tool execution result
+            Structured response with consistent format for success and error cases
+        """
+        start_time = asyncio.get_event_loop().time()
+        
+        try:
+            if tool_name not in self.tool_to_server_map:
+                return self._create_error_response(
+                    tool_name, 
+                    "TOOL_NOT_FOUND", 
+                    f"Tool '{tool_name}' not found in any connected MCP server",
+                    arguments
+                )
+            
+            server_name = self.tool_to_server_map[tool_name]
+            server = self.servers[server_name]
+            
+            # Execute the tool with timeout and error handling
+            result = await server.call_tool(tool_name, arguments)
+            
+            execution_time = asyncio.get_event_loop().time() - start_time
+            
+            # Return structured success response
+            return {
+                "success": True,
+                "tool_name": tool_name,
+                "server": server_name,
+                "result": result,
+                "execution_time": round(execution_time, 3),
+                "status": "completed"
+            }
+            
+        except asyncio.TimeoutError:
+            execution_time = asyncio.get_event_loop().time() - start_time
+            return self._create_error_response(
+                tool_name,
+                "TIMEOUT",
+                f"Tool execution timed out after {execution_time:.1f}s",
+                arguments,
+                execution_time
+            )
+            
+        except Exception as e:
+            execution_time = asyncio.get_event_loop().time() - start_time
+            error_type = self._classify_error(e)
+            
+            # Try fallback if available and this is a recoverable error
+            if error_type in ["CONNECTION_ERROR", "SERVER_ERROR", "TIMEOUT"] and self._has_fallback_available(tool_name):
+                try:
+                    self.logger.info(f"Attempting fallback execution for tool '{tool_name}'")
+                    fallback_result = await self._execute_tool_with_fallback(tool_name, arguments)
+                    if fallback_result:
+                        fallback_result["used_fallback"] = True
+                        return fallback_result
+                except Exception as fallback_error:
+                    self.logger.warning(f"Fallback execution also failed for '{tool_name}': {str(fallback_error)}")
+            
+            return self._create_error_response(
+                tool_name,
+                error_type,
+                str(e),
+                arguments,
+                execution_time
+            )
+    
+    def _create_error_response(
+        self, 
+        tool_name: str, 
+        error_type: str, 
+        error_message: str, 
+        arguments: Dict[str, Any],
+        execution_time: float = 0.0
+    ) -> Dict[str, Any]:
+        """
+        Create a consistent error response structure.
+        """
+        return {
+            "success": False,
+            "tool_name": tool_name,
+            "error_type": error_type,
+            "error_message": error_message,
+            "arguments": arguments,
+            "execution_time": round(execution_time, 3),
+            "status": "failed",
+            "timestamp": asyncio.get_event_loop().time()
+        }
+    
+    def _classify_error(self, error: Exception) -> str:
+        """
+        Classify the type of error for better handling.
+        """
+        error_str = str(error).lower()
+        
+        if "timeout" in error_str or "timed out" in error_str:
+            return "TIMEOUT"
+        elif "connection" in error_str or "connect" in error_str:
+            return "CONNECTION_ERROR"
+        elif "not found" in error_str or "404" in error_str:
+            return "NOT_FOUND"
+        elif "unauthorized" in error_str or "403" in error_str or "401" in error_str:
+            return "AUTHENTICATION_ERROR"
+        elif "rate limit" in error_str or "429" in error_str:
+            return "RATE_LIMIT_ERROR"
+        elif "server" in error_str or "500" in error_str:
+            return "SERVER_ERROR"
+        elif "validation" in error_str or "invalid" in error_str:
+            return "VALIDATION_ERROR"
+        else:
+            return "UNKNOWN_ERROR"
+    
+    def _has_fallback_available(self, tool_name: str) -> bool:
+        """
+        Check if a fallback is available for the given tool.
         """
         if tool_name not in self.tool_to_server_map:
-            raise ValueError(
-                f"Tool '{tool_name}' not found in any connected MCP server"
-            )
+            return False
+        
         server_name = self.tool_to_server_map[tool_name]
-        server = self.servers[server_name]
-        return await server.call_tool(tool_name, arguments)
+        server = self.servers.get(server_name)
+        if not server:
+            return False
+        
+        # Check if server config has fallback
+        return hasattr(server, 'server_config') and 'fallback' in server.server_config
+    
+    async def _execute_tool_with_fallback(self, tool_name: str, arguments: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Execute a tool using fallback configuration.
+        """
+        if tool_name not in self.tool_to_server_map:
+            return None
+        
+        server_name = self.tool_to_server_map[tool_name]
+        server = self.servers.get(server_name)
+        if not server or not hasattr(server, 'server_config'):
+            return None
+        
+        fallback_config = server.server_config.get('fallback')
+        if not fallback_config:
+            return None
+        
+        try:
+            # Create a temporary client for fallback execution
+            temp_client = MCPServerClient(fallback_config, f"{server_name}_fallback")
+            
+            # Try to connect and execute with shorter timeout for fallback
+            connect_timeout = 30.0 if os.getenv("INSIDE_DOCKER") else 15.0
+            async with asyncio.timeout(connect_timeout):
+                if await temp_client.connect():
+                    # Get adaptive timeout for fallback
+                    adaptive_timeout = temp_client._get_adaptive_timeout(tool_name)
+                    result = await temp_client._call_tool_with_config(
+                        fallback_config, tool_name, arguments, adaptive_timeout
+                    )
+                    await temp_client.disconnect()
+                    
+                    return {
+                        "success": True,
+                        "tool_name": tool_name,
+                        "server": f"{server_name}_fallback",
+                        "result": result,
+                        "execution_time": 0.0,  # Would need to track this properly
+                        "status": "completed"
+                    }
+            
+            await temp_client.disconnect()
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"Fallback execution failed: {str(e)}")
+            return None
     async def disconnect_all(self):
         """Disconnect from all MCP servers."""
         disconnect_tasks = []

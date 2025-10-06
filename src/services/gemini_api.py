@@ -372,6 +372,10 @@ class GeminiAPI:
                 else:
                     sanitized[key] = value
             
+            # Remove Gemini-unsupported fields
+            if "additionalProperties" in sanitized:
+                del sanitized["additionalProperties"]
+            
             return sanitized
         
         return sanitize_schema(mcp_parameters)
@@ -422,6 +426,9 @@ class GeminiAPI:
             ):
                 return None
             candidate = response.candidates[0]
+            
+            # Check if the response contains function calls
+            has_function_calls = False
             if (
                 hasattr(candidate, "content")
                 and candidate.content
@@ -429,12 +436,14 @@ class GeminiAPI:
             ):
                 for part in candidate.content.parts:
                     if hasattr(part, "function_call") and part.function_call:
+                        has_function_calls = True
                         function_call = part.function_call
                         self.logger.info(
                             f"Gemini requested tool call: {function_call.name}"
                         )
                         tool_result = await self._execute_mcp_tool(function_call)
                         if tool_result:
+                            # Add the tool call and result to conversation for follow-up
                             contents.append(candidate.content)
                             contents.append(
                                 types.Content(
@@ -464,38 +473,88 @@ class GeminiAPI:
                                 return self._extract_response_text(
                                     final_response.candidates[0]
                                 )
-            return self._extract_response_text(candidate)
+                            else:
+                                self.logger.warning("No final response after tool call")
+                                return None
+                        else:
+                            self.logger.warning(f"Tool execution failed for {function_call.name}")
+                            return None
+            
+            # If no function calls, extract text from the current response
+            if not has_function_calls:
+                return self._extract_response_text(candidate)
+            
+            # If we get here, something went wrong with tool call processing
+            self.logger.warning("Tool call processing completed but no response generated")
+            return None
         except Exception as e:
             self.logger.error(f"Error in _generate_with_tools: {e}")
             return None
     async def _execute_mcp_tool(self, function_call: Any) -> Optional[str]:
         """
-        Execute an MCP tool based on Gemini's function call.
+        Execute an MCP tool based on Gemini's function call with robust error handling.
         Args:
             function_call: Gemini function call object
         Returns:
-            Tool execution result or None if failed
+            Tool execution result string or None if failed
         """
         try:
             if not hasattr(function_call, "name") or not hasattr(function_call, "args"):
-                return None
+                return "Error: Invalid function call structure"
+            
             tool_name = function_call.name
             tool_args = (
                 dict(function_call.args) if hasattr(function_call, "args") else {}
             )
+            
             self.logger.info(f"Executing MCP tool: {tool_name} with args: {tool_args}")
+            
+            # Execute tool with new structured response handling
             result = await self.mcp_manager.execute_tool(tool_name, tool_args)
-            if result:
-                self.logger.info(f"MCP tool {tool_name} executed successfully")
-                return str(result)
+            
+            if result.get("success"):
+                # Success case - extract the actual tool result
+                tool_result = result.get("result")
+                if tool_result:
+                    # Handle different result formats
+                    if isinstance(tool_result, list):
+                        # MCP result format - extract text content
+                        text_results = []
+                        for item in tool_result:
+                            if hasattr(item, 'text'):
+                                text_results.append(item.text)
+                            elif hasattr(item, 'content'):
+                                # Handle nested content
+                                if isinstance(item.content, list):
+                                    for content_item in item.content:
+                                        if hasattr(content_item, 'text'):
+                                            text_results.append(content_item.text)
+                                elif hasattr(item.content, 'text'):
+                                    text_results.append(item.content.text)
+                        return "\n".join(text_results) if text_results else str(tool_result)
+                    else:
+                        return str(tool_result)
+                else:
+                    return f"Tool {tool_name} executed successfully"
             else:
-                self.logger.warning(f"MCP tool {tool_name} execution failed")
-                return None
+                # Error case - return structured error information
+                error_type = result.get("error_type", "UNKNOWN_ERROR")
+                error_message = result.get("error_message", "Unknown error")
+                execution_time = result.get("execution_time", 0)
+                
+                error_response = f"Tool execution failed: {error_type} - {error_message}"
+                if execution_time > 0:
+                    error_response += f" (took {execution_time:.2f}s)"
+                
+                # Log the error for debugging
+                self.logger.warning(f"MCP tool {tool_name} failed: {error_response}")
+                
+                return error_response
+                
         except Exception as e:
-            self.logger.error(
-                f"Error executing MCP tool {getattr(function_call, 'name', 'unknown')}: {e}"
-            )
-            return None
+            error_msg = f"Error executing MCP tool {getattr(function_call, 'name', 'unknown')}: {str(e)}"
+            self.logger.error(error_msg)
+            return error_msg
     def _extract_response_text(self, candidate: Any) -> Optional[str]:
         """
         Extract text response from Gemini candidate.
