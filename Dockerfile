@@ -1,6 +1,3 @@
-# syntax=docker/dockerfile:1.4
-
-# Base stage: minimal image for runtime
 FROM python:3.11-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -60,6 +57,7 @@ RUN curl -fsSL https://packages.microsoft.com/config/debian/11/packages-microsof
     dpkg -i packages-microsoft-prod.deb && \
     rm packages-microsoft-prod.deb && \
     apt-get update && \
+    apt-get install -y --no-install-recommends libicu && \
     apt-get install -y --no-install-recommends dotnet-runtime-8.0 fonts-liberation fonts-dejavu fonts-dejavu-core fonts-dejavu-extra && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
