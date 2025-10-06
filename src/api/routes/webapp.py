@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 # Telegram init data validation
 try:
-    from telegram_init_data import validate, parse, is_valid
+    from telegram_init_data import  parse, is_valid
     TELEGRAM_INIT_DATA_AVAILABLE = True
 except ImportError:
     TELEGRAM_INIT_DATA_AVAILABLE = False
