@@ -23,6 +23,17 @@ except ImportError:
     VerticalAlignment = None
     BorderStyle = None
     HyperlinkType = None
+
+# Try to import python-docx as fallback
+try:
+    from docx import Document as DocxDocument
+    from docx.shared import Inches, Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_ALIGN_VERTICAL
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+    DocxDocument = None
 from pydantic import BaseModel, Field
 class ExportContent(BaseModel):
     """Simplified export content structure - content only"""
@@ -393,17 +404,82 @@ class SpireDocumentExporter:
         """Enhance emoji rendering with proper font support"""
         text_range.CharacterFormat.FontName = "Segoe UI Emoji"
         return text_range
+
+class DocxDocumentExporter:
+    """Fallback document exporter using python-docx"""
+
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
+    def create_docx(self, content: str) -> bytes:
+        """Create DOCX using python-docx as fallback"""
+        if not DOCX_AVAILABLE:
+            raise ImportError(
+                "Neither Spire.Doc nor python-docx is available. Please install document export dependencies."
+            )
+
+        try:
+            document = DocxDocument()
+
+            # Split content into lines and process
+            lines = content.split("\n")
+
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+
+                if line.startswith("# "):
+                    # Heading 1
+                    document.add_heading(line[2:].strip(), level=1)
+                elif line.startswith("## "):
+                    # Heading 2
+                    document.add_heading(line[3:].strip(), level=2)
+                elif line.startswith("### "):
+                    # Heading 3
+                    document.add_heading(line[4:].strip(), level=3)
+                elif line.startswith("- ") or line.startswith("* "):
+                    # Bullet point
+                    document.add_paragraph(line[2:].strip(), style='List Bullet')
+                elif re.match(r"^\d+\.\s", line):
+                    # Numbered list
+                    document.add_paragraph(line, style='List Number')
+                else:
+                    # Regular paragraph
+                    document.add_paragraph(line)
+
+            # Save to bytes
+            import io
+            docx_bytes = io.BytesIO()
+            document.save(docx_bytes)
+            docx_bytes.seek(0)
+            return docx_bytes.getvalue()
+
+        except Exception as e:
+            self.logger.error(f"python-docx export failed: {e}")
+            raise
     def _process_inline_formatting(self, paragraph, text):
         """Process inline markdown formatting like **bold**, *italic*, etc."""
         self._add_formatted_text_with_inline(paragraph, text)
 class EnhancedExportCommands:
-    """Streamlined export commands using Spire.Doc"""
+    """Streamlined export commands using Spire.Doc with python-docx fallback"""
     def __init__(self, gemini_api, user_data_manager, telegram_logger):
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
         self.logger = logging.getLogger(__name__)
-        self.document_exporter = SpireDocumentExporter(self.logger)
+
+        # Initialize document exporters with fallback
+        if SPIRE_AVAILABLE:
+            self.document_exporter = SpireDocumentExporter(self.logger)
+            self.logger.info("Using Spire.Doc for document export")
+        elif DOCX_AVAILABLE:
+            self.document_exporter = DocxDocumentExporter(self.logger)
+            self.logger.info("Using python-docx fallback for document export")
+        else:
+            self.document_exporter = None
+            self.logger.warning("No document export library available")
+
         self.memory_manager = self._init_memory_manager()
     def _init_memory_manager(self):
         """Initialize memory manager with fallback"""
@@ -550,17 +626,25 @@ class EnhancedExportCommands:
     async def _generate_document(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, format_type: str
     ) -> None:
-        """Generate document using Spire.Doc - simplified approach"""
+        """Generate document using available exporter - with fallback support"""
         try:
+            if not self.document_exporter:
+                await update.callback_query.edit_message_text(
+                    "❌ Document export is not available. Please install Spire.Doc or python-docx."
+                )
+                return
+
             content = context.user_data.get("doc_export_text", "")
             if not content.strip():
                 await update.callback_query.edit_message_text(
                     "❌ No content available for export."
                 )
                 return
+
             await update.callback_query.edit_message_text(
                 f"🔄 Generating {format_type.upper()} document... This may take a moment."
             )
+
             if format_type.lower() == "docx":
                 document_bytes = self.document_exporter.create_docx(content)
                 await self._send_document(update, context, document_bytes)
@@ -568,12 +652,25 @@ class EnhancedExportCommands:
                 await update.callback_query.edit_message_text(
                     f"❌ {format_type.upper()} export is not yet implemented."
                 )
+
             self._cleanup_user_data(context)
         except Exception as e:
             self.logger.error(f"Error generating document: {e}")
-            await update.callback_query.edit_message_text(
-                f"❌ Sorry, there was an error generating your document: {str(e)}"
-            )
+            error_msg = f"❌ Sorry, there was an error generating your document: {str(e)}"
+            if "Spire.Doc is not available" in str(e):
+                error_msg += "\n\n💡 Using fallback document generator..."
+                # Try with fallback if Spire.Doc failed
+                if DOCX_AVAILABLE and not SPIRE_AVAILABLE:
+                    try:
+                        self.document_exporter = DocxDocumentExporter(self.logger)
+                        document_bytes = self.document_exporter.create_docx(content)
+                        await self._send_document(update, context, document_bytes)
+                        self._cleanup_user_data(context)
+                        return
+                    except Exception as fallback_e:
+                        error_msg = f"❌ Fallback also failed: {str(fallback_e)}"
+
+            await update.callback_query.edit_message_text(error_msg)
     async def _send_document(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, document_bytes: bytes
     ) -> None:

@@ -91,10 +91,19 @@ class PollCommands:
         """
         preferred_model = await self._get_user_preferred_model(user_id)
         ai_prompt = (
-            "Create a Telegram poll based on this request. Respond with ONLY a JSON object "
-            "containing 'question' (string) and 'options' (array of strings, 2-10 items). "
-            "Make it engaging and clear.\n\n"
-            f"Request: {prompt}"
+            "You are a JSON-only API. Create a Telegram poll based on the user's request.\n\n"
+            "IMPORTANT: Respond with ONLY a valid JSON object. No explanations, no markdown, no extra text.\n\n"
+            "JSON format required:\n"
+            "{\n"
+            '  "question": "Your poll question here",\n'
+            '  "options": ["Option 1", "Option 2", "Option 3"]\n'
+            "}\n\n"
+            "Rules:\n"
+            "- question: string, engaging and clear\n"
+            "- options: array of 2-10 strings\n"
+            "- Make options relevant to the request\n"
+            "- Keep options concise\n\n"
+            f"User request: {prompt}"
         )
         try:
             response = await self.api_manager.chat(
@@ -103,8 +112,20 @@ class PollCommands:
                 temperature=0.7,
                 max_tokens=1000,
             )
+            
+            # Clean the response - remove any markdown formatting or extra text
+            response = response.strip()
+            if response.startswith('```json'):
+                response = response[7:]
+            if response.startswith('```'):
+                response = response[3:]
+            if response.endswith('```'):
+                response = response[:-3]
+            response = response.strip()
+            
             import json
-            poll_data = json.loads(response.strip())
+            poll_data = json.loads(response)
+            
             if (
                 not isinstance(poll_data, dict)
                 or "question" not in poll_data
@@ -112,19 +133,56 @@ class PollCommands:
             ):
                 logger.warning(f"Invalid poll data structure from AI: {poll_data}")
                 return None
+            
             if (
                 not isinstance(poll_data["options"], list)
                 or len(poll_data["options"]) < 2
+                or len(poll_data["options"]) > 10
             ):
                 logger.warning(f"Invalid options in poll data: {poll_data}")
                 return None
+            
+            # Validate that question and options are strings
+            if not isinstance(poll_data["question"], str) or not poll_data["question"].strip():
+                logger.warning(f"Invalid question in poll data: {poll_data}")
+                return None
+                
+            poll_data["options"] = [str(opt).strip() for opt in poll_data["options"] if str(opt).strip()]
+            if len(poll_data["options"]) < 2:
+                logger.warning(f"Not enough valid options after cleanup: {poll_data}")
+                return None
+            
             return poll_data
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse AI response as JSON: {e}")
-            return None
+            logger.error(f"AI response was: {response}")
+            
+            # Try to extract JSON from the response if it contains extra text
+            import re
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                try:
+                    poll_data = json.loads(json_match.group())
+                    if (
+                        isinstance(poll_data, dict)
+                        and "question" in poll_data
+                        and "options" in poll_data
+                        and isinstance(poll_data["options"], list)
+                        and len(poll_data["options"]) >= 2
+                    ):
+                        logger.info("Successfully extracted JSON from AI response")
+                        return poll_data
+                except json.JSONDecodeError:
+                    pass
+            
+            # Fallback: Create a simple poll based on the prompt
+            logger.info("Using fallback poll generation")
+            return self._create_fallback_poll(prompt)
         except Exception as e:
             logger.error(f"Error generating poll with AI: {e}")
-            return None
+            # Fallback: Create a simple poll based on the prompt
+            logger.info("Using fallback poll generation due to error")
+            return self._create_fallback_poll(prompt)
     async def _send_poll(
         self,
         update: Update,
@@ -184,14 +242,38 @@ class PollCommands:
             "📝 *Usage:*\n"
             "`/createpoll <your poll description>`\n\n"
             "💡 *Examples:*\n"
-            "• `/createpoll Which feature do you want next: Dark Mode, Voice Commands, or Offline Access?`\n"
-            "• `/createpoll Ask users their favorite programming language: Python, JavaScript, Java, or C++`\n"
-            "• `/createpoll Should we add a new theme? Yes, No, Maybe`\n\n"
+            "• `/createpoll What new feature should we add next?`\n"
+            "• `/createpoll Which programming language do you prefer?`\n"
+            "• `/createpoll Should we implement dark mode?`\n"
+            "• `/createpoll What's your favorite way to learn coding?`\n\n"
             "🎯 *Features:*\n"
-            "• AI generates engaging questions and options\n"
+            "• AI generates engaging questions and options automatically\n"
             "• Anonymous voting enabled\n"
             "• Single choice polls\n"
             "• Supports 2-10 options\n\n"
             "Try it now!"
         )
         await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
+
+    def _create_fallback_poll(self, prompt: str) -> dict:
+        """Create a simple fallback poll when AI fails to generate valid JSON."""
+        # Extract a question from the prompt
+        question = prompt.strip()
+        if len(question) > 100:
+            question = question[:97] + "..."
+        if not question.endswith("?"):
+            question += "?"
+        
+        # Create simple yes/no options
+        options = ["Yes", "No"]
+        
+        # Try to make it more relevant based on the prompt
+        if any(word in prompt.lower() for word in ["what", "which", "choose", "prefer"]):
+            options = ["Option A", "Option B", "Option C"]
+        elif any(word in prompt.lower() for word in ["rate", "how", "scale"]):
+            options = ["1", "2", "3", "4", "5"]
+        
+        return {
+            "question": question,
+            "options": options
+        }
