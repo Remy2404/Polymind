@@ -337,7 +337,8 @@ class GeminiAPI:
             sanitized = {}
             for key, value in schema.items():
                 # Skip unsupported fields - Gemini doesn't understand these
-                if key in ['const', 'contentMediaType', 'contentEncoding']:
+                if key in ['const', 'contentMediaType', 'contentEncoding', 
+                          'exclusiveMaximum', 'exclusiveMinimum', 'additionalProperties']:
                     continue
                 
                 # Handle anyOf - Gemini requires a single type, not unions
@@ -354,7 +355,7 @@ class GeminiAPI:
                             # Use first valid option without const
                             if 'type' in option:
                                 sanitized['type'] = option['type']
-                                # Preserve constraints from the selected option
+                                # Preserve constraints from the selected option (but not exclusive bounds)
                                 if 'minimum' in option:
                                     sanitized['minimum'] = option['minimum']
                                 if 'maximum' in option:
@@ -371,10 +372,6 @@ class GeminiAPI:
                     sanitized[key] = [sanitize_schema(item) if isinstance(item, dict) else item for item in value]
                 else:
                     sanitized[key] = value
-            
-            # Remove Gemini-unsupported fields
-            if "additionalProperties" in sanitized:
-                del sanitized["additionalProperties"]
             
             return sanitized
         

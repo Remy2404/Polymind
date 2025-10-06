@@ -47,6 +47,29 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         if model_config:
             return model_config.provider
         return Provider.OPENROUTER
+    
+    def _get_tool_format_for_model(self, model: str) -> str:
+        """
+        Determine which tool format to use based on the model provider.
+        
+        Args:
+            model: Model identifier
+        
+        Returns:
+            "meta" for Meta models, "openai" for others
+        """
+        # Check if this is a Meta model by looking at the model ID
+        meta_indicators = ["meta-llama", "llama", "meta."]
+        model_lower = model.lower()
+        
+        for indicator in meta_indicators:
+            if indicator in model_lower:
+                self.logger.info(f"Detected Meta model {model}, using Meta tool format")
+                return "meta"
+        
+        # Default to OpenAI format
+        return "openai"
+    
     def _should_use_gemini(self, model: str) -> bool:
         """
         Check if we should use Gemini for the given model.
@@ -138,8 +161,12 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
                 else:
                     if model_config.openrouter_model_key:
                         actual_model = model_config.openrouter_model_key
+        
+        # Determine tool format based on model
+        tool_format = self._get_tool_format_for_model(actual_model)
+        
         mcp_tools = (
-            await self.mcp_manager.get_all_tools() if self.mcp_tools_loaded else []
+            await self.mcp_manager.get_all_tools(provider=tool_format) if self.mcp_tools_loaded else []
         )
         if mcp_tools:
             if actual_model in self._tool_unsupported_models:

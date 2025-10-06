@@ -156,6 +156,76 @@ class MCPToolConverter:
             List of OpenAI-compatible tool definitions
         """
         return [MCPToolConverter.convert_mcp_tool_to_openai(tool) for tool in mcp_tools]
+    
+    @staticmethod
+    def convert_mcp_tool_to_meta(mcp_tool: MCPTool) -> Dict[str, Any]:
+        """
+        Convert an MCP tool definition to Meta-compatible format.
+        Meta models require explicit 'items' property for array types.
+        
+        Args:
+            mcp_tool: MCP tool definition
+        Returns:
+            Meta-compatible tool definition
+        """
+        def add_items_to_arrays(schema: Any) -> Any:
+            """Recursively ensure all arrays have 'items' property."""
+            if not isinstance(schema, dict):
+                return schema
+            
+            result = {}
+            for key, value in schema.items():
+                if key == "type" and value == "array":
+                    # Ensure parent dict has 'items' property
+                    result[key] = value
+                    if "items" not in schema:
+                        # Add default items if not present
+                        result["items"] = {"type": "string"}
+                elif isinstance(value, dict):
+                    result[key] = add_items_to_arrays(value)
+                elif isinstance(value, list):
+                    result[key] = [add_items_to_arrays(item) if isinstance(item, dict) else item for item in value]
+                else:
+                    result[key] = value
+            
+            # If this schema defines an array, ensure it has items
+            if result.get("type") == "array" and "items" not in result:
+                result["items"] = {"type": "string"}
+            
+            return result
+        
+        # Convert base tool structure
+        meta_tool = {
+            "type": "function",
+            "function": {
+                "name": mcp_tool.name,
+                "description": mcp_tool.description or f"Execute {mcp_tool.name} tool",
+                "parameters": add_items_to_arrays(
+                    MCPToolConverter._convert_input_schema(mcp_tool.inputSchema)
+                ),
+            },
+        }
+        
+        # Add output schema if available
+        if hasattr(mcp_tool, "outputSchema") and mcp_tool.outputSchema:
+            meta_tool["function"]["output_schema"] = add_items_to_arrays(
+                MCPToolConverter._convert_output_schema(mcp_tool.outputSchema)
+            )
+        
+        return meta_tool
+    
+    @staticmethod
+    def convert_mcp_tools_to_meta(mcp_tools: List[MCPTool]) -> List[Dict[str, Any]]:
+        """
+        Convert multiple MCP tools to Meta-compatible format.
+        
+        Args:
+            mcp_tools: List of MCP tool definitions
+        Returns:
+            List of Meta-compatible tool definitions
+        """
+        return [MCPToolConverter.convert_mcp_tool_to_meta(tool) for tool in mcp_tools]
+
 class MCPServerClient:
     """Client for connecting to and managing MCP servers with enhanced capabilities."""
     
@@ -174,6 +244,7 @@ class MCPServerClient:
         self.logger = logging.getLogger(__name__)
         self.available_tools: List[MCPTool] = []
         self.openai_tools: List[Dict[str, Any]] = []
+        self.meta_tools: List[Dict[str, Any]] = []
         self._connection_task = None
         self._cleanup_done = False
         
@@ -189,10 +260,10 @@ class MCPServerClient:
         
         # Adaptive timeouts based on operation type
         self._timeout_multipliers = {
-            "search": 2.0,  # Search operations take longer
-            "fetch": 1.5,   # Network fetch operations
-            "process": 3.0, # Document processing
-            "analyze": 2.0, # Analysis operations
+            "search": 2.0, 
+            "fetch": 1.5,   
+            "process": 3.0, 
+            "analyze": 2.0,
             "default": 1.0
         }
         
@@ -356,6 +427,11 @@ class MCPServerClient:
                                 return False
                             self.openai_tools = (
                                 MCPToolConverter.convert_mcp_tools_to_openai(
+                                    self.available_tools
+                                )
+                            )
+                            self.meta_tools = (
+                                MCPToolConverter.convert_mcp_tools_to_meta(
                                     self.available_tools
                                 )
                             )
@@ -709,13 +785,22 @@ class MCPManager:
                 f"Error connecting to MCP server '{server_name}': {str(e)}"
             )
             return False
-    async def get_all_tools(self) -> List[Dict[str, Any]]:
+    async def get_all_tools(self, provider: str = "openai") -> List[Dict[str, Any]]:
         """
-        Get all available tools from connected MCP servers in OpenAI format.
+        Get all available tools from connected MCP servers in the specified format.
+        
+        Args:
+            provider: Tool format to return ("openai" or "meta")
+        
         Returns:
-            List of OpenAI-compatible tool definitions
+            List of tool definitions in the requested format
         """
-        return self.all_openai_tools.copy()
+        if provider.lower() == "meta":
+            # Aggregate Meta-format tools from all servers
+            return [tool for server in self.servers.values() for tool in server.meta_tools]
+        else:
+            # Default to OpenAI format
+            return self.all_openai_tools.copy()
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a tool by name with robust error handling and fallback mechanisms.

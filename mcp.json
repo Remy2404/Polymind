@@ -1,22 +1,5 @@
 {
   "servers": {
-    "fetch-mcp": {
-      "command": "smithery",
-      "args": ["run", "fetch-mcp", "--key", "$MCP_API_KEY"],
-      "type": "stdio",
-      "enabled": true,
-      "fallback": {
-        "command": "npx",
-        "args": [
-          "-y",
-          "@smithery/cli@latest",
-          "run",
-          "fetch-mcp",
-          "--key",
-          "$MCP_API_KEY"
-        ]
-      }
-    },
     "Context7": {
       "type": "stdio",
       "command": "context7-mcp",
@@ -65,6 +48,12 @@
         "--key",
         "$MCP_API_KEY"
       ],
+      "enabled": true
+    },
+    "fetch_mcp": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
       "enabled": true
     }
   },
