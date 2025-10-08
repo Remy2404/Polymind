@@ -34,8 +34,10 @@ RUN --mount=type=cache,id=uv-cache,target=/app/.cache/uv \
 # ===== Final stage: runtime only =====
 FROM base AS final
 
-# Create non-root user first
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Create non-root user and set up home directory
+RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -m appuser && \
+    mkdir -p /home/appuser/.config /home/appuser/.local/share /home/appuser/.cache && \
+    chown -R appuser:appuser /home/appuser
 
 # Install runtime dependencies in one layer
 RUN apt-get update && \
@@ -57,7 +59,6 @@ RUN npm install -g \
       @modelcontextprotocol/inspector && \
     npm cache clean --force
 
-# Optional: Install fonts if needed (remove if not used)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       fonts-liberation \
@@ -77,7 +78,6 @@ ENV PATH="/app/.venv/bin:/usr/local/bin:$PATH" \
     PORT=8000 \
     INSIDE_DOCKER="true"
 
-# Fix ownership for non-root user
 RUN chown -R appuser:appuser /app
 
 # Switch to non-root user
