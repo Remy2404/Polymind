@@ -85,7 +85,11 @@ class OpenRouterAPI:
             if not model or not isinstance(model, str) or not model.strip():
                 self.logger.error("Invalid model parameter: must be a non-empty string")
                 return "Error: Invalid model specified"
+            
+            self.logger.info(f"Attempting to get OpenRouter model key for: {model}")
             openrouter_model = ModelConfigurations.get_model_with_fallback(model)
+            self.logger.info(f"OpenRouter model key resolved to: {openrouter_model}")
+            
             if (
                 not openrouter_model
                 or not isinstance(openrouter_model, str)
@@ -284,8 +288,11 @@ class OpenRouterAPI:
             if not model or not isinstance(model, str) or not model.strip():
                 self.logger.error("Invalid model parameter: must be a non-empty string")
                 return "Error: Invalid model specified"
-                
+            
+            self.logger.info(f"Attempting to get OpenRouter model key for vision: {model}")
             openrouter_model = ModelConfigurations.get_model_with_fallback(model)
+            self.logger.info(f"OpenRouter model key resolved to: {openrouter_model}")
+            
             if (
                 not openrouter_model
                 or not isinstance(openrouter_model, str)

@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 # Telegram init data validation
@@ -90,6 +90,7 @@ class ModelInfo(BaseModel):
     supports_tools: bool
     context_length: int
     is_free: bool
+    accessible: bool = True  # For Telegram Mini App, all models are accessible via backend
 
 
 class UserPreferences(BaseModel):
@@ -151,7 +152,7 @@ async def verify_telegram_init_data(
         )
     
     # Extract init data
-    init_data = authorization[4:]  # Remove "tma " prefix
+    init_data = authorization[4:]
     
     # Get bot token from environment
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -217,7 +218,14 @@ def get_services():
             detail="Bot instance not initialized"
         )
     
-    user_data_manager = UserDataManager()
+    # Use existing user_data_manager from bot instance, or create new one with db
+    if hasattr(_BOT_INSTANCE, "user_data_manager"):
+        user_data_manager = _BOT_INSTANCE.user_data_manager
+    else:
+        # Fallback: create new instance with bot's database
+        db = _BOT_INSTANCE.db if hasattr(_BOT_INSTANCE, "db") else None
+        user_data_manager = UserDataManager(db)
+    
     memory_manager = MemoryManager(
         db=user_data_manager.db if hasattr(user_data_manager, "db") else None
     )
@@ -307,14 +315,14 @@ async def send_chat_message(
             prompt = f"Previous conversation:\n{context_str}\n\nCurrent message: {message_data.message}"
         
         # Generate response
-        response = await model_handler.generate_response(prompt)
+        response = await model_handler.generate_response(prompt, model=model_name)
         
         # Save to conversation history
         await services["conversation_manager"].save_message_pair(
-            user_id=user_id,
-            user_message=message_data.message,
-            ai_response=response,
-            model_used=model_name
+            user_id,
+            message_data.message,
+            response,
+            model_name
         )
         
         return ChatResponse(
@@ -330,6 +338,120 @@ async def send_chat_message(
             status_code=500,
             detail=f"Failed to generate response: {str(e)}"
         )
+
+
+@router.post("/chat/stream")
+async def send_chat_message_stream(
+    message_data: ChatMessage,
+    current_user: UserInfo = Depends(get_current_user)
+):
+    """
+    Send message to AI model and get streaming response.
+    
+    Streams response chunks as Server-Sent Events (SSE) for real-time display.
+    
+    Supports:
+    - Multiple AI providers (Gemini, OpenRouter, DeepSeek)
+    - Conversation context and memory
+    - Model selection or auto-routing
+    - Real-time streaming of response tokens
+    
+    Args:
+        message_data: Message content and preferences
+        current_user: Authenticated user (auto-injected)
+        
+    Returns:
+        Streaming response with SSE events
+    """
+    services = get_services()
+    user_id = current_user.id
+    
+    async def generate_stream():
+        """Generate SSE stream."""
+        import json
+        
+        try:
+            # Get conversation context if requested
+            context_messages = []
+            if message_data.include_context:
+                context_messages = await services["conversation_manager"].get_conversation_history(
+                    user_id=user_id,
+                    max_messages=message_data.max_context_messages
+                )
+            
+            # Determine which model to use
+            model_name = message_data.model
+            if not model_name:
+                # Use user's preferred model or default
+                prefs_manager = UserPreferencesManager()
+                user_prefs = prefs_manager.get_user_preferences(user_id)
+                model_name = user_prefs.get("preferred_model", "gemini/gemini-2.0-flash-exp")
+            
+            # Get model handler
+            model_handler = ModelHandlerFactory.get_model_handler(
+                model_name=model_name,
+                gemini_api=services["gemini_api"],
+                openrouter_api=services["openrouter_api"],
+                deepseek_api=services["deepseek_api"]
+            )
+            
+            # Format prompt with context
+            prompt = message_data.message
+            if context_messages:
+                context_str = "\n".join([
+                    f"User: {msg.get('user', '')}\nAssistant: {msg.get('assistant', '')}"
+                    for msg in context_messages
+                ])
+                prompt = f"Previous conversation:\n{context_str}\n\nCurrent message: {message_data.message}"
+            
+            # Check if model handler supports streaming
+            full_response = ""
+            
+            if hasattr(model_handler, 'generate_response_stream'):
+                # Stream response
+                async for chunk in model_handler.generate_response_stream(prompt, model=model_name):
+                    full_response += chunk
+                    event_data = json.dumps({"type": "content", "content": chunk})
+                    yield f"data: {event_data}\n\n"
+            else:
+                # Non-streaming fallback - generate full response then send
+                response = await model_handler.generate_response(prompt, model=model_name)
+                full_response = response
+                # Send response in chunks for better UX
+                chunk_size = 10
+                for i in range(0, len(response), chunk_size):
+                    chunk = response[i:i+chunk_size]
+                    event_data = json.dumps({"type": "content", "content": chunk})
+                    yield f"data: {event_data}\n\n"
+            
+            # Save to conversation history
+            await services["conversation_manager"].save_message_pair(
+                user_id,
+                message_data.message,
+                full_response,
+                model_name
+            )
+            
+            # Send done signal
+            done_data = json.dumps({"type": "done", "model": model_name})
+            yield f"data: {done_data}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Streaming chat error for user {user_id}: {e}", exc_info=True)
+            error_message = str(e).replace('"', '\\"').replace('\n', ' ').replace('\r', ' ')
+            error_data = json.dumps({"type": "error", "error": error_message})
+            yield f"data: {error_data}\n\n"
+    
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
 
 
 @router.get("/history", response_model=List[ConversationHistoryItem])
@@ -416,14 +538,18 @@ async def get_available_models(
             if free_only and not getattr(config, "is_free", False):
                 continue
             
+            # Get model capabilities to check tool support
+            capabilities = ModelConfigurations.get_model_capabilities(model_id)
+            
             models.append(ModelInfo(
                 id=model_id,
-                name=config.name,
+                name=config.display_name,
                 provider=config.provider.value,
                 supports_vision=config.supports_images,
-                supports_tools=config.supports_tools,
-                context_length=config.context_length,
-                is_free=getattr(config, "is_free", False)
+                supports_tools=capabilities.get("supports_tools", False),
+                context_length=config.max_tokens,
+                is_free=getattr(config, "is_free", False),
+                accessible=True  # All models are accessible via backend
             ))
         
         return models

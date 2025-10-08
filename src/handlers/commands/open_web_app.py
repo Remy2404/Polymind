@@ -20,8 +20,14 @@ class OpenWebAppCommands:
         else:
             self.logger.warning("No Web App URL configured")
     def _validate_web_app_url(self, url: str) -> bool:
-        """Allow only HTTPS URLs"""
-        return bool(url and url.startswith("https://"))
+        """Allow only HTTPS URLs that are not localhost or 127.0.0.1"""
+        if not url or not url.startswith("https://"):
+            return False
+        # Disallow localhost and 127.0.0.1 for Telegram web apps
+        for forbidden in ["localhost", "127.0.0.1"]:
+            if f"https://{forbidden}" in url or f"https://{forbidden}:" in url:
+                return False
+        return True
     async def open_web_app_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -32,7 +38,7 @@ class OpenWebAppCommands:
             web_app_url = self.web_app_url
             if not self._validate_web_app_url(web_app_url):
                 await update.message.reply_text(
-                    "❌ Web App is not available at the moment."
+                    "❌ Web App is not available at the moment. (Invalid or non-public URL)"
                 )
                 return
             keyboard = [

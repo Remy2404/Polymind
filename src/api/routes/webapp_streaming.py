@@ -14,8 +14,7 @@ from pydantic import BaseModel, Field
 from src.api.routes.webapp import (
     get_current_user,
     UserInfo,
-    get_services,
-    router as base_router
+    get_services
 )
 from src.services.model_handlers.factory import ModelHandlerFactory
 from src.services.user_preferences_manager import UserPreferencesManager
@@ -46,7 +45,16 @@ async def generate_ai_response_stream(
     Yields:
         SSE formatted chunks: "data: {json}\n\n"
     """
+    import json
+    
     try:
+        # Validate model_name before proceeding
+        if not model_name or not isinstance(model_name, str) or not model_name.strip():
+            logger.error(f"Invalid model_name parameter: {model_name}")
+            error_event = json.dumps({"type": "error", "error": "Invalid model specified"})
+            yield f'data: {error_event}\n\n'
+            return
+        
         # Format prompt with context
         prompt = message
         if context_messages:
@@ -57,49 +65,89 @@ async def generate_ai_response_stream(
             prompt = f"Previous conversation:\n{context_str}\n\nCurrent message: {message}"
         
         # Get model handler
-        model_handler = ModelHandlerFactory.get_model_handler(
-            model_name=model_name,
-            gemini_api=services["gemini_api"],
-            openrouter_api=services["openrouter_api"],
-            deepseek_api=services["deepseek_api"]
-        )
+        logger.info(f"Creating model handler for model: '{model_name}' (type: {type(model_name)})")
+        try:
+            model_handler = ModelHandlerFactory.get_model_handler(
+                model_name=model_name,
+                gemini_api=services["gemini_api"],
+                openrouter_api=services["openrouter_api"],
+                deepseek_api=services["deepseek_api"]
+            )
+            logger.info(f"Successfully created handler: {type(model_handler).__name__}")
+        except ValueError as e:
+            logger.error(f"Failed to get model handler for {model_name}: {e}")
+            error_event = json.dumps({"type": "error", "error": f"Model {model_name} is not available"})
+            yield f'data: {error_event}\n\n'
+            return
         
         # Send start event
-        yield f'data: {{"type": "start", "model": "{model_name}"}}\n\n'
+        start_event = json.dumps({"type": "start", "model": model_name})
+        yield f'data: {start_event}\n\n'
         
         # Check if model supports streaming
-        if hasattr(model_handler, 'generate_response_stream'):
+        has_streaming = hasattr(model_handler, 'generate_response_stream')
+        logger.info(f"Model handler {type(model_handler).__name__} has streaming: {has_streaming}")
+        
+        if has_streaming:
             # Stream response chunks
+            logger.info(f"Using streaming for model {model_name}")
             full_response = ""
-            async for chunk in model_handler.generate_response_stream(prompt):
-                full_response += chunk
-                # Send content chunk
-                import json
-                yield f'data: {json.dumps({"type": "content", "content": chunk})}\n\n'
-                await asyncio.sleep(0)  # Allow other tasks to run
+            # CRITICAL: Must pass model parameter to streaming method too!
+            async for chunk in model_handler.generate_response_stream(prompt, model=model_name):
+                if chunk:  # Only send non-empty chunks
+                    # Check if chunk is an error message
+                    if isinstance(chunk, str) and chunk.startswith("Error:"):
+                        logger.error(f"Model handler stream returned error: {chunk}")
+                        error_event = json.dumps({"type": "error", "error": chunk})
+                        yield f'data: {error_event}\n\n'
+                        return
+                    
+                    full_response += chunk
+                    # Properly escape and encode content chunk
+                    content_event = json.dumps({"type": "content", "content": chunk})
+                    yield f'data: {content_event}\n\n'
+                    await asyncio.sleep(0)  # Allow other tasks to run
         else:
             # Fallback to non-streaming
-            response = await model_handler.generate_response(prompt)
+            logger.info(f"Using non-streaming for model {model_name}")
+            # CRITICAL: Must pass model parameter to the handler
+            response = await model_handler.generate_response(prompt, model=model_name)
+            
+            # Check if response is None or empty
+            if not response:
+                logger.error(f"Model handler returned empty response for model {model_name}")
+                error_event = json.dumps({"type": "error", "error": "Failed to generate response"})
+                yield f'data: {error_event}\n\n'
+                return
+            
+            # Check if response is an error message
+            if isinstance(response, str) and response.startswith("Error:"):
+                logger.error(f"Model handler returned error: {response}")
+                error_event = json.dumps({"type": "error", "error": response})
+                yield f'data: {error_event}\n\n'
+                return
+            
             full_response = response
-            import json
-            yield f'data: {json.dumps({"type": "content", "content": response})}\n\n'
+            content_event = json.dumps({"type": "content", "content": response})
+            yield f'data: {content_event}\n\n'
         
         # Save conversation
         await services["conversation_manager"].save_message_pair(
-            user_id=user_id,
-            user_message=message,
-            ai_response=full_response,
-            model_used=model_name
+            user_id,
+            message,
+            full_response,
+            model_name
         )
         
         # Send completion event
-        import json
-        yield f'data: {json.dumps({"type": "done", "timestamp": datetime.now().timestamp()})}\n\n'
+        done_event = json.dumps({"type": "done", "timestamp": datetime.now().timestamp()})
+        yield f'data: {done_event}\n\n'
         
     except Exception as e:
         logger.error(f"Streaming error for user {user_id}: {e}", exc_info=True)
-        import json
-        yield f'data: {json.dumps({"type": "error", "error": str(e)})}\n\n'
+        # Send a simple error message
+        error_event = json.dumps({"type": "error", "error": "An error occurred while processing your request"})
+        yield f'data: {error_event}\n\n'
 
 
 @router.post("/chat/stream")
@@ -136,6 +184,15 @@ async def stream_chat_message(
             user_prefs = prefs_manager.get_user_preferences(user_id)
             model_name = user_prefs.get("preferred_model", "gemini/gemini-2.0-flash-exp")
         
+        # Validate model_name (basic check only - let ModelHandlerFactory handle validation)
+        if not model_name or not isinstance(model_name, str) or model_name.strip() == "":
+            model_name = "gemini/gemini-2.0-flash-exp"
+            logger.warning(f"Invalid model_name for user {user_id}, using default: {model_name}")
+        
+        # Use model ID as-is - ModelHandlerFactory and ModelConfigurations handle all formats
+        # No need for hardcoded normalization - backend supports all 54+ models
+        logger.info(f"Using model: {model_name} for user {user_id}")
+        
         # Return streaming response
         return StreamingResponse(
             generate_ai_response_stream(
@@ -149,7 +206,7 @@ async def stream_chat_message(
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",  # Disable nginx buffering
+                "X-Accel-Buffering": "no",
             }
         )
         
@@ -184,7 +241,6 @@ async def create_chat_session(
         Created chat session info
     """
     import uuid
-    services = get_services()
     user_id = current_user.id
     
     try:

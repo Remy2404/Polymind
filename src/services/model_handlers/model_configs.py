@@ -654,10 +654,12 @@ class ModelConfigurations:
         """Get OpenRouter model key with fallback to reliable alternatives"""
         if not isinstance(model_id, str) or not model_id.strip():
             raise ValueError("Invalid model_id: must be a non-empty string")
-        if "/" in model_id and (
-            ":free" in model_id or model_id in ["gemini", "deepseek"]
-        ):
+        
+        # If model has provider prefix (e.g., alibaba/, openai/, etc.) with version suffix, use as-is
+        # This handles: alibaba/tongyi-deepresearch-30b-a3b:free, meta-llama/llama-3.3-70b:free, etc.
+        if "/" in model_id and (":" in model_id or model_id in ["gemini", "deepseek"]):
             return model_id
+        
         model_map = {
             "gemini": "gemini",
             "deepseek": "deepseek",
@@ -688,4 +690,9 @@ class ModelConfigurations:
             return "google/gemini-2.0-flash-exp:free"
         elif model_id.startswith("meta-llama/"):
             return "meta-llama/llama-4-maverick:free"
+        elif model_id.startswith("alibaba/"):
+            # Alibaba models - return as-is for OpenRouter
+            return model_id
+        
+        # Default fallback
         return "deepseek/deepseek-chat-v3.1:free"
