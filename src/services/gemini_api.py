@@ -206,10 +206,17 @@ class GeminiAPI:
     async def initialize_mcp_tools(self) -> bool:
         """
         Initialize and load MCP tools from configured servers.
+        Uses singleton pattern - will skip if already initialized.
         Returns:
             True if MCP tools were loaded successfully
         """
         try:
+            # Check if singleton instance is already initialized
+            if self.mcp_manager._initialized:
+                self.mcp_tools_loaded = True
+                self.logger.info("MCP tools already initialized (using shared instance)")
+                return True
+                
             self.logger.info("Initializing MCP tools for Gemini...")
             telegram_logger.log_message("Initializing MCP tools for Gemini...", 0)
             success = await self.mcp_manager.load_servers()

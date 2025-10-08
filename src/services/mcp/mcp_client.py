@@ -653,93 +653,141 @@ class MCPServerClient:
         except Exception as e:
             self.logger.warning(f"Error during disconnect: {str(e)}")
 class MCPManager:
-    """Manages multiple MCP server connections and tool aggregation."""
+    """Manages multiple MCP server connections and tool aggregation (Singleton)."""
+    
+    _instance: Optional['MCPManager'] = None
+    _lock = asyncio.Lock()
+    _initialized = False
+    
+    def __new__(cls, mcp_config_path: str = "mcp.json"):
+        """
+        Singleton pattern: Ensure only one instance exists.
+        """
+        if cls._instance is None:
+            cls._instance = super(MCPManager, cls).__new__(cls)
+        return cls._instance
+    
     def __init__(self, mcp_config_path: str = "mcp.json"):
         """
-        Initialize MCP manager.
+        Initialize MCP manager (only once due to singleton).
         Args:
             mcp_config_path: Path to MCP configuration file
         """
+        # Skip re-initialization if already initialized
+        if self.__class__._initialized:
+            return
+            
         self.mcp_config_path = Path(mcp_config_path)
         self.servers: Dict[str, MCPServerClient] = {}
         self.logger = logging.getLogger(__name__)
         self.all_openai_tools: List[Dict[str, Any]] = []
         self.tool_to_server_map: Dict[str, str] = {}
+        
+    @classmethod
+    def get_instance(cls, mcp_config_path: str = "mcp.json") -> 'MCPManager':
+        """
+        Get the singleton instance of MCPManager.
+        Args:
+            mcp_config_path: Path to MCP configuration file
+        Returns:
+            The singleton MCPManager instance
+        """
+        if cls._instance is None:
+            cls._instance = cls(mcp_config_path)
+        return cls._instance
+    
+    @classmethod
+    def reset_instance(cls):
+        """
+        Reset the singleton instance (useful for testing).
+        """
+        cls._instance = None
+        cls._initialized = False
     async def load_servers(self) -> bool:
         """
         Load and connect to all MCP servers from configuration.
+        Uses singleton pattern to prevent re-initialization.
         Returns:
             True if any servers connected successfully
         """
-        if not validate_mcp_environment():
-            self.logger.error("MCP environment validation failed")
-            return False
-        if not self.mcp_config_path.exists():
-            self.logger.warning(f"MCP config file not found: {self.mcp_config_path}")
-            return False
-        try:
-            with open(self.mcp_config_path, "r") as f:
-                config = json.load(f)
-            config = substitute_env_vars(config)
-            self.logger.info("Environment variables substituted in MCP configuration")
-            telegram_logger.log_message(
-                "Environment variables substituted in MCP configuration", 0
-            )
-            servers_config = config.get("servers", {})
-            connection_tasks = []
-            for server_name, server_config in servers_config.items():
-                task = asyncio.create_task(
-                    self._connect_single_server(server_name, server_config),
-                    name=f"mcp_connect_{server_name}",
-                )
-                connection_tasks.append(task)
-            if connection_tasks:
-                try:
-                    global_timeout = 300.0 if os.getenv("INSIDE_DOCKER") else 120.0
-                    done, pending = await asyncio.wait(
-                        connection_tasks,
-                        timeout=global_timeout,
-                        return_when=asyncio.ALL_COMPLETED,
-                    )
-                    for task in pending:
-                        task.cancel()
-                        try:
-                            await task
-                        except asyncio.CancelledError:
-                            pass
-                    successful_connections = 0
-                    for i, task in enumerate(done):
-                        server_name = list(servers_config.keys())[i]
-                        try:
-                            result = await task
-                            if result is True:
-                                successful_connections += 1
-                        except Exception as e:
-                            self.logger.error(
-                                f"Failed to connect to MCP server '{server_name}': {str(e)}"
-                            )
-                    if successful_connections > 0:
-                        self.logger.info(
-                            f"Successfully connected to {successful_connections}/{len(connection_tasks)} MCP servers"
-                        )
-                        telegram_logger.log_message(
-                            f"Successfully connected to {successful_connections}/{len(connection_tasks)} MCP servers",
-                            0,
-                        )
-                        return True
-                    else:
-                        self.logger.warning("No MCP servers connected successfully")
-                        return False
-                except Exception as e:
-                    self.logger.error(f"Error during MCP server connections: {str(e)}")
-                    return False
-            else:
-                self.logger.warning("No MCP servers configured")
+        # Use async lock to prevent concurrent initialization
+        async with self.__class__._lock:
+            # If already initialized, return success
+            if self.__class__._initialized:
+                self.logger.info("MCP servers already initialized, skipping re-initialization")
+                return len(self.servers) > 0
+            
+            if not validate_mcp_environment():
+                self.logger.error("MCP environment validation failed")
                 return False
-        except Exception as e:
-            self.logger.error(f"Error loading MCP servers: {str(e)}")
-            telegram_logger.log_error(f"Error loading MCP servers: {str(e)}", 0)
-            return False
+            if not self.mcp_config_path.exists():
+                self.logger.warning(f"MCP config file not found: {self.mcp_config_path}")
+                return False
+            try:
+                with open(self.mcp_config_path, "r") as f:
+                    config = json.load(f)
+                config = substitute_env_vars(config)
+                self.logger.info("Environment variables substituted in MCP configuration")
+                telegram_logger.log_message(
+                    "Environment variables substituted in MCP configuration", 0
+                )
+                servers_config = config.get("servers", {})
+                connection_tasks = []
+                for server_name, server_config in servers_config.items():
+                    task = asyncio.create_task(
+                        self._connect_single_server(server_name, server_config),
+                        name=f"mcp_connect_{server_name}",
+                    )
+                    connection_tasks.append(task)
+                if connection_tasks:
+                    try:
+                        global_timeout = 300.0 if os.getenv("INSIDE_DOCKER") else 120.0
+                        done, pending = await asyncio.wait(
+                            connection_tasks,
+                            timeout=global_timeout,
+                            return_when=asyncio.ALL_COMPLETED,
+                        )
+                        for task in pending:
+                            task.cancel()
+                            try:
+                                await task
+                            except asyncio.CancelledError:
+                                pass
+                        successful_connections = 0
+                        for i, task in enumerate(done):
+                            server_name = list(servers_config.keys())[i]
+                            try:
+                                result = await task
+                                if result is True:
+                                    successful_connections += 1
+                            except Exception as e:
+                                self.logger.error(
+                                    f"Failed to connect to MCP server '{server_name}': {str(e)}"
+                                )
+                        if successful_connections > 0:
+                            self.logger.info(
+                                f"Successfully connected to {successful_connections}/{len(connection_tasks)} MCP servers"
+                            )
+                            telegram_logger.log_message(
+                                f"Successfully connected to {successful_connections}/{len(connection_tasks)} MCP servers",
+                                0,
+                            )
+                            # Mark as initialized only after successful connection
+                            self.__class__._initialized = True
+                            return True
+                        else:
+                            self.logger.warning("No MCP servers connected successfully")
+                            return False
+                    except Exception as e:
+                        self.logger.error(f"Error during MCP server connections: {str(e)}")
+                        return False
+                else:
+                    self.logger.warning("No MCP servers configured")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error loading MCP servers: {str(e)}")
+                telegram_logger.log_error(f"Error loading MCP servers: {str(e)}", 0)
+                return False
     async def _connect_single_server(
         self, server_name: str, server_config: Dict[str, Any]
     ) -> bool:
