@@ -58,11 +58,19 @@ async def generate_ai_response_stream(
         # Format prompt with context
         prompt = message
         if context_messages:
-            context_str = "\n".join([
-                f"User: {msg.get('user', '')}\nAssistant: {msg.get('assistant', '')}"
-                for msg in context_messages
-            ])
-            prompt = f"Previous conversation:\n{context_str}\n\nCurrent message: {message}"
+            # Format context from messages with 'role' and 'content' keys
+            context_parts = []
+            for msg in context_messages:
+                role = msg.get('role', '')
+                content = msg.get('content', '')
+                if role == 'user':
+                    context_parts.append(f"User: {content}")
+                elif role == 'assistant':
+                    context_parts.append(f"Assistant: {content}")
+            
+            if context_parts:
+                context_str = "\n".join(context_parts)
+                prompt = f"Previous conversation:\n{context_str}\n\nCurrent message: {message}"
         
         # Get model handler
         logger.info(f"Creating model handler for model: '{model_name}' (type: {type(model_name)})")
@@ -169,15 +177,7 @@ async def stream_chat_message(
     user_id = current_user.id
     
     try:
-        # Get conversation context if requested
-        context_messages = []
-        if message_data.include_context:
-            context_messages = await services["conversation_manager"].get_conversation_history(
-                user_id=user_id,
-                max_messages=message_data.max_context_messages
-            )
-        
-        # Determine model
+        # Determine model FIRST before retrieving context
         model_name = message_data.model
         if not model_name:
             prefs_manager = UserPreferencesManager()
@@ -192,6 +192,15 @@ async def stream_chat_message(
         # Use model ID as-is - ModelHandlerFactory and ModelConfigurations handle all formats
         # No need for hardcoded normalization - backend supports all 54+ models
         logger.info(f"Using model: {model_name} for user {user_id}")
+        
+        # Get conversation context for THIS SPECIFIC MODEL if requested
+        context_messages = []
+        if message_data.include_context:
+            context_messages = await services["conversation_manager"].get_conversation_history(
+                user_id=user_id,
+                model=model_name,  # CRITICAL: Pass model to get model-specific history
+                max_messages=message_data.max_context_messages
+            )
         
         # Return streaming response
         return StreamingResponse(

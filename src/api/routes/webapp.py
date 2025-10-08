@@ -81,6 +81,19 @@ class ConversationHistoryItem(BaseModel):
     timestamp: float
 
 
+class ChatSession(BaseModel):
+    """Chat session information for frontend history sidebar."""
+    id: str
+    title: str
+    model: Optional[str] = None
+    created_at: str
+    updated_at: str
+    user_id: str
+    message_count: int = 0
+    pinned: bool = False
+    pinned_at: Optional[str] = None
+
+
 class ModelInfo(BaseModel):
     """Available AI model information."""
     id: str
@@ -281,21 +294,22 @@ async def send_chat_message(
     user_id = current_user.id
     
     try:
-        # Get conversation context if requested
-        context_messages = []
-        if message_data.include_context:
-            context_messages = await services["conversation_manager"].get_conversation_history(
-                user_id=user_id,
-                max_messages=message_data.max_context_messages
-            )
-        
-        # Determine which model to use
+        # Determine which model to use FIRST
         model_name = message_data.model
         if not model_name:
             # Use user's preferred model or default
             prefs_manager = UserPreferencesManager()
             user_prefs = prefs_manager.get_user_preferences(user_id)
             model_name = user_prefs.get("preferred_model", "gemini/gemini-2.0-flash-exp")
+        
+        # Get conversation context for THIS SPECIFIC MODEL if requested
+        context_messages = []
+        if message_data.include_context:
+            context_messages = await services["conversation_manager"].get_conversation_history(
+                user_id=user_id,
+                model=model_name,  # CRITICAL: Pass model to get model-specific history
+                max_messages=message_data.max_context_messages
+            )
         
         # Get model handler
         model_handler = ModelHandlerFactory.get_model_handler(
@@ -308,11 +322,19 @@ async def send_chat_message(
         # Format prompt with context
         prompt = message_data.message
         if context_messages:
-            context_str = "\n".join([
-                f"User: {msg.get('user', '')}\nAssistant: {msg.get('assistant', '')}"
-                for msg in context_messages
-            ])
-            prompt = f"Previous conversation:\n{context_str}\n\nCurrent message: {message_data.message}"
+            # Format context from messages with 'role' and 'content' keys
+            context_parts = []
+            for msg in context_messages:
+                role = msg.get('role', '')
+                content = msg.get('content', '')
+                if role == 'user':
+                    context_parts.append(f"User: {content}")
+                elif role == 'assistant':
+                    context_parts.append(f"Assistant: {content}")
+            
+            if context_parts:
+                context_str = "\n".join(context_parts)
+                prompt = f"Previous conversation:\n{context_str}\n\nCurrent message: {message_data.message}"
         
         # Generate response
         response = await model_handler.generate_response(prompt, model=model_name)
@@ -371,21 +393,22 @@ async def send_chat_message_stream(
         import json
         
         try:
-            # Get conversation context if requested
-            context_messages = []
-            if message_data.include_context:
-                context_messages = await services["conversation_manager"].get_conversation_history(
-                    user_id=user_id,
-                    max_messages=message_data.max_context_messages
-                )
-            
-            # Determine which model to use
+            # Determine which model to use FIRST
             model_name = message_data.model
             if not model_name:
                 # Use user's preferred model or default
                 prefs_manager = UserPreferencesManager()
                 user_prefs = prefs_manager.get_user_preferences(user_id)
                 model_name = user_prefs.get("preferred_model", "gemini/gemini-2.0-flash-exp")
+            
+            # Get conversation context for THIS SPECIFIC MODEL if requested
+            context_messages = []
+            if message_data.include_context:
+                context_messages = await services["conversation_manager"].get_conversation_history(
+                    user_id=user_id,
+                    model=model_name,  # CRITICAL: Pass model to get model-specific history
+                    max_messages=message_data.max_context_messages
+                )
             
             # Get model handler
             model_handler = ModelHandlerFactory.get_model_handler(
@@ -398,11 +421,19 @@ async def send_chat_message_stream(
             # Format prompt with context
             prompt = message_data.message
             if context_messages:
-                context_str = "\n".join([
-                    f"User: {msg.get('user', '')}\nAssistant: {msg.get('assistant', '')}"
-                    for msg in context_messages
-                ])
-                prompt = f"Previous conversation:\n{context_str}\n\nCurrent message: {message_data.message}"
+                # Format context from messages with 'role' and 'content' keys
+                context_parts = []
+                for msg in context_messages:
+                    role = msg.get('role', '')
+                    content = msg.get('content', '')
+                    if role == 'user':
+                        context_parts.append(f"User: {content}")
+                    elif role == 'assistant':
+                        context_parts.append(f"Assistant: {content}")
+                
+                if context_parts:
+                    context_str = "\n".join(context_parts)
+                    prompt = f"Previous conversation:\n{context_str}\n\nCurrent message: {message_data.message}"
             
             # Check if model handler supports streaming
             full_response = ""
@@ -560,6 +591,101 @@ async def get_available_models(
             status_code=500,
             detail=f"Failed to retrieve models: {str(e)}"
         )
+
+
+@router.get("/sessions", response_model=List[ChatSession])
+async def get_chat_sessions(
+    current_user: UserInfo = Depends(get_current_user)
+):
+    """
+    Get user's chat sessions/conversations grouped by model.
+    
+    Returns a list of chat sessions representing distinct conversations
+    with different AI models. Each session contains metadata like the
+    model used, message count, and timestamps.
+    
+    This endpoint provides data for the frontend chat history sidebar.
+    
+    Args:
+        current_user: Authenticated user (auto-injected)
+        
+    Returns:
+        List of chat sessions with metadata
+    """
+    services = get_services()
+    user_id = current_user.id
+    
+    try:
+        # Get MongoDB database to query conversations directly
+        persistence_manager = services["conversation_manager"].memory_manager.persistence_manager
+        
+        if not persistence_manager or not persistence_manager.conversations_collection:
+            logger.warning("MongoDB not available, returning empty sessions list")
+            return []
+        
+        # Get all distinct conversation IDs for this user
+        collection = persistence_manager.conversations_collection
+        user_pattern = f"user_{user_id}_model_"
+        
+        logger.info(f"Querying conversations for user pattern: {user_pattern}")
+        
+        # Find all conversations for this user
+        conversations = list(collection.find({
+            "cache_key": {"$regex": f"^{user_pattern}"}
+        }))
+        
+        logger.info(f"Found {len(conversations)} conversations matching pattern")
+        
+        sessions = []
+        for conv in conversations:
+            cache_key = conv.get("cache_key", "")
+            # Extract model ID from cache_key format: "user_{user_id}_model_{model_id}"
+            model_id = cache_key.replace(user_pattern, "")
+            
+            if not model_id:
+                continue
+            
+            # Get message count from conversation data
+            conversation_data = conv.get("conversation", {})
+            messages = conversation_data.get("messages", [])
+            message_count = len([m for m in messages if m.get("role") == "user"])
+            
+            # Get timestamps
+            created_at = conv.get("created_at", datetime.now().isoformat())
+            updated_at = conv.get("updated_at", created_at)
+            
+            # Generate a session ID and title
+            session_id = f"{user_id}_{model_id}_{hash(cache_key) % 100000}"
+            
+            # Create title from model name
+            model_configs = ModelConfigurations.get_all_models()
+            model_config = model_configs.get(model_id)
+            title = model_config.display_name if model_config else model_id
+            if message_count > 0:
+                title = f"{title} ({message_count} messages)"
+            
+            sessions.append(ChatSession(
+                id=session_id,
+                title=title,
+                model=model_id,
+                created_at=created_at if isinstance(created_at, str) else created_at.isoformat(),
+                updated_at=updated_at if isinstance(updated_at, str) else updated_at.isoformat(),
+                user_id=str(user_id),
+                message_count=message_count,
+                pinned=False,
+                pinned_at=None
+            ))
+        
+        # Sort by updated_at (most recent first)
+        sessions.sort(key=lambda s: s.updated_at, reverse=True)
+        
+        logger.info(f"Retrieved {len(sessions)} chat sessions for user {user_id}")
+        return sessions
+        
+    except Exception as e:
+        logger.error(f"Sessions retrieval error for user {user_id}: {e}", exc_info=True)
+        # Return empty list instead of error to avoid breaking frontend
+        return []
 
 
 @router.post("/media/analyze", response_model=MediaAnalysisResponse)
