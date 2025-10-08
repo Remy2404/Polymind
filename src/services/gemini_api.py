@@ -191,7 +191,8 @@ class GeminiAPI:
         self.rate_limiter = rate_limiter
         self.media_processor = MediaProcessor()
         self.mcp_manager = MCPManager(mcp_config_path)
-        self.mcp_tools_loaded = False
+        # Use singleton state - MCP is initialized once at app startup
+        self.mcp_tools_loaded = self.mcp_manager._initialized
         self._tool_unsupported_models = set()
         self.client = genai.Client(api_key=GEMINI_API_KEY)
         self.generation_config = types.GenerateContentConfig(
@@ -263,8 +264,9 @@ class GeminiAPI:
         Returns:
             Generated response or None if failed
         """
-        if not self.mcp_tools_loaded:
-            await self.initialize_mcp_tools()
+        # Use singleton state - no need to initialize on every request
+        self.mcp_tools_loaded = self.mcp_manager._initialized
+        
         actual_model = model if model is not None else "gemini-2.5-flash"
         mcp_tools = (
             await self.mcp_manager.get_all_tools() if self.mcp_tools_loaded else []
@@ -589,8 +591,9 @@ class GeminiAPI:
         Returns:
             List of available MCP tools
         """
-        if not self.mcp_tools_loaded:
-            await self.initialize_mcp_tools()
+        # Use singleton state - no need to initialize on every request
+        self.mcp_tools_loaded = self.mcp_manager._initialized
+        
         if self.mcp_tools_loaded:
             return await self.mcp_manager.get_all_tools()
         else:

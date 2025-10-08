@@ -26,7 +26,8 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         """
         super().__init__(rate_limiter)
         self.mcp_manager = MCPManager(mcp_config_path)
-        self.mcp_tools_loaded = False
+        # Use singleton state - MCP is initialized once at app startup
+        self.mcp_tools_loaded = self.mcp_manager._initialized
         self.logger = logging.getLogger(__name__)
         self._tool_unsupported_models = set()
         try:
@@ -137,8 +138,9 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         Returns:
             Generated response or None if failed
         """
-        if not self.mcp_tools_loaded:
-            await self.initialize_mcp_tools()
+        # Use singleton state - no need to initialize on every request
+        self.mcp_tools_loaded = self.mcp_manager._initialized
+        
         if self._should_use_gemini(model):
             self.logger.info(f"Using Gemini API for model {model}")
             return await self._generate_gemini_with_mcp_tools(
@@ -536,8 +538,9 @@ Focus on providing the most helpful and accurate response possible using the ava
         Returns:
             List of available MCP tools
         """
-        if not self.mcp_tools_loaded:
-            await self.initialize_mcp_tools()
+        # Use singleton state - no need to initialize on every request
+        self.mcp_tools_loaded = self.mcp_manager._initialized
+        
         if self.mcp_tools_loaded:
             return await self.mcp_manager.get_all_tools()
         else:
