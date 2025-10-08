@@ -8,6 +8,12 @@ from fastapi.responses import JSONResponse
 import src.api.routes.webhook as webhook_module
 import src.api.routes.webapp as webapp_module
 from src.api.routes import health, webhook, webapp
+try:
+    from src.api.routes import webapp_streaming
+    STREAMING_AVAILABLE = True
+except ImportError:
+    STREAMING_AVAILABLE = False
+    logging.warning("webapp_streaming module not found - streaming endpoints disabled")
 from src.api.middleware.request_tracking import RequestTrackingMiddleware
 from src.bot.telegram_bot import TelegramBot
 from starlette.middleware.cors import CORSMiddleware
@@ -95,5 +101,11 @@ def create_application():
     app.include_router(health.router)
     app.include_router(webhook.router)
     app.include_router(webapp.router)
+    
+    # Include streaming routes if available
+    if STREAMING_AVAILABLE:
+        app.include_router(webapp_streaming.router)
+        logger.info("Streaming endpoints enabled at /webapp/chat/stream")
+    
     app.state.bot = bot
     return app
