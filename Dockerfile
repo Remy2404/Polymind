@@ -57,7 +57,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install -y --no-install-recommends \
       ffmpeg curl ca-certificates libnss3 libatk-bridge2.0-0 libxcomposite1 libxdamage1 \
       libxrandr2 libxss1 libasound2 libxkbcommon0 libdrm2 libgbm1 \
-      libatk1.0-0 libcups2 libnspr4 chromium && \
+      libatk1.0-0 libcups2 libnspr4 libicu72 chromium && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -75,7 +75,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     dpkg -i packages-microsoft-prod.deb && \
     rm packages-microsoft-prod.deb && \
     apt-get update && \
-    apt-get install -y --no-install-recommends libicu72 && \
     apt-get install -y --no-install-recommends dotnet-runtime-8.0 fonts-liberation fonts-dejavu fonts-dejavu-core fonts-dejavu-extra && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
