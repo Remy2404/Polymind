@@ -2,7 +2,7 @@ FROM python:3.11-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    UV_CACHE_DIR=/root/.cache/uv
+    UV_CACHE_DIR=/app/.cache/uv
 
 WORKDIR /app
 
@@ -22,13 +22,13 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 COPY pyproject.toml uv.lock* ./
 
 # Build dependencies with cache mount
-RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
+RUN --mount=type=cache,id=uv-cache,target=/app/.cache/uv \
     uv sync --locked --no-install-project --no-dev
 
 # Copy source and install project
 COPY . .
 
-RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
+RUN --mount=type=cache,id=uv-cache,target=/app/.cache/uv \
     uv sync --locked --no-dev
 
 # ===== Final stage: runtime only =====
