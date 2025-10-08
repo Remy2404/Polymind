@@ -57,7 +57,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install -y --no-install-recommends \
       ffmpeg curl ca-certificates libnss3 libatk-bridge2.0-0 libxcomposite1 libxdamage1 \
       libxrandr2 libxss1 libasound2 libxkbcommon0 libdrm2 libgbm1 \
-      libatk1.0-0 libcups2 libnspr4 libicu72 chromium && \
+      libatk1.0-0 libcups2 libnspr4 chromium && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
