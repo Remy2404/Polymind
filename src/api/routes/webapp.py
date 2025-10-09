@@ -716,10 +716,20 @@ async def get_chat_sessions(
                 logger.warning(f"[Sessions] Skipping conversation with empty model_id: {cache_key}")
                 continue
             
-            # Get message count from conversation data
-            conversation_data = conv.get("conversation", {})
-            messages = conversation_data.get("messages", [])
-            message_count = len([m for m in messages if m.get("role") == "user"])
+            # Get message count from short_term_memory (where messages are actually stored)
+            # Messages are NOT in conversation.messages but in short_term_memory array
+            short_term_memory = conv.get("short_term_memory", [])
+            user_messages = [m for m in short_term_memory if m.get("sender") in ["user", str(user_id)]]
+            message_count = len(user_messages)
+            
+            # Debug: Log message structure for troubleshooting
+            logger.debug(f"[Sessions] Conversation {cache_key}: short_term_memory={len(short_term_memory)}, user_messages={message_count}")
+            
+            # CRITICAL FIX: Skip conversations with no user messages
+            # These are auto-generated empty conversations that show model names
+            if message_count == 0:
+                logger.info(f"[Sessions] Skipping empty conversation: {cache_key} (total_msgs={len(short_term_memory)})")
+                continue
             
             logger.debug(f"[Sessions] Processing session: model={model_id}, messages={message_count}")
             
@@ -727,15 +737,24 @@ async def get_chat_sessions(
             created_at = conv.get("created_at", datetime.now().isoformat())
             updated_at = conv.get("updated_at", created_at)
             
-            # Generate a session ID and title
-            session_id = f"{user_id_str}_{model_id}_{hash(cache_key) % 100000}"
+            # CRITICAL FIX: Use cache_key as session ID so frontend can fetch messages
+            # This allows messages API to query MongoDB using the same key
+            session_id = cache_key
             
-            # Create title from model name
-            model_configs = ModelConfigurations.get_all_models()
-            model_config = model_configs.get(model_id)
-            title = model_config.display_name if model_config else model_id
-            if message_count > 0:
-                title = f"{title} ({message_count} messages)"
+            # CRITICAL FIX: Create title from first user message instead of model name
+            # This makes chat history meaningful and shows actual conversation content
+            # Messages are in short_term_memory array with "sender" and "content" fields
+            title = "New Chat"
+            if user_messages:
+                first_message = user_messages[0].get("content", "")
+                # Truncate to 50 chars for title
+                title = first_message[:50] + ("..." if len(first_message) > 50 else "")
+            
+            # Fallback to model name if no messages yet
+            if not title or title == "New Chat":
+                model_configs = ModelConfigurations.get_all_models()
+                model_config = model_configs.get(model_id)
+                title = model_config.display_name if model_config else model_id
             
             sessions.append(ChatSession(
                 id=session_id,
@@ -748,16 +767,141 @@ async def get_chat_sessions(
                 pinned=False,
                 pinned_at=None
             ))
+            
+            # Debug: Log each session being added
+            logger.debug(f"[Sessions] Added session: id={session_id[:50]}..., title={title}, model={model_id}, messages={message_count}")
         
         # Sort by updated_at (most recent first)
         sessions.sort(key=lambda s: s.updated_at, reverse=True)
         
         logger.info(f"[Sessions] Returning {len(sessions)} chat sessions for user {user_id}")
+        if len(sessions) > 0:
+            logger.info(f"[Sessions] Sample session: {sessions[0].model_dump_json() if hasattr(sessions[0], 'model_dump_json') else sessions[0]}")
         return sessions
         
     except Exception as e:
         logger.error(f"[Sessions] Error retrieving sessions for user {user_id}: {e}", exc_info=True)
         # Return empty list instead of error to avoid breaking frontend
+        return []
+
+
+@router.get("/messages/{session_id:path}")
+async def get_session_messages(
+    session_id: str,
+    current_user: UserInfo = Depends(get_current_user),
+    model: Optional[str] = Query(None, description="Model ID to fetch messages for (when session_id is UUID)")
+):
+    """
+    Get messages for a specific chat session.
+    
+    Fetches conversation messages from MongoDB. Handles both:
+    - cache_key format: "user_{user_id}_model_{model_id}"
+    - UUID format with model parameter: constructs cache_key from user_id + model
+    
+    Args:
+        session_id: Session ID (cache_key or UUID)
+        model: Model ID (required when session_id is UUID)
+        current_user: Authenticated user (auto-injected)
+        
+    Returns:
+        List of messages in AI SDK format
+    """
+    services = get_services()
+    user_id = current_user.id
+    user_id_str = str(user_id)
+    
+    try:
+        logger.info(f"[Messages] Fetching messages for session_id={session_id}, user_id={user_id}, model={model}")
+        
+        # Get MongoDB database
+        persistence_manager = services["conversation_manager"].memory_manager.persistence_manager
+        
+        if persistence_manager is None or persistence_manager.conversations_collection is None:
+            logger.warning("[Messages] MongoDB not available")
+            return []
+        
+        collection = persistence_manager.conversations_collection
+        conversation_doc = None
+        cache_key = None
+        
+        # Determine cache_key based on session_id format
+        if session_id.startswith(f"user_{user_id_str}_model_"):
+            # session_id is already a cache_key
+            cache_key = session_id
+        elif model:
+            # session_id is UUID, construct cache_key from user_id + model
+            cache_key = f"user_{user_id_str}_model_{model}"
+            logger.info(f"[Messages] Constructed cache_key from model: {cache_key}")
+        else:
+            # session_id is UUID but no model provided - try to find any conversation
+            logger.info(f"[Messages] Session ID {session_id} is UUID without model, searching user's conversations")
+            
+            user_pattern = f"user_{user_id_str}_model_"
+            user_conversations = list(collection.find({
+                "cache_key": {"$regex": f"^{user_pattern}"}
+            }))
+            
+            logger.info(f"[Messages] Found {len(user_conversations)} total conversations for user {user_id}")
+            
+            # Use the most recently updated conversation
+            if user_conversations:
+                sorted_convos = sorted(
+                    user_conversations,
+                    key=lambda c: c.get("updated_at", ""),
+                    reverse=True
+                )
+                conversation_doc = sorted_convos[0]
+                cache_key = conversation_doc.get("cache_key")
+                logger.info(f"[Messages] Using most recent conversation: {cache_key}")
+        
+        # Fetch conversation by cache_key
+        if cache_key and not conversation_doc:
+            conversation_doc = collection.find_one({"cache_key": cache_key})
+        
+        if not conversation_doc:
+            logger.info(f"[Messages] No conversation found for session_id={session_id}, cache_key={cache_key}")
+            return []
+        
+        # Validate ownership
+        doc_cache_key = conversation_doc.get("cache_key", "")
+        expected_prefix = f"user_{user_id_str}_model_"
+        if not doc_cache_key.startswith(expected_prefix):
+            logger.warning(f"[Messages] Access denied: conversation {doc_cache_key} does not belong to user {user_id}")
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: session does not belong to user"
+            )
+        
+        # Extract messages from short_term_memory (where messages are actually stored)
+        # Messages are NOT in conversation.messages but in short_term_memory array
+        # Format: [{"sender": "user" or "assistant", "content": "...", "timestamp": ...}, ...]
+        short_term_memory = conversation_doc.get("short_term_memory", [])
+        
+        logger.info(f"[Messages] Found {len(short_term_memory)} messages for session {session_id} (cache_key: {doc_cache_key})")
+        
+        # Convert to AI SDK format
+        # Backend stores: {"sender": "user"|str(user_id)|"assistant", "content": "...", "timestamp": ...}
+        # Frontend expects: {"id": "...", "role": "user"|"assistant", "content": "...", "createdAt": "..."}
+        ai_sdk_messages = []
+        for idx, msg in enumerate(short_term_memory):
+            sender = msg.get("sender", "")
+            # Convert sender to role: if sender is "user" or user_id, role is "user", else "assistant"
+            role = "user" if sender in ["user", str(user_id)] else "assistant"
+            
+            ai_sdk_messages.append({
+                "id": f"{session_id}_{idx}",
+                "role": role,
+                "content": msg.get("content", ""),
+                "createdAt": msg.get("timestamp", datetime.now().isoformat())
+            })
+        
+        return ai_sdk_messages
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Messages] Error retrieving messages for session {session_id}: {e}", exc_info=True)
+        # Return empty list instead of error
         return []
 
 
@@ -802,13 +946,6 @@ async def analyze_media(
         # Select vision model
         model_name = model or "gemini/gemini-2.0-flash-exp"
         
-        # Get model handler
-        model_handler = ModelHandlerFactory.get_model_handler(
-            model_name=model_name,
-            gemini_api=services["gemini_api"],
-            openrouter_api=services["openrouter_api"],
-            deepseek_api=services["deepseek_api"]
-        )
         
         # Check if model supports vision
         model_config = ModelConfigurations.get_all_models().get(model_name)
