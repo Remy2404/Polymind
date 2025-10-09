@@ -75,6 +75,7 @@ class ChatResponse(BaseModel):
 
 class ConversationHistoryItem(BaseModel):
     """Single conversation history entry."""
+    id: str
     user_message: str
     ai_response: str
     model_used: str
@@ -152,6 +153,7 @@ async def verify_telegram_init_data(
     
     # Check for Authorization header
     if not authorization:
+        logger.warning("[Auth] Request received without Authorization header")
         raise HTTPException(
             status_code=401,
             detail="Authorization header missing. Include 'Authorization: tma {initData}'"
@@ -159,6 +161,7 @@ async def verify_telegram_init_data(
     
     # Validate format: "tma {init_data}"
     if not authorization.startswith("tma "):
+        logger.warning(f"[Auth] Invalid authorization format (starts with: {authorization[:20]}...)")
         raise HTTPException(
             status_code=401,
             detail="Invalid authorization format. Expected: 'tma {initData}'"
@@ -166,6 +169,7 @@ async def verify_telegram_init_data(
     
     # Extract init data
     init_data = authorization[4:]
+    logger.debug(f"[Auth] Validating init_data (length={len(init_data)})")
     
     # Get bot token from environment
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -178,6 +182,7 @@ async def verify_telegram_init_data(
     # Validate init data signature and expiration
     try:
         if not is_valid(init_data, bot_token):
+            logger.warning("[Auth] Init data validation failed: invalid signature or expired")
             raise HTTPException(
                 status_code=401,
                 detail="Invalid init data signature or expired"
@@ -188,17 +193,20 @@ async def verify_telegram_init_data(
         
         # Ensure user data exists
         if not parsed_data.get("user"):
+            logger.error("[Auth] Parsed data missing user information")
             raise HTTPException(
                 status_code=400,
                 detail="User data not found in init data"
             )
         
+        user_id = parsed_data["user"].get("id")
+        logger.info(f"[Auth] Successfully authenticated user_id={user_id}")
         return parsed_data
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Init data validation error: {e}", exc_info=True)
+        logger.error(f"[Auth] Init data validation error: {e}", exc_info=True)
         raise HTTPException(
             status_code=401,
             detail=f"Init data validation failed: {str(e)}"
@@ -508,23 +516,68 @@ async def get_conversation_history(
     user_id = current_user.id
     
     try:
-        # Get conversation history
+        # Determine which model to use for history retrieval
+        # Use user's preferred model or default
+        prefs_manager = UserPreferencesManager()
+        user_prefs = prefs_manager.get_user_preferences(user_id)
+        model_name = user_prefs.get("preferred_model", "gemini/gemini-2.0-flash-exp")
+        
+        # Get conversation history - returns list of {"role": "...", "content": "..."} dicts
         messages = await services["conversation_manager"].get_conversation_history(
             user_id=user_id,
-            max_messages=limit + offset
+            max_messages=limit + offset,
+            model=model_name
         )
         
         # Apply pagination
         paginated = messages[offset:offset + limit]
         
-        # Format response
+        # Format response - pair up user and assistant messages
         history = []
+        user_message = None
+        ai_response = None
+        model_used = "unknown"
+        timestamp = datetime.now().timestamp()
+        
         for msg in paginated:
+            if msg.get("role") == "user":
+                # If we already have a user message without a response, add it to history
+                if user_message is not None and ai_response is not None:
+                    history.append(ConversationHistoryItem(
+                        id=f"{user_id}_{int(timestamp)}",
+                        user_message=user_message,
+                        ai_response=ai_response,
+                        model_used=model_used,
+                        timestamp=timestamp
+                    ))
+                    user_message = None
+                    ai_response = None
+                
+                # Store the new user message
+                user_message = msg.get("content", "")
+                model_used = msg.get("model", "unknown")
+                timestamp = msg.get("timestamp", datetime.now().timestamp())
+            elif msg.get("role") == "assistant" and user_message is not None:
+                # Store the assistant response and add the pair to history
+                ai_response = msg.get("content", "")
+                history.append(ConversationHistoryItem(
+                    id=f"{user_id}_{int(timestamp)}",
+                    user_message=user_message,
+                    ai_response=ai_response,
+                    model_used=model_used,
+                    timestamp=timestamp
+                ))
+                user_message = None
+                ai_response = None
+        
+        # Add any remaining user message without a response
+        if user_message is not None and ai_response is not None:
             history.append(ConversationHistoryItem(
-                user_message=msg.get("user", ""),
-                ai_response=msg.get("assistant", ""),
-                model_used=msg.get("model", "unknown"),
-                timestamp=msg.get("timestamp", datetime.now().timestamp())
+                id=f"{user_id}_{int(timestamp)}",
+                user_message=user_message,
+                ai_response=ai_response,
+                model_used=model_used,
+                timestamp=timestamp
             ))
         
         return history
@@ -619,22 +672,39 @@ async def get_chat_sessions(
         # Get MongoDB database to query conversations directly
         persistence_manager = services["conversation_manager"].memory_manager.persistence_manager
         
-        if not persistence_manager or not persistence_manager.conversations_collection:
+        # FIXED: MongoDB Collection objects don't support boolean checks - must compare with None
+        if persistence_manager is None or persistence_manager.conversations_collection is None:
             logger.warning("MongoDB not available, returning empty sessions list")
             return []
         
         # Get all distinct conversation IDs for this user
         collection = persistence_manager.conversations_collection
-        user_pattern = f"user_{user_id}_model_"
         
-        logger.info(f"Querying conversations for user pattern: {user_pattern}")
+        # CRITICAL FIX: Ensure user_id is string for consistent cache_key matching
+        # MongoDB stores cache_keys as strings like "user_123_model_gemini/gemini-2.0-flash-exp"
+        user_id_str = str(user_id)
+        user_pattern = f"user_{user_id_str}_model_"
+        
+        logger.info(f"[Sessions] Querying for user_id={user_id} (type={type(user_id).__name__})")
+        logger.info(f"[Sessions] Using pattern: {user_pattern}")
+        
+        # Debug: Check total conversations in collection
+        total_convos = collection.count_documents({})
+        logger.info(f"[Sessions] Total conversations in DB: {total_convos}")
         
         # Find all conversations for this user
         conversations = list(collection.find({
             "cache_key": {"$regex": f"^{user_pattern}"}
         }))
         
-        logger.info(f"Found {len(conversations)} conversations matching pattern")
+        logger.info(f"[Sessions] Found {len(conversations)} conversations for user {user_id}")
+        
+        # Debug: Log sample cache_keys if no conversations found
+        if len(conversations) == 0:
+            sample_keys = list(collection.find({}, {"cache_key": 1}).limit(5))
+            logger.warning(f"[Sessions] No conversations found. Sample cache_keys in DB: {[k.get('cache_key') for k in sample_keys]}")
+        else:
+            logger.info(f"[Sessions] Sample matching cache_key: {conversations[0].get('cache_key')}")
         
         sessions = []
         for conv in conversations:
@@ -643,6 +713,7 @@ async def get_chat_sessions(
             model_id = cache_key.replace(user_pattern, "")
             
             if not model_id:
+                logger.warning(f"[Sessions] Skipping conversation with empty model_id: {cache_key}")
                 continue
             
             # Get message count from conversation data
@@ -650,12 +721,14 @@ async def get_chat_sessions(
             messages = conversation_data.get("messages", [])
             message_count = len([m for m in messages if m.get("role") == "user"])
             
+            logger.debug(f"[Sessions] Processing session: model={model_id}, messages={message_count}")
+            
             # Get timestamps
             created_at = conv.get("created_at", datetime.now().isoformat())
             updated_at = conv.get("updated_at", created_at)
             
             # Generate a session ID and title
-            session_id = f"{user_id}_{model_id}_{hash(cache_key) % 100000}"
+            session_id = f"{user_id_str}_{model_id}_{hash(cache_key) % 100000}"
             
             # Create title from model name
             model_configs = ModelConfigurations.get_all_models()
@@ -670,7 +743,7 @@ async def get_chat_sessions(
                 model=model_id,
                 created_at=created_at if isinstance(created_at, str) else created_at.isoformat(),
                 updated_at=updated_at if isinstance(updated_at, str) else updated_at.isoformat(),
-                user_id=str(user_id),
+                user_id=user_id_str,
                 message_count=message_count,
                 pinned=False,
                 pinned_at=None
@@ -679,11 +752,11 @@ async def get_chat_sessions(
         # Sort by updated_at (most recent first)
         sessions.sort(key=lambda s: s.updated_at, reverse=True)
         
-        logger.info(f"Retrieved {len(sessions)} chat sessions for user {user_id}")
+        logger.info(f"[Sessions] Returning {len(sessions)} chat sessions for user {user_id}")
         return sessions
         
     except Exception as e:
-        logger.error(f"Sessions retrieval error for user {user_id}: {e}", exc_info=True)
+        logger.error(f"[Sessions] Error retrieving sessions for user {user_id}: {e}", exc_info=True)
         # Return empty list instead of error to avoid breaking frontend
         return []
 

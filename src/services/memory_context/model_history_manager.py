@@ -44,7 +44,9 @@ class ModelHistoryManager:
         """
         if model_id is None:
             model_id = self.get_selected_model(user_id)
-        return f"user_{user_id}_model_{model_id}"
+        # CRITICAL: Always convert user_id to string for consistent MongoDB cache_key format
+        # This ensures queries like "user_{user_id}_model_" match stored keys correctly
+        return f"user_{str(user_id)}_model_{model_id}"
     def get_selected_model(self, user_id: int) -> str:
         """
         Get the currently selected model for a user.

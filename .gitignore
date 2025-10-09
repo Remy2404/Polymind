@@ -43,3 +43,4 @@ build-and-run.ps1
 .cursor
 test_*
 AGENTS.md
+temp_zola/

@@ -171,8 +171,6 @@ class CommandHandlers:
             await self.help_command(update, context)
         elif data.startswith("img_"):
             await self.image_commands.handle_image_settings(update, context, data)
-        elif data.startswith("pref_"):
-            await self.settings_commands.handle_user_preferences(update, context, data)
         elif data.startswith(("category_", "model_")) or data in (
             "back_to_categories",
             "current_model",

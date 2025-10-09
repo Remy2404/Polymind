@@ -77,7 +77,8 @@ class ConversationManager:
                 message_context,
             )
         else:
-            conversation_id = f"user_{user_id}"
+            # CRITICAL: Convert user_id to string for consistent MongoDB cache_key format
+            conversation_id = f"user_{str(user_id)}"
             await self.memory_manager.add_user_message(
                 conversation_id,
                 user_message,
