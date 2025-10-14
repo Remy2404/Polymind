@@ -1,0 +1,69 @@
+sequenceDiagram
+    participant FE as Frontend (Telegram Mini App)
+    participant API as FastAPI Backend
+    participant Auth as Authentication Middleware
+    participant CM as ConversationManager
+    participant MHM as ModelHistoryManager
+    participant MH as Model Handler
+    participant DB as MongoDB
+
+    %% Chat History Retrieval Flow
+    rect rgb(240, 248, 255)
+        Note over FE,DB: Chat History Retrieval Flow
+        FE->>API: GET /webapp/messages/{chat_id}
+        API->>Auth: Validate Telegram init data
+        Auth-->>API: User authenticated (user_id)
+        API->>CM: get_conversation_history(user_id, model)
+        CM->>MHM: get_history(user_id, model)
+        MHM->>DB: Query model_history collection
+        DB-->>MHM: Return message history
+        MHM-->>CM: Return formatted messages
+        CM-->>API: Return conversation context
+        API-->>FE: Return message array
+    end
+
+    %% Model Switching Flow
+    rect rgb(255, 248, 220)
+        Note over FE,DB: Model Switching Flow
+        FE->>API: POST /webapp/chat (with new model)
+        API->>Auth: Validate user
+        Auth-->>API: User authenticated
+        API->>MH: Create handler for new model
+        MH->>DB: Load existing conversation (if any)
+        DB-->>MH: Return conversation data
+        MH-->>API: Handler ready
+        API-->>FE: Chat response with new model
+    end
+
+    %% Chat Streaming Flow
+    rect rgb(240, 255, 240)
+        Note over FE,DB: Chat Streaming Flow
+        FE->>API: POST /webapp/chat/stream
+        API->>Auth: Validate user
+        Auth-->>API: User authenticated
+        API->>CM: Get conversation context
+        CM->>MHM: Retrieve history messages
+        MHM->>DB: Query history
+        DB-->>MHM: Return messages
+        MHM-->>CM: Format context
+        CM-->>API: Context ready
+        API->>MH: Process with model handler
+        MH->>MH: Call external API (OpenRouter)
+        MH-->>API: Stream response
+        API-->>FE: Stream chat response
+        API->>CM: Save new messages
+        CM->>MHM: Update history
+        MHM->>DB: Persist to database
+        DB-->>MHM: Confirm persistence
+    end
+
+    %% Sessions/Chats Listing Flow
+    rect rgb(255, 240, 245)
+        Note over FE,DB: Sessions/Chats Listing Flow
+        FE->>API: GET /webapp/sessions or /webapp/history
+        API->>Auth: Validate user
+        Auth-->>API: User authenticated
+        API->>DB: Query chat_sessions collection
+        DB-->>API: Return session list
+        API-->>FE: Return formatted chat list
+    end

@@ -107,5 +107,10 @@ def create_application():
         app.include_router(webapp_streaming.router)
         logger.info("Streaming endpoints enabled at /webapp/chat/stream")
     
+    # Root route for API status
+    @app.get("/")
+    async def root():
+        return {"message": "Polymind API is running", "version": "1.0.0", "status": "active"}
+    
     app.state.bot = bot
     return app
