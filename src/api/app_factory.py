@@ -17,6 +17,7 @@ except ImportError:
 from src.api.middleware.request_tracking import RequestTrackingMiddleware
 from src.bot.telegram_bot import TelegramBot
 from starlette.middleware.cors import CORSMiddleware
+from src.services.mcp_bot_integration import initialize_mcp_for_bot
 logger = logging.getLogger(__name__)
 def get_telegram_bot_dependency(bot):
     """Creates a dependency that provides access to the TelegramBot instance."""
@@ -32,6 +33,10 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
     logger.info("Starting application with enhanced monitoring...")
     app.state.start_time = time.time()
     try:
+        # Initialize MCP for webapp (like Telegram bot)
+        logger.info("Initializing MCP integration for webapp...")
+        await initialize_mcp_for_bot()
+        
         await bot.application.initialize()
         await bot.application.start()
         if os.getenv("WEBHOOK_URL"):

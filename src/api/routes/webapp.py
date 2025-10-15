@@ -303,12 +303,6 @@ async def build_session_id_mapping(current_user: UserInfo):
             if not messages:  # Skip empty conversations
                 continue
 
-            # Parse model from cache_key
-            try:
-                model_part = cache_key.split("_model_")[1]
-            except IndexError:
-                continue
-
             # Create hash and store mapping
             import hashlib
             session_id = hashlib.md5(cache_key.encode()).hexdigest()

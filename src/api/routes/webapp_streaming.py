@@ -18,6 +18,10 @@ from src.api.routes.webapp import (
 )
 from src.services.model_handlers.factory import ModelHandlerFactory
 from src.services.user_preferences_manager import UserPreferencesManager
+from src.services.mcp_bot_integration import (
+    generate_mcp_response,
+    is_model_mcp_compatible,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webapp", tags=["Telegram Mini Apps - Streaming"])
@@ -71,6 +75,46 @@ async def generate_ai_response_stream(
             if context_parts:
                 context_str = "\n".join(context_parts)
                 prompt = f"Previous conversation:\n{context_str}\n\nCurrent message: {message}"
+        
+        # Try MCP-enhanced response first (like Telegram bot)
+        logger.info(f"Checking MCP compatibility for model: {model_name}")
+        if is_model_mcp_compatible(model_name):
+            logger.info(f"Model {model_name} is MCP compatible, attempting MCP response")
+            try:
+                mcp_response = await generate_mcp_response(
+                    prompt=prompt,
+                    user_id=user_id,
+                    model=model_name
+                )
+                if mcp_response:
+                    logger.info(f"MCP response generated successfully for user {user_id}")
+                    # Send start event
+                    start_event = json.dumps({"type": "start", "model": model_name})
+                    yield f'data: {start_event}\n\n'
+                    
+                    # Send MCP response as content
+                    content_event = json.dumps({"type": "content", "content": mcp_response})
+                    yield f'data: {content_event}\n\n'
+                    
+                    # Save conversation
+                    await services["conversation_manager"].save_message_pair(
+                        user_id,
+                        message,
+                        mcp_response,
+                        model_name
+                    )
+                    
+                    # Send completion event
+                    done_event = json.dumps({"type": "done", "timestamp": datetime.now().timestamp()})
+                    yield f'data: {done_event}\n\n'
+                    return
+                else:
+                    logger.info("MCP response failed, falling back to regular model handler")
+            except Exception as e:
+                logger.warning(f"MCP response failed for user {user_id}: {e}, falling back to regular handler")
+        
+        # Fallback to regular model handler (existing logic)
+        logger.info(f"Using regular model handler for model: {model_name}")
         
         # Get model handler
         logger.info(f"Creating model handler for model: '{model_name}' (type: {type(model_name)})")
