@@ -149,6 +149,24 @@ async def verify_telegram_init_data(
     )
 ) -> Dict[str, Any]:
     """Verify and parse Telegram Mini Apps init data."""
+    
+    # Check if we're in development mode
+    dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
+    
+    if dev_mode:
+        logger.info("[Auth] Development mode enabled - bypassing Telegram authentication")
+        # Return mock user data for development
+        return {
+            "user": {
+                "id": 123456789,  # Mock user ID
+                "first_name": "Dev",
+                "last_name": "User",
+                "username": "devuser",
+                "language_code": "en",
+                "is_premium": False
+            }
+        }
+    
     if not TELEGRAM_INIT_DATA_AVAILABLE:
         raise HTTPException(
             status_code=500,
