@@ -15,6 +15,7 @@ except ImportError:
     STREAMING_AVAILABLE = False
     logging.warning("webapp_streaming module not found - streaming endpoints disabled")
 from src.api.middleware.request_tracking import RequestTrackingMiddleware
+from src.api.middleware.rate_limiting import RateLimitMiddleware
 from src.bot.telegram_bot import TelegramBot
 from starlette.middleware.cors import CORSMiddleware
 from src.services.mcp_bot_integration import initialize_mcp_for_bot
@@ -83,6 +84,16 @@ def create_application():
     app = FastAPI(lifespan=lifespan)
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(RequestTrackingMiddleware)
+    
+    # Add rate limiting middleware
+    app.add_middleware(
+        RateLimitMiddleware,
+        default_requests_per_minute=60,
+        streaming_requests_per_minute=20,
+        auth_requests_per_minute=10,
+        enable_logging=True
+    )
+    
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

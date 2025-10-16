@@ -1019,6 +1019,9 @@ Focus on providing the most helpful and accurate response possible using the ava
         self, contents: List[Any], model_name: str, config: Any, max_retries: int = 3
     ) -> Any:
         """Generate content with retry logic using new SDK"""
+        last_error = None
+        service_unavailable_count = 0
+        
         for attempt in range(max_retries):
             try:
                 response = await asyncio.to_thread(
@@ -1029,28 +1032,39 @@ Focus on providing the most helpful and accurate response possible using the ava
                 )
                 return response
             except ResourceExhausted as e:
+                last_error = e
                 if attempt < max_retries - 1:
                     wait_time = 2**attempt
                     self.logger.warning(f"Rate limited, waiting {wait_time}s...")
                     await asyncio.sleep(wait_time)
                     continue
-                raise e
+                break
             except ServiceUnavailable as e:
+                last_error = e
+                service_unavailable_count += 1
                 if attempt < max_retries - 1:
-                    wait_time = 1 + attempt
+                    wait_time = 2 + attempt * 2  # Longer wait for 503 errors
                     self.logger.warning(
-                        f"Service unavailable, retrying in {wait_time}s..."
+                        f"Service unavailable (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
                     )
                     await asyncio.sleep(wait_time)
                     continue
-                raise e
+                break
             except Exception as e:
+                last_error = e
                 self.logger.error(f"Generation attempt {attempt + 1} failed: {e}")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(1)
                     continue
-                raise e
-        raise Exception("All retry attempts failed")
+                break
+        
+        # Provide specific error message based on the type of error
+        if service_unavailable_count >= max_retries:
+            self.logger.error("Google Gemini service is currently overloaded after all retry attempts")
+            raise Exception("Gemini API is currently overloaded. Please try a different model or try again later.")
+        
+        self.logger.error(f"All retry attempts failed. Last error: {last_error}")
+        raise last_error or Exception("All retry attempts failed")
     async def generate_content_with_tools(
         self,
         prompt: str,
@@ -1151,6 +1165,8 @@ Focus on providing the most helpful and accurate response possible using the ava
         temperature: float = 0.7,
         max_tokens: int = 32768,
         model: Optional[str] = None,  # Added for compatibility with fallback handler
+        quoted_message: Optional[str] = None,
+        attachments: Optional[List] = None,  # New parameter for image attachments
     ) -> Optional[str]:
         """Legacy method for backward compatibility with temperature and max_tokens support
         
@@ -1162,6 +1178,8 @@ Focus on providing the most helpful and accurate response possible using the ava
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
             model: Model name (optional, ignored - uses self.model_name instead)
+            quoted_message: Optional quoted message context
+            attachments: Optional list of ImageAttachment objects with base64 image data
         """
         # Note: model parameter is accepted but ignored for compatibility
         # GeminiAPI uses self.model_name set during initialization
@@ -1171,7 +1189,14 @@ Focus on providing the most helpful and accurate response possible using the ava
             top_k=self.generation_config.top_k,
             max_output_tokens=max_tokens,
         )
+        
         content_parts = [prompt]
+        
+        # Add quoted message context if provided
+        if quoted_message:
+            content_parts.insert(0, f"Replying to: {quoted_message}")
+        
+        # Handle context
         if context:
             context_parts = []
             for msg in context[-5:]:
@@ -1182,12 +1207,56 @@ Focus on providing the most helpful and accurate response possible using the ava
             if context_parts:
                 context_text = "\n".join(context_parts)
                 content_parts.insert(0, f"Context:\n{context_text}")
+        
+        # Convert content parts to Gemini format
         contents = []
         for part in content_parts:
             if isinstance(part, str):
                 contents.append(types.Part.from_text(text=part))
             else:
                 contents.append(part)
+        
+        # Handle image attachments
+        if attachments:
+            self.logger.info(f"Processing {len(attachments)} image attachments")
+            for i, attachment in enumerate(attachments):
+                if attachment.content_type.startswith('image/'):
+                    try:
+                        # Decode base64 image data
+                        import base64
+                        image_bytes = base64.b64decode(attachment.data)
+                        
+                        # Create image part for Gemini
+                        image_part = types.Part.from_bytes(
+                            data=image_bytes, 
+                            mime_type=attachment.content_type
+                        )
+                        contents.append(image_part)
+                        
+                        self.logger.info(f"Successfully processed image attachment {i+1}: {attachment.name} ({attachment.content_type})")
+                        
+                        # Add descriptive text about the image
+                        contents.append(types.Part.from_text(
+                            text=f"[Image attached: {attachment.name}]"
+                        ))
+                    except Exception as e:
+                        self.logger.error(f"Failed to process image attachment {attachment.name}: {e}")
+                        contents.append(types.Part.from_text(
+                            text=f"[Failed to process image: {attachment.name}]"
+                        ))
+                else:
+                    self.logger.warning(f"Skipping non-image attachment: {attachment.name} ({attachment.content_type})")
+        
+        # If we have both text and images, make sure the text prompt comes after images for better context
+        if attachments and len(contents) > 1:
+            # Rearrange: put images first, then the text prompt
+            text_parts = [part for part in contents if hasattr(part, 'text')]
+            image_parts = [part for part in contents if not hasattr(part, 'text')]
+            
+            # Rebuild contents with images first, then text
+            contents = image_parts + text_parts
+            self.logger.info(f"Reordered content: {len(image_parts)} image parts, {len(text_parts)} text parts")
+        
         contents = [types.Content(role="user", parts=contents)]
         try:
             response = await self._generate_with_retry(
@@ -1209,7 +1278,13 @@ Focus on providing the most helpful and accurate response possible using the ava
                 return None
         except Exception as e:
             self.logger.error(f"Error in generate_response: {e}")
-            return None
+            # Return descriptive error message instead of None
+            if "overloaded" in str(e).lower() or "503" in str(e):
+                return "Error: Gemini API is currently overloaded. Please try a different model or try again later."
+            elif "rate" in str(e).lower() or "429" in str(e):
+                return "Error: Rate limit exceeded. Please wait a moment and try again."
+            else:
+                return f"Error: Failed to generate response. {str(e)}"
     async def close(self):
         """Clean up resources and close MCP connections."""
         self.logger.info("Gemini API client closed")

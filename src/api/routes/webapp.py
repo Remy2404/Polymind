@@ -92,6 +92,13 @@ class ChatSession(BaseModel):
     pinned_at: Optional[str] = None
 
 
+class Attachment(BaseModel):
+    """File attachment for messages."""
+    name: str = Field(..., description="Original filename")
+    content_type: str = Field(..., description="MIME type")
+    data: str = Field(..., description="Base64 encoded file content")
+
+
 class ChatMessage(BaseModel):
     """Message sent to AI model."""
 
@@ -104,6 +111,9 @@ class ChatMessage(BaseModel):
     )
     include_context: bool = Field(True, description="Include conversation history")
     max_context_messages: int = Field(10, ge=1, le=50)
+    attachments: Optional[List[Attachment]] = Field(
+        None, description="File attachments (images, documents, etc.)"
+    )
 
 
 class ChatResponse(BaseModel):
@@ -1103,26 +1113,81 @@ async def list_history_legacy(
     return await list_chats_legacy(current_user, limit, offset)
 
 
-@router.delete("/chats/{chat_id}")
+@router.delete("/chats/{chat_id:path}")
 async def delete_chat_legacy(
     chat_id: str,
     current_user: UserInfo = Depends(get_current_user)
 ):
     """
     Legacy endpoint for deleting chats.
-    Deletes the corresponding session.
+    Supports:
+    1. UUID-based sessions (new format)
+    2. Cache_key format (user_{user_id}_model_{model}) - ALLOWS SLASHES IN PATH
+    3. Hashed session IDs (MD5 hash of cache_key)
+    Deletes the corresponding session from the appropriate collection.
     """
+    from urllib.parse import unquote
+    
+    # Decode URL-encoded characters (e.g., %3A -> :, %2F -> /)
+    chat_id = unquote(chat_id)
+    
     sessions_collection = get_sessions_collection()
     user_id = str(current_user.id)
+    deleted = False
 
     try:
-        # Find and delete the session
+        # Try deleting from new format (chat_sessions collection with session_id)
         result = sessions_collection.delete_one({
             "session_id": chat_id,
             "user_id": user_id
         })
 
-        if result.deleted_count == 0:
+        if result.deleted_count > 0:
+            deleted = True
+            logger.info(f"[Chats] Deleted new format session {chat_id} for user {user_id}")
+        else:
+            # Try deleting from old format (conversations collection)
+            from src.database.connection import get_database
+            db, _ = get_database()
+            
+            if db is not None:
+                conversations = db.conversations
+                
+                # Case 1: chat_id is the cache_key directly (e.g., user_806762900_model_gemini)
+                if chat_id.startswith(f"user_{user_id}_model_"):
+                    result = conversations.delete_one({
+                        "cache_key": chat_id
+                    })
+                    
+                    if result.deleted_count > 0:
+                        deleted = True
+                        logger.info(f"[Chats] Deleted old format conversation {chat_id} for user {user_id}")
+                else:
+                    # Case 2: chat_id is a hashed session ID - look up the original cache_key
+                    await build_session_id_mapping(current_user)
+                    
+                    global _session_id_to_cache_key
+                    if '_session_id_to_cache_key' in globals() and chat_id in _session_id_to_cache_key:
+                        cache_key = _session_id_to_cache_key[chat_id]
+                        
+                        # Verify it belongs to this user
+                        if cache_key.startswith(f"user_{user_id}_model_"):
+                            result = conversations.delete_one({
+                                "cache_key": cache_key
+                            })
+                            
+                            if result.deleted_count > 0:
+                                deleted = True
+                                # Remove from mapping
+                                del _session_id_to_cache_key[chat_id]
+                                logger.info(f"[Chats] Deleted hashed session {chat_id} (cache_key: {cache_key}) for user {user_id}")
+                        else:
+                            logger.warning(f"[Chats] Hashed session {chat_id} resolved to cache_key {cache_key} which doesn't belong to user {user_id}")
+                    else:
+                        # Not in mapping - might be an invalid or very old chat ID
+                        logger.warning(f"[Chats] Chat ID {chat_id} not found in any format for user {user_id}")
+
+        if not deleted:
             raise HTTPException(status_code=404, detail="Chat not found")
 
         return {"status": "success", "message": "Chat deleted"}

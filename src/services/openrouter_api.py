@@ -80,11 +80,33 @@ class OpenRouterAPI:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         timeout: float = 300.0,
+        quoted_message: Optional[str] = None,
+        attachments: Optional[List] = None,
     ) -> Optional[str]:
+        """
+        Generate response from OpenRouter API.
+        
+        Args:
+            prompt: The user's message/prompt
+            context: Optional conversation context
+            model: Model identifier to use
+            temperature: Sampling temperature (0.0-1.0)
+            max_tokens: Maximum tokens to generate
+            timeout: Request timeout in seconds
+            quoted_message: Optional message being replied to
+            attachments: Optional image attachments (currently ignored for OpenRouter text models)
+            
+        Returns:
+            Generated response text or error message
+        """
         try:
             if not model or not isinstance(model, str) or not model.strip():
                 self.logger.error("Invalid model parameter: must be a non-empty string")
                 return "Error: Invalid model specified"
+            
+            # Log if attachments are provided but will be ignored
+            if attachments:
+                self.logger.info(f"Attachments provided for OpenRouter model {model} but will be ignored (use generate_vision_response for vision)")
             
             self.logger.info(f"Attempting to get OpenRouter model key for: {model}")
             openrouter_model = ModelConfigurations.get_model_with_fallback(model)
@@ -106,7 +128,14 @@ class OpenRouterAPI:
                     max_tokens = model_config.max_tokens
                 else:
                     max_tokens = 32768
+            
             system_message = self._build_system_message(model, context)
+            
+            # Handle quoted message context
+            final_prompt = prompt
+            if quoted_message:
+                final_prompt = f'Replying to: "{quoted_message}"\n\nUser\'s message: {prompt}'
+            
             messages = []
             # Use the new capability detection system
             safe_config = ModelConfigurations.get_safe_model_config(model)
@@ -116,7 +145,7 @@ class OpenRouterAPI:
                 messages.extend(
                     [msg for msg in context if "role" in msg and "content" in msg]
                 )
-            messages.append({"role": "user", "content": prompt})
+            messages.append({"role": "user", "content": final_prompt})
 
             # Adapt the request parameters based on model capabilities
             request_params = {
