@@ -69,4 +69,5 @@ dependencies = [
     "openai>=1.106.1",
     "mcp[cli]>=1.10.1",
     "telegram-init-data[fastapi]>=1.0.0",
+    "pydantic-core>=2.27.1",
 ]
