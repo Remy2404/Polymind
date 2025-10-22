@@ -156,9 +156,17 @@ class UserPreferences(BaseModel):
 async def verify_telegram_init_data(
     authorization: str = Header(
         None, description="Authorization header with format: 'tma {init_data}'"
-    )
+    ),
+    user_id: str = Query(
+        None, description="User ID for fallback authentication when outside Telegram context"
+    ),
 ) -> Dict[str, Any]:
-    """Verify and parse Telegram Mini Apps init data."""
+    """Verify and parse Telegram Mini Apps init data.
+    
+    Supports two authentication methods:
+    1. Primary: Telegram initData (from mini app)
+    2. Fallback: user_id URL parameter (when opened outside Telegram, e.g., "Open" button)
+    """
     
     # Check if we're in development mode
     # dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
@@ -183,54 +191,83 @@ async def verify_telegram_init_data(
             detail="Server configuration error: telegram-init-data not installed",
         )
 
-    if not authorization:
-        logger.warning("[Auth] Request received without Authorization header")
-        raise HTTPException(
-            status_code=401,
-            detail="Authorization header missing. Include 'Authorization: tma {initData}'",
-        )
-
-    if not authorization.startswith("tma "):
-        logger.warning("[Auth] Invalid authorization format")
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid authorization format. Expected: 'tma {initData}'",
-        )
-
-    init_data = authorization[4:]
-    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-    if not bot_token:
-        raise HTTPException(
-            status_code=500,
-            detail="Server configuration error: TELEGRAM_BOT_TOKEN not set",
-        )
-
-    try:
-        if not is_valid(init_data, bot_token):
-            logger.warning("[Auth] Init data validation failed")
+    # Try primary authentication: Telegram initData
+    if authorization:
+        if not authorization.startswith("tma "):
+            logger.warning("[Auth] Invalid authorization format")
             raise HTTPException(
-                status_code=401, detail="Invalid init data signature or expired"
+                status_code=401,
+                detail="Invalid authorization format. Expected: 'tma {initData}'",
             )
 
-        parsed_data = parse(init_data)
-
-        if not parsed_data.get("user"):
-            logger.error("[Auth] Parsed data missing user information")
+        init_data = authorization[4:]
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        if not bot_token:
             raise HTTPException(
-                status_code=400, detail="User data not found in init data"
+                status_code=500,
+                detail="Server configuration error: TELEGRAM_BOT_TOKEN not set",
             )
 
-        user_id = parsed_data["user"].get("id")
-        logger.info(f"[Auth] Successfully authenticated user_id={user_id}")
-        return parsed_data
+        try:
+            if not is_valid(init_data, bot_token):
+                logger.warning("[Auth] Init data validation failed")
+                raise HTTPException(
+                    status_code=401, detail="Invalid init data signature or expired"
+                )
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[Auth] Init data validation error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=401, detail=f"Init data validation failed: {str(e)}"
-        )
+            parsed_data = parse(init_data)
+
+            if not parsed_data.get("user"):
+                logger.error("[Auth] Parsed data missing user information")
+                raise HTTPException(
+                    status_code=400, detail="User data not found in init data"
+                )
+
+            user_id_from_data = parsed_data["user"].get("id")
+            logger.info(f"[Auth] Successfully authenticated via initData user_id={user_id_from_data}")
+            return parsed_data
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"[Auth] Init data validation error: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=401, detail=f"Init data validation failed: {str(e)}"
+            )
+    
+    # Fallback authentication: URL parameter user_id (for "Open" button outside Telegram context)
+    if user_id:
+        logger.info(f"[Auth] Using fallback authentication with user_id={user_id} (outside Telegram context)")
+        # Verify user_id is a valid integer
+        try:
+            parsed_user_id = int(user_id)
+            # Return a minimal user object for fallback authentication
+            # This allows the app to work when opened outside of Telegram Mini App
+            return {
+                "user": {
+                    "id": parsed_user_id,
+                    "first_name": "User",
+                    "last_name": None,
+                    "username": None,
+                    "language_code": "en",
+                    "is_premium": False,
+                    "photo_url": None,
+                },
+                "auth_date": int(datetime.now().timestamp()),
+                "hash": "fallback",  # Mark as fallback auth
+            }
+        except (ValueError, TypeError):
+            logger.warning(f"[Auth] Invalid user_id format: {user_id}")
+            raise HTTPException(
+                status_code=400, detail="Invalid user_id format. Expected integer."
+            )
+    
+    # No valid authentication method provided
+    logger.warning("[Auth] Request received without Authorization header or user_id parameter")
+    raise HTTPException(
+        status_code=401,
+        detail="Authentication required. Include 'Authorization: tma {initData}' header or '?user_id={id}' parameter",
+    )
 
 
 async def get_current_user(

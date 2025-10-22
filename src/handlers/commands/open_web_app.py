@@ -41,16 +41,30 @@ class OpenWebAppCommands:
                     "❌ Web App is not available at the moment. (Invalid or non-public URL)"
                 )
                 return
+            
+            # Create two buttons:
+            # 1. "webapp" button: Opens within Telegram WebApp (full Telegram integration)
+            # 2. "Open" button: Opens in browser with user_id parameter (works outside Telegram)
             keyboard = [
                 [
                     InlineKeyboardButton(
-                        "🚀 Open Web App", web_app=WebAppInfo(url=web_app_url)
+                        "🚀 webapp", web_app=WebAppInfo(url=web_app_url)
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔗 Open",
+                        url=f"{web_app_url}?user_id={user_id}"
                     )
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(
-                "🌟 **Open Web App**", reply_markup=reply_markup, parse_mode="Markdown"
+                "🌟 **Open Web App**\n\n"
+                "• **webapp** - Open within Telegram (full features)\n"
+                "• **Open** - Open in browser (use this to access from outside Telegram)",
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
             )
             self.logger.info(
                 f"Web app opened for user {user_id} with URL: {web_app_url}"
