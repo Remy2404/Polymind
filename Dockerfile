@@ -39,32 +39,25 @@ RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -m appuser && 
     mkdir -p /home/appuser/.config /home/appuser/.local/share /home/appuser/.cache && \
     chown -R appuser:appuser /home/appuser
 
-# Install runtime dependencies in one layer
-RUN apt-get update && \
+# Install runtime dependencies, Node.js, and fonts in one layer with caching
+RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,id=apt-lists \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
-      ffmpeg curl ca-certificates && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-# Install Node.js
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+      ffmpeg curl ca-certificates \
+      fonts-liberation \
+      fonts-dejavu \
+      fonts-dejavu-core \
+      fonts-dejavu-extra && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install npm packages
-RUN npm install -g \
+    npm install -g \
       @mermaid-js/mermaid-cli \
       @smithery/cli \
       @upstash/context7-mcp \
       @modelcontextprotocol/server-sequential-thinking \
       @modelcontextprotocol/inspector && \
-    npm cache clean --force
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      fonts-liberation \
-      fonts-dejavu \
-      fonts-dejavu-core \
-      fonts-dejavu-extra && \
+    npm cache clean --force && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Copy built artifacts from builder
@@ -91,4 +84,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Use exec to ensure proper signal handling (SIGTERM for graceful shutdown)
 # This replaces the shell process with uvicorn, allowing signals to be received directly
-CMD ["sh", "-c", "exec uv run uvicorn app:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "exec uv run uvicorn app:app --host 0.0.0.0 --port 8000 --log-level info"]

@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import asyncio
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
@@ -101,6 +102,9 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
                 logger.warning(f"Error during shutdown: {e}")
             
             shutdown_complete = True
+        except asyncio.CancelledError:
+            # Suppress CancelledError during shutdown - this is normal
+            logger.debug("Application shutdown cancelled (normal)")
         except Exception as e:
             logger.error(f"Unexpected error during application shutdown: {e}", exc_info=True)
 def create_application():
