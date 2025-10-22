@@ -1,15 +1,17 @@
 flowchart TD
-    %% Define styles for each subgraph
-    classDef ui fill:#cce5ff,stroke:#333,stroke-width:2px;
-    classDef api fill:#d4edda,stroke:#333,stroke-width:2px;
-    classDef command fill:#ffeeba,stroke:#333,stroke-width:2px;
-    classDef ai fill:#e9d8fd,stroke:#333,stroke-width:2px;
-    classDef media fill:#fff3cd,stroke:#333,stroke-width:2px;
-    classDef memory fill:#f8d7da,stroke:#333,stroke-width:2px;
-    classDef group fill:#d1ecf1,stroke:#333,stroke-width:2px;
-    classDef doc fill:#e2e3e5,stroke:#333,stroke-width:2px;
-    classDef db fill:#d6d8db,stroke:#333,stroke-width:2px;
-    classDef infra fill:#b0b0b0,stroke:#333,stroke-width:2px,color:#fff;
+%% Define styles for different components (light theme)
+    classDef ui fill:#007BFF,stroke:#003366,stroke-width:2px,color:#fff;
+    classDef api fill:#28A745,stroke:#155724,stroke-width:2px,color:#fff;
+    classDef command fill:#FFC107,stroke:#856404,stroke-width:2px,color:#000;
+    classDef ai fill:#6F42C1,stroke:#3B0A91,stroke-width:2px,color:#fff;
+    classDef media fill:#FD7E14,stroke:#A85600,stroke-width:2px,color:#fff;
+    classDef memory fill:#DC3545,stroke:#721C24,stroke-width:2px,color:#fff;
+    classDef group fill:#17A2B8,stroke:#0C5460,stroke-width:2px,color:#fff;
+    classDef doc fill:#6C757D,stroke:#343A40,stroke-width:2px,color:#fff;
+    classDef db fill:#20C997,stroke:#0F5132,stroke-width:2px,color:#fff;
+    classDef infra fill:#343A40,stroke:#000,stroke-width:2px,color:#fff;
+
+
 
     subgraph "User Interfaces"
         TG[Telegram Bot]

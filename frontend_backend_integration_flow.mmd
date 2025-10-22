@@ -1,4 +1,5 @@
 sequenceDiagram
+
     participant FE as Frontend (Telegram Mini App)
     participant API as FastAPI Backend
     participant Auth as Authentication Middleware
@@ -8,7 +9,7 @@ sequenceDiagram
     participant DB as MongoDB
 
     %% Chat History Retrieval Flow
-    rect rgb(240, 248, 255)
+    rect rgba(9, 10, 10, 1)
         Note over FE,DB: Chat History Retrieval Flow
         FE->>API: GET /webapp/messages/{chat_id}
         API->>Auth: Validate Telegram init data
@@ -23,7 +24,7 @@ sequenceDiagram
     end
 
     %% Model Switching Flow
-    rect rgb(255, 248, 220)
+    rect rgba(0, 0, 0, 1)
         Note over FE,DB: Model Switching Flow
         FE->>API: POST /webapp/chat (with new model)
         API->>Auth: Validate user
@@ -36,7 +37,7 @@ sequenceDiagram
     end
 
     %% Chat Streaming Flow
-    rect rgb(240, 255, 240)
+    rect rgba(0, 0, 0, 1)
         Note over FE,DB: Chat Streaming Flow
         FE->>API: POST /webapp/chat/stream
         API->>Auth: Validate user
@@ -58,7 +59,7 @@ sequenceDiagram
     end
 
     %% Sessions/Chats Listing Flow
-    rect rgb(255, 240, 245)
+    rect rgba(12, 11, 12, 1)
         Note over FE,DB: Sessions/Chats Listing Flow
         FE->>API: GET /webapp/sessions or /webapp/history
         API->>Auth: Validate user
