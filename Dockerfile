@@ -85,8 +85,10 @@ USER appuser
 
 EXPOSE 8000
 
-# Health check
+# Health check - allows container 30 seconds grace period before considering unhealthy
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use exec to ensure proper signal handling (SIGTERM for graceful shutdown)
+# This replaces the shell process with uvicorn, allowing signals to be received directly
+CMD ["sh", "-c", "exec uv run uvicorn app:app --host 0.0.0.0 --port 8000"]

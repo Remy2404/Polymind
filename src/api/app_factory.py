@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
@@ -29,10 +30,12 @@ def get_telegram_bot_dependency(bot):
 async def lifespan_context(app: FastAPI, bot: TelegramBot):
     """
     Lifespan context manager for the FastAPI application.
-    Handles startup and shutdown of the TelegramBot.
+    Handles startup and shutdown of the TelegramBot with proper error handling.
     """
     logger.info("Starting application with enhanced monitoring...")
     app.state.start_time = time.time()
+    shutdown_complete = False
+    
     try:
         # Initialize MCP for webapp (like Telegram bot)
         logger.info("Initializing MCP integration for webapp...")
@@ -56,8 +59,14 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
         else:
             from threading import Thread
             def _polling():
-                bot.application.run_polling()
-            Thread(target=_polling, daemon=True).start()
+                try:
+                    bot.application.run_polling()
+                except asyncio.CancelledError:
+                    logger.info("Polling thread cancelled during shutdown")
+                except Exception as e:
+                    logger.error(f"Error in polling thread: {e}")
+            polling_thread = Thread(target=_polling, daemon=True)
+            polling_thread.start()
             bot.logger.info(
                 "Polling fallback started; bot will process updates via polling."
             )
@@ -68,12 +77,32 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
         raise
     finally:
         logger.info("Shutting down application...")
+        shutdown_timeout = 10  # 10 seconds timeout for shutdown
         try:
-            await bot.application.stop()
-            await bot.application.shutdown()
-            logger.info("Application shutdown completed successfully")
+            # Attempt graceful shutdown with timeout
+            try:
+                await asyncio.wait_for(bot.application.stop(), timeout=shutdown_timeout)
+                logger.info("Application stop completed")
+            except asyncio.TimeoutError:
+                logger.warning(f"Application stop did not complete within {shutdown_timeout} seconds")
+            except asyncio.CancelledError:
+                logger.debug("Shutdown interrupted by cancellation (normal during container shutdown)")
+            except Exception as e:
+                logger.warning(f"Error stopping application: {e}")
+            
+            try:
+                await asyncio.wait_for(bot.application.shutdown(), timeout=shutdown_timeout)
+                logger.info("Application shutdown completed successfully")
+            except asyncio.TimeoutError:
+                logger.warning(f"Application shutdown did not complete within {shutdown_timeout} seconds")
+            except asyncio.CancelledError:
+                logger.debug("Shutdown interrupted by cancellation (normal during container shutdown)")
+            except Exception as e:
+                logger.warning(f"Error during shutdown: {e}")
+            
+            shutdown_complete = True
         except Exception as e:
-            logger.error(f"Error during application shutdown: {e}", exc_info=True)
+            logger.error(f"Unexpected error during application shutdown: {e}", exc_info=True)
 def create_application():
     os.environ["DEV_SERVER"] = "uvicorn"
     bot = TelegramBot()
