@@ -411,9 +411,6 @@ class GeminiAPI:
         try:
             await self.rate_limiter.acquire()
             system_message = self._build_system_message(model, context, tools)
-            self.logger.info(
-                f"📋 System message for tool usage: {system_message[:300]}..."
-            )
             content_parts = [system_message, prompt]
             config = types.GenerateContentConfig(
                 temperature=temperature,
@@ -615,9 +612,6 @@ class GeminiAPI:
         tools: Optional[List[Any]] = None,
     ) -> str:
         """Build system message with dynamic tool usage instructions for Gemini."""
-        self.logger.info(
-            f"🔧 Building system message for model {model_id} with {len(tools) if tools else 0} tools"
-        )
         if tools:
             tool_names = []
             for tool in tools:
@@ -628,7 +622,6 @@ class GeminiAPI:
                     tool_names.extend(
                         [decl.name for decl in tool.function_declarations]
                     )
-            self.logger.info(f"🔧 Available tool names: {tool_names}")
         model_config = ModelConfigurations.get_all_models().get(model_id)
         if model_config and model_config.system_message:
             base_message = model_config.system_message

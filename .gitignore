@@ -42,5 +42,5 @@ build-and-run.ps1
 .cursorrules
 .cursor
 test_*
-AGENTS.md
+
 temp_zola/

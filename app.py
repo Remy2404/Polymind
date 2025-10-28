@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 __version__ = "1.0.0"
 
 # Single thread pool for low-resource instances
-thread_pool = ThreadPoolExecutor(max_workers=1)
+thread_pool = ThreadPoolExecutor(max_workers=6)
 
 app = create_application()
 
