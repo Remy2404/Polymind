@@ -86,8 +86,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self,
         app,
         default_requests_per_minute: int = 60,
-        streaming_requests_per_minute: int = 20,
-        auth_requests_per_minute: int = 10,
+        streaming_requests_per_minute: int = 10,  
+        auth_requests_per_minute: int = 2,
         enable_logging: bool = True
     ):
         super().__init__(app)

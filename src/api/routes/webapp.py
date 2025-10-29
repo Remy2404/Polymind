@@ -18,6 +18,8 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from urllib.parse import parse_qs, unquote_plus
+import json
 
 # Telegram init data validation
 try:
@@ -215,6 +217,7 @@ async def verify_telegram_init_data(
                     status_code=401, detail="Invalid init data signature or expired"
                 )
 
+            # Use the library parser first (strict)
             parsed_data = parse(init_data)
 
             if not parsed_data.get("user"):
@@ -229,6 +232,52 @@ async def verify_telegram_init_data(
 
         except HTTPException:
             raise
+        except ValueError as e:
+            # Some initData payloads may contain unexpected enum values (e.g., chat_type='sender')
+            # The strict parser may raise a ValueError. Attempt a tolerant manual parse as a fallback.
+            logger.warning(f"[Auth] Strict parse failed, attempting tolerant parse: {e}")
+            try:
+                qs = parse_qs(init_data)
+                user_raw = None
+                if "user" in qs:
+                    user_raw = qs.get("user")[0]
+                elif "user_id" in qs:
+                    # older/alternate formats
+                    user_raw = qs.get("user_id")[0]
+
+                parsed_data_tolerant = {"auth_date": None, "hash": None, "user": None}
+
+                if "auth_date" in qs:
+                    parsed_data_tolerant["auth_date"] = int(qs.get("auth_date")[0])
+
+                if "hash" in qs:
+                    parsed_data_tolerant["hash"] = qs.get("hash")[0]
+
+                if user_raw:
+                    # user_raw may be URL-encoded JSON
+                    try:
+                        user_json = json.loads(unquote_plus(user_raw))
+                        parsed_data_tolerant["user"] = user_json
+                    except Exception:
+                        # Try simple numeric user id
+                        try:
+                            parsed_data_tolerant["user"] = {"id": int(user_raw)}
+                        except Exception:
+                            parsed_data_tolerant["user"] = None
+
+                if parsed_data_tolerant.get("user"):
+                    logger.info("[Auth] Tolerant init data parse succeeded")
+                    return parsed_data_tolerant
+                else:
+                    logger.error("[Auth] Tolerant parse failed to extract user")
+                    raise HTTPException(status_code=401, detail="Init data validation failed (tolerant parse)")
+            except HTTPException:
+                raise
+            except Exception as e2:
+                logger.error(f"[Auth] Tolerant parse error: {e2}", exc_info=True)
+                raise HTTPException(
+                    status_code=401, detail=f"Init data validation failed: {str(e2)}"
+                )
         except Exception as e:
             logger.error(f"[Auth] Init data validation error: {e}", exc_info=True)
             raise HTTPException(
