@@ -2,7 +2,7 @@
 Shared utility for building system messages with consistent tool instructions.
 This module provides reusable components for creating system messages across different AI providers.
 """
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Callable
 from src.services.model_handlers.model_configs import ModelConfigurations
 
 
@@ -10,6 +10,28 @@ class SystemMessageBuilder:
     """Builder for creating consistent system messages across AI providers."""
     
     DEFAULT_BASE_MESSAGE = "You are an advanced AI assistant that helps users with various tasks."
+    CONCISE_HINT = " Be concise, helpful, and accurate."
+    
+    # Template for tool instructions
+    TOOL_INSTRUCTIONS_TEMPLATE = """
+You have access to the following tools: {tool_names}
+{provider_specific_instructions}
+1. **Identify the Right Tool**: Choose the most appropriate tool based on the user's request
+2. **Provide Complete Arguments**: Ensure all required parameters are included in your tool calls
+3. **Handle Results**: Use the tool results to provide comprehensive, accurate responses
+4. **Combine Tools**: Use multiple tools in parallel when possible to provide comprehensive answers. Call all relevant tools in one response to gather complete information.
+
+**Available Tool Categories:**
+{tool_categories}
+
+**Best Practices:**
+- Always use tools when they can provide more accurate or current information
+- When multiple tools are relevant, use them together in one response for thorough analysis
+- Provide detailed, helpful responses based on tool results
+- If a tool fails, try alternative approaches or inform the user
+- Do not mention tool internal details or <think> tags in your final response
+
+Focus on providing the most helpful and accurate response possible using the available tools."""
     
     @staticmethod
     def get_base_message(model_id: str) -> str:
@@ -59,18 +81,17 @@ class SystemMessageBuilder:
         base_message = SystemMessageBuilder.get_base_message(model_id)
         context_hint = SystemMessageBuilder.get_context_hint(context)
         
-        if add_concise_hint and not context:
-            model_config = ModelConfigurations.get_all_models().get(model_id)
-            if not model_config:
-                return base_message + " Be concise, helpful, and accurate."
+        # Add concise hint if requested (typically when no context and no model-specific config)
+        if add_concise_hint:
+            return base_message + SystemMessageBuilder.CONCISE_HINT
         
         return base_message + context_hint
     
     @staticmethod
     def categorize_tools_generic(
         tools: List[Dict[str, Any]],
-        name_extractor: callable = lambda t: t["function"]["name"],
-        description_extractor: callable = lambda t: t["function"].get("description", "")
+        name_extractor: Callable[[Dict], str] = lambda t: t["function"]["name"],
+        description_extractor: Callable[[Dict], str] = lambda t: t["function"].get("description", "")
     ) -> Dict[str, List[str]]:
         """Categorize tools by their functionality.
         
@@ -144,23 +165,14 @@ class SystemMessageBuilder:
         Returns:
             Tool instructions string
         """
-        base_instructions = f"""
-You have access to the following tools: {', '.join(tool_names)}
-{provider_specific_instructions}
-1. **Identify the Right Tool**: Choose the most appropriate tool based on the user's request
-2. **Provide Complete Arguments**: Ensure all required parameters are included in your tool calls
-3. **Handle Results**: Use the tool results to provide comprehensive, accurate responses
-4. **Combine Tools**: Use multiple tools in parallel when possible to provide comprehensive answers. Call all relevant tools in one response to gather complete information.
-
-**Available Tool Categories:**
-{chr(10).join([f"- **{category}**: {', '.join(category_tools)}" for category, category_tools in tool_categories.items()])}
-
-**Best Practices:**
-- Always use tools when they can provide more accurate or current information
-- When multiple tools are relevant, use them together in one response for thorough analysis
-- Provide detailed, helpful responses based on tool results
-- If a tool fails, try alternative approaches or inform the user
-- Do not mention tool internal details or <think> tags in your final response
-
-Focus on providing the most helpful and accurate response possible using the available tools."""
-        return base_instructions
+        # Format tool categories for the template
+        formatted_categories = chr(10).join([
+            f"- **{category}**: {', '.join(category_tools)}" 
+            for category, category_tools in tool_categories.items()
+        ])
+        
+        return SystemMessageBuilder.TOOL_INSTRUCTIONS_TEMPLATE.format(
+            tool_names=', '.join(tool_names),
+            provider_specific_instructions=provider_specific_instructions,
+            tool_categories=formatted_categories
+        )

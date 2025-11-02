@@ -66,8 +66,9 @@ class OpenRouterAPI:
         Returns:
             System message string
         """
-        # Check if we should add the concise hint
-        add_concise_hint = not context and not ModelConfigurations.get_all_models().get(model_id)
+        # Add concise hint when there's no context and no custom model config
+        model_config = ModelConfigurations.get_all_models().get(model_id)
+        add_concise_hint = not context and not model_config
         return SystemMessageBuilder.build_basic_message(model_id, context, add_concise_hint)
     @rate_limit
     async def generate_response(
