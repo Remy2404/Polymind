@@ -96,12 +96,15 @@ Focus on providing the most helpful and accurate response possible using the ava
         """Categorize tools by their functionality.
         
         This is a generic tool categorization that works with different tool formats.
-        Subclasses can provide custom extractors for different tool structures.
+        The default extractors assume OpenAI-compatible tool format where tools have
+        a "function" key with "name" and "description" fields.
+        
+        For other formats (e.g., Gemini), provide custom extractor functions.
         
         Args:
             tools: List of tool definitions
-            name_extractor: Function to extract tool name from tool object
-            description_extractor: Function to extract description from tool object
+            name_extractor: Function to extract tool name (default: OpenAI format)
+            description_extractor: Function to extract description (default: OpenAI format)
             
         Returns:
             Dictionary mapping categories to tool names
@@ -166,7 +169,7 @@ Focus on providing the most helpful and accurate response possible using the ava
             Tool instructions string
         """
         # Format tool categories for the template
-        formatted_categories = chr(10).join([
+        formatted_categories = "\n".join([
             f"- **{category}**: {', '.join(category_tools)}" 
             for category, category_tools in tool_categories.items()
         ])

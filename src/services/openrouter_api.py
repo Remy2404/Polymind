@@ -61,7 +61,9 @@ class OpenRouterAPI:
         Args:
             model_id: The model identifier
             context: Optional conversation context
-            tools: Optional tools available to the model (ignored in base class, used in subclasses)
+            tools: Optional tools available to the model. 
+                   Note: Base class ignores this parameter. Subclasses (e.g., OpenRouterAPIWithMCP)
+                   override this method to include tool-specific instructions.
         
         Returns:
             System message string
