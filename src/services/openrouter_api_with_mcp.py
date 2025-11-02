@@ -11,6 +11,7 @@ from src.services.mcp import MCPManager
 from src.services.model_handlers.model_configs import ModelConfigurations, Provider
 from src.utils.log.telegramlog import telegram_logger
 from src.services.gemini_api import GeminiAPI
+from src.services.system_message_builder import SystemMessageBuilder
 class OpenRouterAPIWithMCP(OpenRouterAPI):
     """
     Enhanced OpenRouter API with MCP (Model Context Protocol) integration.
@@ -221,121 +222,31 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         context: Optional[List[Dict]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
-        """Return a system message based on model and context, with dynamic tool usage instructions."""
-        model_config = ModelConfigurations.get_all_models().get(model_id)
-        if model_config and model_config.system_message:
-            base_message = model_config.system_message
-        else:
-            base_message = (
-                "You are an advanced AI assistant that helps users with various tasks."
-            )
-        context_hint = (
-            " Use conversation history/context when relevant." if context else ""
-        )
-        tool_instructions = ""
+        """Return a system message based on model and context, with dynamic tool usage instructions.
+        
+        Extends the base class implementation to add tool-specific instructions.
+        """
+        # Get base system message from parent class
+        base_message = super()._build_system_message(model_id, context, tools)
+        
+        # Add tool-specific instructions if tools are provided
         if tools:
-            tool_categories = self._categorize_tools(tools)
             tool_names = [tool["function"]["name"] for tool in tools]
-            tool_instructions = f"""
-You have access to the following tools: {', '.join(tool_names)}
-- **Documentation & Code Examples**: Use documentation tools when users ask about libraries, frameworks, APIs, or need code examples
+            tool_categories = SystemMessageBuilder.categorize_tools_generic(tools)
+            
+            # OpenRouter-specific tool instructions
+            provider_specific = """- **Documentation & Code Examples**: Use documentation tools when users ask about libraries, frameworks, APIs, or need code examples
 - **Search & Research**: Use search tools for finding information, current data, or web content
 - **Analysis & Processing**: Use specialized tools for data analysis, file processing, or complex computations
 - **External Services**: Use tools that connect to external services or APIs
-1. **Identify the Right Tool**: Choose the most appropriate tool based on the user's request
-2. **Provide Complete Arguments**: Ensure all required parameters are included in your tool calls
-3. **Handle Results**: Use the tool results to provide comprehensive, accurate responses
-4. **Combine Tools**: Use multiple tools in parallel when possible to provide comprehensive answers. Call all relevant tools in one response to gather complete information.
-{chr(10).join([f"- **{category}**: {', '.join(category_tools)}" for category, category_tools in tool_categories.items()])}
-- Always use tools when they can provide more accurate or current information
-- When multiple tools are relevant, use them together in one response for thorough analysis
-- Provide detailed, helpful responses based on tool results
-- If a tool fails, try alternative approaches or inform the user
-- Do not mention tool internal details or <think> tags in your final response
-Focus on providing the most helpful and accurate response possible using the available tools."""
-        return base_message + context_hint + tool_instructions
-    def _categorize_tools(self, tools: List[Dict[str, Any]]) -> Dict[str, List[str]]:
-        """
-        Categorize tools by their functionality for better organization.
-        Args:
-            tools: List of tool definitions
-        Returns:
-            Dictionary mapping categories to tool names
-        """
-        categories = {
-            "Documentation": [],
-            "Search & Research": [],
-            "Development": [],
-            "Analysis": [],
-            "Communication": [],
-            "Document Processing": [],
-            "Other": [],
-        }
-        for tool in tools:
-            tool_name = tool["function"]["name"].lower()
-            description = tool["function"].get("description", "").lower()
-            if any(
-                keyword in tool_name or keyword in description
-                for keyword in [
-                    "doc",
-                    "docs",
-                    "documentation",
-                    "library",
-                    "api",
-                    "guide",
-                    "tutorial",
-                    "reference",
-                ]
-            ):
-                categories["Documentation"].append(tool["function"]["name"])
-            elif any(
-                keyword in tool_name or keyword in description
-                for keyword in [
-                    "search",
-                    "find",
-                    "query",
-                    "lookup",
-                    "research",
-                    "web",
-                    "browse",
-                ]
-            ):
-                categories["Search & Research"].append(tool["function"]["name"])
-            elif any(
-                keyword in tool_name or keyword in description
-                for keyword in [
-                    "code",
-                    "dev",
-                    "build",
-                    "compile",
-                    "test",
-                    "debug",
-                    "git",
-                ]
-            ):
-                categories["Development"].append(tool["function"]["name"])
-            elif any(
-                keyword in tool_name or keyword in description
-                for keyword in [
-                    "analyze",
-                    "process",
-                    "calculate",
-                    "data",
-                    "metrics",
-                    "stats",
-                ]
-            ):
-                categories["Analysis"].append(tool["function"]["name"])
-            elif any(
-                keyword in tool_name or keyword in description
-                for keyword in [
-                    "chat", "message", "email", "notify", "communication"
-                ]
-            ):
-                categories["Communication"].append(tool["function"]["name"])
-            else:
-                categories["Other"].append(tool["function"]["name"])
-        return {k: v for k, v in categories.items() if v}
+"""
+            tool_instructions = SystemMessageBuilder.build_tool_instructions(
+                tool_names, tool_categories, provider_specific
+            )
+            return base_message + tool_instructions
+        
+        return base_message
+    
     async def generate_response_with_tools(
         self,
         prompt: str,
