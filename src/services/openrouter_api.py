@@ -11,6 +11,7 @@ from src.services.model_handlers.model_configs import (
     Provider,
     ModelConfig,
 )
+from src.services.system_message_builder import SystemMessageBuilder
 load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 if not OPENROUTER_API_KEY:
@@ -53,24 +54,24 @@ class OpenRouterAPI:
         await self.client.close()
         self.logger.info("Closed OpenRouter API OpenAI client.")
     def _build_system_message(
-        self, model_id: str, context: Optional[List[Dict]] = None
+        self, model_id: str, context: Optional[List[Dict]] = None, tools: Optional[List] = None
     ) -> str:
-        """Return a system message based on model and context, using ModelConfigurations."""
-        model_config: Optional[ModelConfig] = ModelConfigurations.get_all_models().get(
-            model_id
-        )
-        if model_config and model_config.system_message:
-            base_message = model_config.system_message
-        else:
-            base_message = (
-                "You are an advanced AI assistant that helps users with various tasks."
-            )
-        context_hint = (
-            " Use conversation history/context when relevant." if context else ""
-        )
-        if not context and not model_config:
-            return base_message + " Be concise, helpful, and accurate."
-        return base_message + context_hint
+        """Return a system message based on model and context, using ModelConfigurations.
+        
+        Args:
+            model_id: The model identifier
+            context: Optional conversation context
+            tools: Optional tools available to the model. 
+                   Note: Base class ignores this parameter. Subclasses (e.g., OpenRouterAPIWithMCP)
+                   override this method to include tool-specific instructions.
+        
+        Returns:
+            System message string
+        """
+        # Add concise hint when there's no context and no custom model config
+        model_config = ModelConfigurations.get_all_models().get(model_id)
+        add_concise_hint = not context and not model_config
+        return SystemMessageBuilder.build_basic_message(model_id, context, add_concise_hint)
     @rate_limit
     async def generate_response(
         self,
