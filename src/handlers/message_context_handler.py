@@ -25,7 +25,7 @@ class MessageContextHandler:
         quoted_text = None
         if message.reply_to_message.text:
             quoted_text = message.reply_to_message.text
-            self.logger.info(f"User is replying to text message: {quoted_text[:50]}...")
+            self.logger.info(f"User is replying to text message with length: {len(quoted_text)} characters")
         elif message.reply_to_message.caption:
             quoted_text = (
                 f"[Image/Document with caption: {message.reply_to_message.caption}]"

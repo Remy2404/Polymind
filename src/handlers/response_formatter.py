@@ -470,7 +470,7 @@ class ResponseFormatter:
             f"Checking text for Mermaid blocks. Found {len(mermaid_matches)} matches"
         )
         if mermaid_matches:
-            self.logger.info(f"Mermaid content: {mermaid_matches[0][:100]}...")
+            self.logger.info(f"Mermaid content length: {len(mermaid_matches[0])} characters")
         if mermaid_matches:
             mmd_content = mermaid_matches[0].strip()
             try:

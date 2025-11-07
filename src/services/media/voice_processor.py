@@ -195,7 +195,6 @@ class VoiceProcessor:
                 self.logger.info(
                     f"  → Result - Detected: {info.language}, Confidence: {info.language_probability:.3f}"
                 )
-                self.logger.info(f"  → Text: {text[:100]}...")
                 self.logger.info("🎯 FINAL STANDARD TRANSCRIPTION RESULT:")
                 self.logger.info(f"  → Final language: {info.language}")
                 self.logger.info(

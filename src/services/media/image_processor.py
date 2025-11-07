@@ -27,7 +27,7 @@ class ImageProcessor:
             return None
         try:
             if hasattr(self.ai_client, "generate_image"):
-                self.logger.info(f"Generating image with prompt: {prompt}")
+                self.logger.info(f"Generating image with prompt length: {len(prompt)} characters")
                 return await self.ai_client.generate_image(prompt)
             else:
                 self.logger.error("AI client does not support image generation")

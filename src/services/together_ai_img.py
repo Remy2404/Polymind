@@ -65,7 +65,7 @@ class TogetherAIImageGenerator:
         if seed is None:
             seed = int(time.time()) % 1000000
         steps = max(1, min(4, num_steps))
-        logger.info(f"Generating image with prompt: '{prompt}'")
+        logger.info(f"Generating image with prompt length: {len(prompt)} characters")
         start_time = time.time()
         async with self.semaphore:
             try:

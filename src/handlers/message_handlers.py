@@ -195,10 +195,10 @@ class MessageHandlers:
                 role = msg.get("role", "unknown")
                 content = msg.get("content", "")
                 preview = content[:100] + ("..." if len(content) > 100 else "")
-                self.logger.info(f"   └─ Message {i + 1} [{role.upper()}]: {preview}")
+                self.logger.info(f"   └─ Message {i + 1} [{role.upper()}]: {len(content)} chars")
                 if "name" in content.lower():
                     self.logger.info("   └─ ⭐ Contains name/identity information!")
-            self.logger.info(f"   └─ Current prompt: {prompt[:100]}...")
+            self.logger.info(f"   └─ Current prompt length: {len(prompt)} chars")
         else:
             self.logger.info(
                 f"⚠ No conversation context provided for model: {model_id}"
@@ -289,9 +289,6 @@ class MessageHandlers:
                         update, context
                     )
                 return
-            self.logger.info(
-                f"Received text message from user {user_id}: {message_text}"
-            )
             await self.user_data_manager.initialize_user(user_id)
             if self._group_chat_integration is None and self._conversation_manager:
                 self._group_chat_integration = GroupChatIntegration(
@@ -551,7 +548,6 @@ class MessageHandlers:
                 self.logger.info(f"  → Engine: {engine_used}")
                 self.logger.info(f"  → Confidence: {confidence:.3f}")
                 self.logger.info(f"  → Text length: {len(text)} chars")
-                self.logger.info(f"  → Text preview: {text[:100]}...")
                 self.logger.info(
                     f"Enhanced transcription: engine={engine_used}, confidence={confidence:.2f}"
                 )
@@ -652,7 +648,7 @@ class MessageHandlers:
                 f" - active_model from user settings: {user_settings.get('active_model', 'not set')}"
             )
             self.logger.info(
-                f"SELECTED MODEL: '{active_model}' for voice response. Prompt: {prompt[:50]}..."
+                f"SELECTED MODEL: '{active_model}' for voice response. Prompt length: {len(prompt)} chars"
             )
             model_indicator, model_config = self.get_model_indicator_and_config(
                 active_model
@@ -671,10 +667,10 @@ class MessageHandlers:
                 )
                 if conversation_history:
                     self.logger.info(
-                        f"Voice context debug - First message: {conversation_history[0].get('content', 'N/A')[:100]}..."
+                        f"Voice context debug - First message length: {len(conversation_history[0].get('content', ''))} chars"
                     )
                     self.logger.info(
-                        f"Voice context debug - Last message: {conversation_history[-1].get('content', 'N/A')[:100]}..."
+                        f"Voice context debug - Last message length: {len(conversation_history[-1].get('content', ''))} chars"
                     )
                 else:
                     self.logger.warning(
@@ -1019,7 +1015,7 @@ class MessageHandlers:
                 f"📝 Content length: {len(content) if content else 0} characters"
             )
             self.logger.info(
-                f"📝 Content preview: {content[:200] if content else 'None'}..."
+                f"📝 Content preview length: {len(content[:200]) if content else 0} characters"
             )
             context.user_data["doc_export_text"] = content
             stored_content = context.user_data.get("doc_export_text", "")

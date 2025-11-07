@@ -971,7 +971,7 @@ Focus on providing the most helpful and accurate response possible using the ava
             for i, msg in enumerate(context[-10:]):
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
-                self.logger.debug(f"Context message {i}: role={role}, content={content[:100]}...")
+                self.logger.debug(f"Context message {i}: role={role}, content_length={len(content)}")
                 if content:
                     if role == "user":
                         contents.append(
