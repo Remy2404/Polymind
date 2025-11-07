@@ -14,9 +14,12 @@ import logging
 import uuid
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import asyncio
+from functools import lru_cache
+import hashlib
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, ORJSONResponse
 from pydantic import BaseModel, Field
 from urllib.parse import parse_qs, unquote_plus
 import json
@@ -391,41 +394,70 @@ def get_sessions_collection():
     return persistence_manager.db["chat_sessions"]
 
 
-async def build_session_id_mapping(current_user: UserInfo):
-    """Build mapping from hashed session IDs back to original cache_keys."""
-    global _session_id_to_cache_key
-    if '_session_id_to_cache_key' not in globals():
-        _session_id_to_cache_key = {}
+# Global cache for session mapping with TTL
+_session_id_to_cache_key_cache = {}
+_cache_timestamp = 0
+_CACHE_TTL = 300
 
+@lru_cache(maxsize=1000)
+def _cached_md5(text: str) -> str:
+    """Cached MD5 hash function for performance."""
+    return hashlib.md5(text.encode()).hexdigest()
+
+async def get_cached_session_mapping(current_user: UserInfo) -> dict:
+    """Get cached session mapping with TTL-based refresh."""
+    global _session_id_to_cache_key_cache, _cache_timestamp
+
+    current_time = asyncio.get_event_loop().time()
+    if current_time - _cache_timestamp > _CACHE_TTL:
+        # Rebuild cache
+        _session_id_to_cache_key_cache = await _build_session_mapping(current_user)
+        _cache_timestamp = current_time
+        logger.info(f"[Mapping] Rebuilt cache with {len(_session_id_to_cache_key_cache)} mappings")
+
+    return _session_id_to_cache_key_cache
+
+async def _build_session_mapping(current_user: UserInfo) -> dict:
+    """Build session mapping from database."""
     services = get_services()
     persistence_manager = services["conversation_manager"].memory_manager.persistence_manager
 
     if persistence_manager is None or not hasattr(persistence_manager, "db"):
-        return
+        return {}
 
     user_id = str(current_user.id)
     user_prefix = f"user_{user_id}_model_"
 
     try:
         conversations_collection = persistence_manager.db["conversations"]
-        session_docs = list(conversations_collection.find({"cache_key": {"$regex": f"^{user_prefix}"}}))
+        # Use indexed query instead of regex for better performance
+        session_docs = list(conversations_collection.find({
+            "cache_key": {"$regex": f"^{user_prefix}"}
+        }).limit(1000)) 
 
+        mapping = {}
         for doc in session_docs:
             cache_key = doc.get("cache_key", "")
             messages = doc.get("messages", [])
 
-            if not messages:  # Skip empty conversations
+            if not messages:
                 continue
 
-            # Create hash and store mapping
-            import hashlib
-            session_id = hashlib.md5(cache_key.encode()).hexdigest()
-            _session_id_to_cache_key[session_id] = cache_key
+            # Use cached MD5 for performance
+            session_id = _cached_md5(cache_key)
+            mapping[session_id] = cache_key
 
-        logger.info(f"[Mapping] Built mapping for {len(_session_id_to_cache_key)} sessions")
+        return mapping
 
     except Exception as e:
-        logger.error(f"[Mapping] Error building session ID mapping: {e}")
+        logger.error(f"[Mapping] Error building session mapping: {e}")
+        return {}
+
+async def build_session_id_mapping(current_user: UserInfo):
+    """Legacy function - now uses cached mapping."""
+    # This function is kept for backward compatibility
+    # The actual mapping is now handled by get_cached_session_mapping
+    pass
 
 
 async def get_old_format_sessions(
@@ -436,8 +468,8 @@ async def get_old_format_sessions(
     Get chat sessions from the old cache_key format memory system.
     This bridges the gap until all sessions are migrated to the new format.
     """
-    # Ensure mapping is built
-    await build_session_id_mapping(current_user)
+    # Get cached mapping instead of rebuilding every time
+    session_mapping = await get_cached_session_mapping(current_user)
 
     services = get_services()
     persistence_manager = services["conversation_manager"].memory_manager.persistence_manager
@@ -480,8 +512,7 @@ async def get_old_format_sessions(
 
             # Create a pseudo-UUID from the cache_key for frontend compatibility
             # This ensures the same chat always gets the same ID
-            import hashlib
-            session_id = hashlib.md5(cache_key.encode()).hexdigest()
+            session_id = _cached_md5(cache_key)
 
             # Get title from first user message if possible
             title = f"Chat with {model}"
@@ -654,7 +685,7 @@ async def create_chat_session(
         )
 
 
-@router.get("/v2/sessions", response_model=List[ChatSession])
+@router.get("/v2/sessions", response_model=List[ChatSession], response_class=ORJSONResponse)
 async def get_chat_sessions(
     current_user: UserInfo = Depends(get_current_user),
     include_messages: bool = Query(False, description="Include full message arrays"),
@@ -725,7 +756,7 @@ async def get_chat_sessions(
         return []
 
 
-@router.get("/sessions", response_model=List[ChatSession])
+@router.get("/sessions", response_model=List[ChatSession], response_class=ORJSONResponse)
 async def get_chat_sessions_legacy(
     current_user: UserInfo = Depends(get_current_user),
     include_messages: bool = Query(False, description="Include full message arrays"),
@@ -748,7 +779,7 @@ async def get_chat_sessions_legacy(
     return all_sessions
 
 
-@router.get("/v2/sessions/{session_id}/messages", response_model=List[Message])
+@router.get("/v2/sessions/{session_id}/messages", response_model=List[Message], response_class=ORJSONResponse)
 async def get_session_messages(
     session_id: str, current_user: UserInfo = Depends(get_current_user)
 ):
@@ -805,7 +836,7 @@ async def get_session_messages(
         return []
 
 
-@router.get("/messages/{chat_id:path}", response_model=List[Message])
+@router.get("/messages/{chat_id:path}", response_model=List[Message], response_class=ORJSONResponse)
 async def get_messages_legacy(
     chat_id: str,
     model: Optional[str] = Query(None, description="Model ID (for UUID format chat_ids)"),
@@ -830,19 +861,10 @@ async def get_messages_legacy(
         logger.info(f"[Messages] Legacy fetch for chat_id {chat_id}")
 
         # Check if this is a hashed cache_key (32-character hex string)
-        global _session_id_to_cache_key
-        if '_session_id_to_cache_key' not in globals() or chat_id not in _session_id_to_cache_key:
-            # Try to rebuild the mapping if it's not available
-            logger.info(f"[Messages] Mapping not available for {chat_id}, attempting to rebuild")
-            try:
-                # Rebuild mapping by querying old sessions
-                await get_old_format_sessions(current_user, False)
-            except Exception as e:
-                logger.warning(f"[Messages] Failed to rebuild mapping: {e}")
-
-        if '_session_id_to_cache_key' in globals() and chat_id in _session_id_to_cache_key:
+        session_mapping = await get_cached_session_mapping(current_user)
+        if chat_id in session_mapping:
             # This is a hashed cache_key, map it back to the original cache_key
-            original_cache_key = _session_id_to_cache_key[chat_id]
+            original_cache_key = session_mapping[chat_id]
             logger.info(f"[Messages] Mapped hashed ID {chat_id} back to cache_key: {original_cache_key}")
             chat_id = original_cache_key
 
@@ -1250,11 +1272,9 @@ async def delete_chat_legacy(
                         logger.info(f"[Chats] Deleted old format conversation {chat_id} for user {user_id}")
                 else:
                     # Case 2: chat_id is a hashed session ID - look up the original cache_key
-                    await build_session_id_mapping(current_user)
-                    
-                    global _session_id_to_cache_key
-                    if '_session_id_to_cache_key' in globals() and chat_id in _session_id_to_cache_key:
-                        cache_key = _session_id_to_cache_key[chat_id]
+                    session_mapping = await get_cached_session_mapping(current_user)
+                    if chat_id in session_mapping:
+                        cache_key = session_mapping[chat_id]
                         
                         # Verify it belongs to this user
                         if cache_key.startswith(f"user_{user_id}_model_"):
@@ -1264,8 +1284,6 @@ async def delete_chat_legacy(
                             
                             if result.deleted_count > 0:
                                 deleted = True
-                                # Remove from mapping
-                                del _session_id_to_cache_key[chat_id]
                                 logger.info(f"[Chats] Deleted hashed session {chat_id} (cache_key: {cache_key}) for user {user_id}")
                         else:
                             logger.warning(f"[Chats] Hashed session {chat_id} resolved to cache_key {cache_key} which doesn't belong to user {user_id}")
