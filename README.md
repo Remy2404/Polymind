@@ -281,7 +281,7 @@ Upload any PDF or DOCX file:
 ### 🌟 **Special Features**
 - **🎨 Automatic Mermaid Rendering**: Just ask for diagrams and they'll be rendered as images
 - **🎙️ Voice Messages**: Send voice notes for transcription and response
-- **📁 File Upload**: Drag and drop PDFs, images, videos for AI analysis
+- **📁 File Upload**: Drag and drop up to 5 files (PDFs, images, videos, documents) for AI analysis. All files are analyzed together in the same chat context for comprehensive results
 - **💬 Group Chat**: Add bot to groups with @mention support
 - **🔄 Model Memory**: Each AI model maintains separate conversation history
 - **📄 Rich Export**: Export conversations with formatting, images, and metadata

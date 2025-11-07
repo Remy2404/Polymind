@@ -626,7 +626,7 @@ class GeminiAPI:
         if model_config and model_config.system_message:
             base_message = model_config.system_message
         else:
-            base_message = "You are Gemini, Google's advanced multimodal AI assistant. You can analyze text, images, documents, and other media types. Provide helpful, accurate, and detailed responses based on all provided content."
+            base_message = "You are Gemini, Google's advanced multimodal AI assistant. You can analyze text, images, documents, and other media types. Users can upload up to 5 files (images, PDFs, documents, etc.) per request. All files are analyzed together in the same chat context for comprehensive analysis. Provide helpful, accurate, and detailed responses based on all provided content."
         context_hint = ""
         if context:
             context_hint = " You have access to conversation history and context. Remember previous interactions, user preferences, and information shared earlier in the conversation. Use this context to provide personalized and contextually aware responses."
@@ -798,9 +798,11 @@ Focus on providing the most helpful and accurate response possible using the ava
     ) -> ProcessingResult:
         """
         Process combined multimodal input with tool calling support
+        Supports up to 5 files (images, PDFs, documents) per request.
+        All files are analyzed together in the same chat context.
         Args:
             text_prompt: The main text prompt
-            media_inputs: List of media inputs (images, documents, etc.)
+            media_inputs: List of media inputs (images, documents, etc.) - max 5 files
             context: Conversation context
             model_name: Gemini model to use
             tools: List of tools/functions the model can call
@@ -810,6 +812,14 @@ Focus on providing the most helpful and accurate response possible using the ava
         """
         try:
             await self.rate_limiter.acquire()
+            
+            # Validate file limit - maximum 5 files per request
+            if media_inputs and len(media_inputs) > 5:
+                return ProcessingResult(
+                    success=False, 
+                    error="Maximum 5 files allowed per request. Please upload fewer files or split into multiple requests."
+                )
+            
             content_parts = []
             if media_inputs:
                 for media in media_inputs:
@@ -1005,7 +1015,9 @@ Focus on providing the most helpful and accurate response possible using the ava
         """
         return (
             "You are Gemini, Google's advanced multimodal AI assistant. You can analyze "
-            "text, images, documents, and other media types. Provide helpful, accurate, "
+            "text, images, documents, and other media types. Users can upload up to 5 files "
+            "(images, PDFs, documents, etc.) per request. All files are analyzed together "
+            "in the same chat context for comprehensive analysis. Provide helpful, accurate, "
             "and detailed responses based on all provided content."
         )
     async def _generate_with_retry(
