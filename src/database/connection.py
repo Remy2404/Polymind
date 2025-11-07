@@ -11,15 +11,21 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 CONNECTION_POOL = {}
-MAX_POOL_SIZE = 20
-MIN_POOL_SIZE = 2
-CONNECTION_TIMEOUT = 30000
-SERVER_SELECTION_TIMEOUT = 30000
-SOCKET_TIMEOUT = 20000
-MAX_IDLE_TIME_MS = 300000
-RETRY_WRITES = True
-HEARTBEAT_FREQUENCY = 30000
-CONNECT_TIMEOUT = 30000
+# Production-optimized connection settings
+MAX_POOL_SIZE = int(os.getenv("MONGODB_MAX_POOL_SIZE", "50"))  
+MIN_POOL_SIZE = int(os.getenv("MONGODB_MIN_POOL_SIZE", "10")) 
+CONNECTION_TIMEOUT = int(os.getenv("MONGODB_CONNECTION_TIMEOUT", "30000"))
+SERVER_SELECTION_TIMEOUT = int(os.getenv("MONGODB_SERVER_SELECTION_TIMEOUT", "30000"))
+SOCKET_TIMEOUT = int(os.getenv("MONGODB_SOCKET_TIMEOUT", "45000"))
+MAX_IDLE_TIME_MS = int(os.getenv("MONGODB_MAX_IDLE_TIME", "300000"))
+RETRY_WRITES = os.getenv("MONGODB_RETRY_WRITES", "true").lower() == "true"
+HEARTBEAT_FREQUENCY = int(os.getenv("MONGODB_HEARTBEAT_FREQUENCY", "30000"))
+CONNECT_TIMEOUT = int(os.getenv("MONGODB_CONNECT_TIMEOUT", "30000"))
+
+# Production performance settings
+MAX_STALENESS_SECONDS = int(os.getenv("MONGODB_MAX_STALENESS", "90"))
+READ_PREFERENCE = os.getenv("MONGODB_READ_PREFERENCE", "primaryPreferred")
+WRITE_CONCERN = os.getenv("MONGODB_WRITE_CONCERN", "majority")
 class MockDatabase:
     """Mock database implementation for development without MongoDB"""
     def __init__(self):
@@ -122,6 +128,13 @@ def get_database(
                 retryReads=True,
                 compressors=compressors,
                 zlibCompressionLevel=6,
+                # Production performance settings
+                maxStalenessSeconds=MAX_STALENESS_SECONDS,
+                readPreference=READ_PREFERENCE,
+                writeConcern=WRITE_CONCERN,
+                # Connection optimization
+                waitQueueTimeoutMS=30000,
+                maxConnecting=5,
             )
             try:
                 client.admin.command("ping", maxTimeMS=15000)
