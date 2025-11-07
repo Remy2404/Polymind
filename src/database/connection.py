@@ -31,6 +31,13 @@ class MockDatabase:
     def __init__(self):
         self.collections = {}
         logger.warning("Using mock database (development mode)")
+
+    def __getitem__(self, name):
+        """Allow subscripting like db['collection_name']"""
+        if name not in self.collections:
+            self.collections[name] = MockCollection(name)
+        return self.collections[name]
+
     def __getattr__(self, name):
         """Create mock collections on demand"""
         if name not in self.collections:
