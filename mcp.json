@@ -9,9 +9,9 @@
       }
     },
     "Exa Search": {
+      "type": "stdio",
       "command": "smithery",
       "args": ["run", "exa", "--key", "$MCP_API_KEY"],
-      "type": "stdio",
       "enabled": true,
       "fallback": {
         "command": "npx",

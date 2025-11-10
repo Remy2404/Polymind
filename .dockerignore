@@ -1,0 +1,61 @@
+.git/
+.gitignore
+Dockerfile
+docker-compose.yml
+README.md
+LICENSE
+CHANGELOG.md
+
+# ==== OS / editor files ====
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# ==== Python cache & build artefacts ====
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.env
+.env.*
+*.log
+.mypy_cache/
+.tox/
+.coverage
+coverage.xml
+*.cover
+*.log
+
+# ==== Node / npm / front-end ====
+node_modules/
+npm-debug.log
+yarn-error.log
+dist/
+build/
+.cache/
+*.bak
+
+# ==== Temporary & local files ====
+tmp/
+temp/
+*.tmp
+*.bak
+*.old
+
+# ==== Data, large assets, unneeded in container ====
+data/
+datasets/
+*.sql
+*.db
+
+.mcp-session/
+.upstash/
+context7-mcp/
+server-sequential-thinking/
+
