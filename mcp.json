@@ -52,8 +52,17 @@
     },
     "fetch_mcp": {
       "type": "stdio",
-      "command": "uvx",
-      "args": ["mcp-server-fetch"],
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@smithery-ai/fetch",
+        "--key",
+        "$MCP_API_KEY",
+        "--profile",
+        "plain-school-3XtE8q"
+      ],
       "enabled": true
     }
   },
