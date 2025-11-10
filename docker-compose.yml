@@ -1,48 +1,11 @@
 version: '3.8'
 
 services:
-  polymind:
+  app:
     build: .
     ports:
       - "8000:8000"
-    environment:
-      - PYTHONUNBUFFERED=1
-      - PYTHONDONTWRITEBYTECODE=1
     env_file:
       - .env
-    # Lower memory limits for 512MB RAM host
-    deploy:
-      resources:
-        limits:
-          memory: 400M
-          cpus: '0.5'
-        reservations:
-          memory: 256M
-          cpus: '0.1'
-    # For older compose versions
-    mem_limit: 400m
-    mem_reservation: 256m
-    # Restart policy
-    restart: unless-stopped
-    # Health check
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health", "||", "exit", "1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    # Logging
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    # Security
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp
     volumes:
-      - ./logs:/app/logs
-      - ./temp_models.json:/app/temp_models.json
+      - .:/app

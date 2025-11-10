@@ -9,9 +9,9 @@
       }
     },
     "Exa Search": {
-      "type": "stdio",
       "command": "smithery",
       "args": ["run", "exa", "--key", "$MCP_API_KEY"],
+      "type": "stdio",
       "enabled": true,
       "fallback": {
         "command": "npx",
@@ -37,32 +37,10 @@
         ]
       }
     },
-    "office-word-mcp-server": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@smithery/cli@latest",
-        "run",
-        "@jackxzxz/office-word-mcp-server",
-        "--key",
-        "$MCP_API_KEY"
-      ],
-      "enabled": true
-    },
     "fetch_mcp": {
       "type": "stdio",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@smithery/cli@latest",
-        "run",
-        "@smithery-ai/fetch",
-        "--key",
-        "$MCP_API_KEY",
-        "--profile",
-        "plain-school-3XtE8q"
-      ],
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
       "enabled": true
     }
   },
