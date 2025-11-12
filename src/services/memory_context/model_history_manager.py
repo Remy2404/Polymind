@@ -2,13 +2,17 @@ import logging
 from typing import List, Dict, Any, Optional
 from src.services.memory_context.memory_manager import MemoryManager
 from services.model_handlers.model_registry import UserModelManager, ModelRegistry
+
 logger = logging.getLogger(__name__)
+
+
 class ModelHistoryManager:
     """
     Manages conversation history for multiple AI models,
     centralizing the interaction with the memory system.
     Each model has its own separate conversation history per user.
     """
+
     def __init__(
         self,
         memory_manager: MemoryManager,
@@ -33,6 +37,7 @@ class ModelHistoryManager:
         logger.info(
             f"ModelHistoryManager initialized with {'external' if user_model_manager else 'internal'} model tracking"
         )
+
     def _get_conversation_id(self, user_id: int, model_id: Optional[str] = None) -> str:
         """
         Generate a unique conversation ID for a user and model.
@@ -47,6 +52,7 @@ class ModelHistoryManager:
         # CRITICAL: Always convert user_id to string for consistent MongoDB cache_key format
         # This ensures queries like "user_{user_id}_model_" match stored keys correctly
         return f"user_{str(user_id)}_model_{model_id}"
+
     def get_selected_model(self, user_id: int) -> str:
         """
         Get the currently selected model for a user.
@@ -58,6 +64,7 @@ class ModelHistoryManager:
         if self.user_model_manager:
             return self.user_model_manager.get_user_model(user_id)
         return self._user_model_selection.get(user_id, self._default_model)
+
     def set_selected_model(self, user_id: int, model_id: str) -> bool:
         """
         Set the user's selected model.
@@ -77,6 +84,7 @@ class ModelHistoryManager:
         self._user_model_selection[user_id] = model_id
         logger.info(f"User {user_id} switched to model: {model_id}")
         return True
+
     async def get_history(
         self, user_id: int, max_messages: int = 10, model_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
@@ -118,6 +126,7 @@ class ModelHistoryManager:
         except Exception as e:
             logger.error(f"Error retrieving conversation history: {str(e)}")
             return []
+
     async def save_message_pair(
         self,
         user_id: int,
@@ -155,6 +164,7 @@ class ModelHistoryManager:
                 f"Failed to save message pair for user {user_id} with model {model_id}: {e}",
                 exc_info=True,
             )
+
     async def save_image_interaction(
         self,
         user_id: int,
@@ -194,6 +204,7 @@ class ModelHistoryManager:
                 f"Failed to save image interaction for user {user_id} with model {model_id}: {e}",
                 exc_info=True,
             )
+
     async def verify_history_access(
         self, user_id: int, model_id: Optional[str] = None
     ) -> bool:
@@ -225,6 +236,7 @@ class ModelHistoryManager:
                 exc_info=True,
             )
             return False
+
     async def clear_history(
         self,
         user_id: int,

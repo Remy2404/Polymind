@@ -12,6 +12,7 @@ import io
 
 class MediaType(Enum):
     """Supported media types for multimodal processing"""
+
     IMAGE = "image"
     DOCUMENT = "document"
     AUDIO = "audio"
@@ -22,6 +23,7 @@ class MediaType(Enum):
 @dataclass
 class MediaInput:
     """Represents a media input for processing"""
+
     type: MediaType
     data: Union[bytes, str, io.BytesIO]
     mime_type: str
@@ -32,6 +34,7 @@ class MediaInput:
 @dataclass
 class ToolCall:
     """Represents a tool/function call from the model"""
+
     name: str
     args: Dict[str, Any]
     id: Optional[str] = None
@@ -40,6 +43,7 @@ class ToolCall:
 @dataclass
 class ProcessingResult:
     """Result of multimodal processing"""
+
     success: bool
     content: Optional[str] = None
     error: Optional[str] = None

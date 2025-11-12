@@ -5,17 +5,20 @@ import urllib.parse
 import logging
 from typing import Any, Type
 from fastapi import APIRouter, Request, BackgroundTasks, Depends
+
 try:
     from fastapi_msgspec.responses import MsgSpecJSONResponse
     from fastapi_msgspec.routing import MsgSpecRoute
     import msgspec.json as _msgspec_json
     from msgspec import Struct as MsgspecStruct
+
     msgspec_json: Any = _msgspec_json
     _MSGSPEC_AVAILABLE = True
 except Exception:
     from fastapi.responses import JSONResponse as MsgSpecJSONResponse
     from fastapi.routing import APIRoute as MsgSpecRoute
     import json as _json
+
     msgspec_json: Any = _json
     MsgspecStruct = None
     _MSGSPEC_AVAILABLE = False
@@ -23,25 +26,36 @@ router = APIRouter(route_class=MsgSpecRoute, default_response_class=MsgSpecJSONR
 logger = logging.getLogger(__name__)
 rate_limits: dict[str, tuple[int, float]] = {}
 _BOT_INSTANCE = None
+
+
 class WebhookException(Exception):
     def __init__(self, status_code: int, detail: str):
         self.status_code = status_code
         self.detail = detail
+
+
 if MsgspecStruct is not None:
     UpdateMsg: Type[Any] = MsgspecStruct
 else:
+
     class UpdateMsg:
         update_id: int
+
+
 def normalize_token(token: str) -> str:
     try:
         return urllib.parse.unquote(token)
     except (ValueError, TypeError):
         return token
+
+
 def get_telegram_bot():
     global _BOT_INSTANCE
     if _BOT_INSTANCE is None:
         raise RuntimeError("Bot instance not initialized")
     return _BOT_INSTANCE
+
+
 def _get_update_type(u: dict) -> str:
     if "message" in u:
         m = u["message"]
@@ -53,8 +67,11 @@ def _get_update_type(u: dict) -> str:
         if t in u:
             return t
     return "unknown"
+
+
 async def _process_update_with_retry(bot, update_data, log):
     from src.utils.ignore_message import message_filter
+
     max_retries, base_delay = 3, 0.5
     bot_name = getattr(bot.application.bot, "username", "UnknownBot")
     if message_filter.should_ignore_update(update_data, bot_name):
@@ -77,6 +94,8 @@ async def _process_update_with_retry(bot, update_data, log):
                 exc_info=True,
             )
             return
+
+
 @router.post("/webhook/{token}")
 async def webhook_handler(
     token: str,
@@ -116,6 +135,7 @@ async def webhook_handler(
                     body = msgspec_json.loads(raw.decode("utf-8"))
                 else:
                     import json as _stdlib_json
+
                     body = _stdlib_json.loads(raw.decode("utf-8"))
         except Exception as e:
             raise WebhookException(400, f"Invalid body: {e}")

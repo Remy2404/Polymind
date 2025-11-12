@@ -99,6 +99,7 @@ class ChatSession(BaseModel):
 
 class Attachment(BaseModel):
     """File attachment for messages."""
+
     name: str = Field(..., description="Original filename")
     content_type: str = Field(..., description="MIME type")
     data: str = Field(..., description="Base64 encoded file content")
@@ -163,19 +164,20 @@ async def verify_telegram_init_data(
         None, description="Authorization header with format: 'tma {init_data}'"
     ),
     user_id: str = Query(
-        None, description="User ID for fallback authentication when outside Telegram context"
+        None,
+        description="User ID for fallback authentication when outside Telegram context",
     ),
 ) -> Dict[str, Any]:
     """Verify and parse Telegram Mini Apps init data.
-    
+
     Supports two authentication methods:
     1. Primary: Telegram initData (from mini app)
     2. Fallback: user_id URL parameter (when opened outside Telegram, e.g., "Open" button)
     """
-    
+
     # Check if we're in development mode
     # dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
-    
+
     # if dev_mode:
     #     logger.info("[Auth] Development mode enabled - bypassing Telegram authentication")
     #     # Return mock user data for development
@@ -189,7 +191,7 @@ async def verify_telegram_init_data(
     #             "is_premium": False
     #         }
     #     }
-    
+
     if not TELEGRAM_INIT_DATA_AVAILABLE:
         raise HTTPException(
             status_code=500,
@@ -230,7 +232,9 @@ async def verify_telegram_init_data(
                 )
 
             user_id_from_data = parsed_data["user"].get("id")
-            logger.info(f"[Auth] Successfully authenticated via initData user_id={user_id_from_data}")
+            logger.info(
+                f"[Auth] Successfully authenticated via initData user_id={user_id_from_data}"
+            )
             return parsed_data
 
         except HTTPException:
@@ -238,7 +242,9 @@ async def verify_telegram_init_data(
         except ValueError as e:
             # Some initData payloads may contain unexpected enum values (e.g., chat_type='sender')
             # The strict parser may raise a ValueError. Attempt a tolerant manual parse as a fallback.
-            logger.warning(f"[Auth] Strict parse failed, attempting tolerant parse: {e}")
+            logger.warning(
+                f"[Auth] Strict parse failed, attempting tolerant parse: {e}"
+            )
             try:
                 qs = parse_qs(init_data)
                 user_raw = None
@@ -273,7 +279,10 @@ async def verify_telegram_init_data(
                     return parsed_data_tolerant
                 else:
                     logger.error("[Auth] Tolerant parse failed to extract user")
-                    raise HTTPException(status_code=401, detail="Init data validation failed (tolerant parse)")
+                    raise HTTPException(
+                        status_code=401,
+                        detail="Init data validation failed (tolerant parse)",
+                    )
             except HTTPException:
                 raise
             except Exception as e2:
@@ -286,10 +295,12 @@ async def verify_telegram_init_data(
             raise HTTPException(
                 status_code=401, detail=f"Init data validation failed: {str(e)}"
             )
-    
+
     # Fallback authentication: URL parameter user_id (for "Open" button outside Telegram context)
     if user_id:
-        logger.info(f"[Auth] Using fallback authentication with user_id={user_id} (outside Telegram context)")
+        logger.info(
+            f"[Auth] Using fallback authentication with user_id={user_id} (outside Telegram context)"
+        )
         # Verify user_id is a valid integer
         try:
             parsed_user_id = int(user_id)
@@ -313,9 +324,11 @@ async def verify_telegram_init_data(
             raise HTTPException(
                 status_code=400, detail="Invalid user_id format. Expected integer."
             )
-    
+
     # No valid authentication method provided
-    logger.warning("[Auth] Request received without Authorization header or user_id parameter")
+    logger.warning(
+        "[Auth] Request received without Authorization header or user_id parameter"
+    )
     raise HTTPException(
         status_code=401,
         detail="Authentication required. Include 'Authorization: tma {initData}' header or '?user_id={id}' parameter",
@@ -399,10 +412,12 @@ _session_id_to_cache_key_cache = {}
 _cache_timestamp = 0
 _CACHE_TTL = 300
 
+
 @lru_cache(maxsize=1000)
 def _cached_md5(text: str) -> str:
     """Cached MD5 hash function for performance."""
     return hashlib.md5(text.encode()).hexdigest()
+
 
 async def get_cached_session_mapping(current_user: UserInfo) -> dict:
     """Get cached session mapping with TTL-based refresh."""
@@ -413,14 +428,19 @@ async def get_cached_session_mapping(current_user: UserInfo) -> dict:
         # Rebuild cache
         _session_id_to_cache_key_cache = await _build_session_mapping(current_user)
         _cache_timestamp = current_time
-        logger.info(f"[Mapping] Rebuilt cache with {len(_session_id_to_cache_key_cache)} mappings")
+        logger.info(
+            f"[Mapping] Rebuilt cache with {len(_session_id_to_cache_key_cache)} mappings"
+        )
 
     return _session_id_to_cache_key_cache
+
 
 async def _build_session_mapping(current_user: UserInfo) -> dict:
     """Build session mapping from database."""
     services = get_services()
-    persistence_manager = services["conversation_manager"].memory_manager.persistence_manager
+    persistence_manager = services[
+        "conversation_manager"
+    ].memory_manager.persistence_manager
 
     if persistence_manager is None or not hasattr(persistence_manager, "db"):
         return {}
@@ -431,9 +451,11 @@ async def _build_session_mapping(current_user: UserInfo) -> dict:
     try:
         conversations_collection = persistence_manager.db["conversations"]
         # Use indexed query instead of regex for better performance
-        session_docs = list(conversations_collection.find({
-            "cache_key": {"$regex": f"^{user_prefix}"}
-        }).limit(1000)) 
+        session_docs = list(
+            conversations_collection.find(
+                {"cache_key": {"$regex": f"^{user_prefix}"}}
+            ).limit(1000)
+        )
 
         mapping = {}
         for doc in session_docs:
@@ -453,6 +475,7 @@ async def _build_session_mapping(current_user: UserInfo) -> dict:
         logger.error(f"[Mapping] Error building session mapping: {e}")
         return {}
 
+
 async def build_session_id_mapping(current_user: UserInfo):
     """Legacy function - now uses cached mapping."""
     # This function is kept for backward compatibility
@@ -461,15 +484,16 @@ async def build_session_id_mapping(current_user: UserInfo):
 
 
 async def get_old_format_sessions(
-    current_user: UserInfo,
-    include_messages: bool = False
+    current_user: UserInfo, include_messages: bool = False
 ) -> List[ChatSession]:
     """
     Get chat sessions from the old cache_key format memory system.
     This bridges the gap until all sessions are migrated to the new format.
     """
     services = get_services()
-    persistence_manager = services["conversation_manager"].memory_manager.persistence_manager
+    persistence_manager = services[
+        "conversation_manager"
+    ].memory_manager.persistence_manager
 
     if persistence_manager is None or not hasattr(persistence_manager, "db"):
         logger.warning("[Old Sessions] Database not available for old format sessions")
@@ -483,9 +507,13 @@ async def get_old_format_sessions(
         conversations_collection = persistence_manager.db["conversations"]
 
         # Find all documents matching the pattern
-        session_docs = list(conversations_collection.find({"cache_key": {"$regex": f"^{user_prefix}"}}))
+        session_docs = list(
+            conversations_collection.find({"cache_key": {"$regex": f"^{user_prefix}"}})
+        )
 
-        logger.info(f"[Old Sessions] Found {len(session_docs)} old format conversations for user {user_id}")
+        logger.info(
+            f"[Old Sessions] Found {len(session_docs)} old format conversations for user {user_id}"
+        )
 
         sessions = []
         for doc in session_docs:
@@ -504,7 +532,9 @@ async def get_old_format_sessions(
                 # Handle cases where model might have slashes or special chars
                 model = model_part.replace("/", "/")  # Ensure proper format
             except IndexError:
-                logger.warning(f"[Old Sessions] Could not parse model from cache_key: {cache_key}")
+                logger.warning(
+                    f"[Old Sessions] Could not parse model from cache_key: {cache_key}"
+                )
                 continue
 
             # Create a pseudo-UUID from the cache_key for frontend compatibility
@@ -516,8 +546,7 @@ async def get_old_format_sessions(
             if messages:
                 # Find first user message
                 first_user_msg = next(
-                    (msg for msg in messages if msg.get("role") == "user"),
-                    None
+                    (msg for msg in messages if msg.get("role") == "user"), None
                 )
                 if first_user_msg:
                     content = first_user_msg.get("content", "")
@@ -532,13 +561,23 @@ async def get_old_format_sessions(
                             id=msg.get("id", f"msg_{i}"),
                             role=msg.get("role", "user"),
                             content=msg.get("content", ""),
-                            createdAt=msg.get("createdAt", msg.get("timestamp", datetime.fromtimestamp(last_updated).isoformat())),
-                            model=msg.get("model", model)
+                            createdAt=msg.get(
+                                "createdAt",
+                                msg.get(
+                                    "timestamp",
+                                    datetime.fromtimestamp(last_updated).isoformat(),
+                                ),
+                            ),
+                            model=msg.get("model", model),
                         )
                     )
 
             # Convert timestamp to ISO format
-            updated_at = datetime.fromtimestamp(last_updated).isoformat() if isinstance(last_updated, (int, float)) else datetime.now().isoformat()
+            updated_at = (
+                datetime.fromtimestamp(last_updated).isoformat()
+                if isinstance(last_updated, (int, float))
+                else datetime.now().isoformat()
+            )
             created_at = updated_at  # Use same timestamp for both
 
             sessions.append(
@@ -560,7 +599,9 @@ async def get_old_format_sessions(
         return sessions
 
     except Exception as e:
-        logger.error(f"[Old Sessions] Error retrieving old format sessions: {e}", exc_info=True)
+        logger.error(
+            f"[Old Sessions] Error retrieving old format sessions: {e}", exc_info=True
+        )
         return []
 
 
@@ -582,6 +623,7 @@ async def get_user_preferences(current_user: UserInfo = Depends(get_current_user
         # Try to get preferences from UserPreferencesManager if available
         try:
             from src.services.user_preferences_manager import UserPreferencesManager
+
             prefs_manager = UserPreferencesManager()
             user_prefs = prefs_manager.get_user_preferences(current_user.id)
             return UserPreferences(**user_prefs)
@@ -595,23 +637,30 @@ async def get_user_preferences(current_user: UserInfo = Depends(get_current_user
 
 @router.post("/user/preferences")
 async def update_user_preferences(
-    preferences: UserPreferences,
-    current_user: UserInfo = Depends(get_current_user)
+    preferences: UserPreferences, current_user: UserInfo = Depends(get_current_user)
 ):
     """Update user preferences."""
     try:
         # Try to save preferences using UserPreferencesManager if available
         try:
             from src.services.user_preferences_manager import UserPreferencesManager
+
             prefs_manager = UserPreferencesManager()
             prefs_manager.save_user_preferences(current_user.id, preferences.dict())
             return {"status": "success", "message": "Preferences updated"}
         except ImportError:
-            logger.warning("UserPreferencesManager not available, preferences not saved")
-            return {"status": "warning", "message": "Preferences not persisted (service unavailable)"}
+            logger.warning(
+                "UserPreferencesManager not available, preferences not saved"
+            )
+            return {
+                "status": "warning",
+                "message": "Preferences not persisted (service unavailable)",
+            }
     except Exception as e:
         logger.error(f"[Preferences] Error updating preferences: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to update preferences: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update preferences: {str(e)}"
+        )
 
 
 @router.post("/v2/sessions", response_model=ChatSession)
@@ -682,7 +731,9 @@ async def create_chat_session(
         )
 
 
-@router.get("/v2/sessions", response_model=List[ChatSession], response_class=ORJSONResponse)
+@router.get(
+    "/v2/sessions", response_model=List[ChatSession], response_class=ORJSONResponse
+)
 async def get_chat_sessions(
     current_user: UserInfo = Depends(get_current_user),
     include_messages: bool = Query(False, description="Include full message arrays"),
@@ -753,7 +804,9 @@ async def get_chat_sessions(
         return []
 
 
-@router.get("/sessions", response_model=List[ChatSession], response_class=ORJSONResponse)
+@router.get(
+    "/sessions", response_model=List[ChatSession], response_class=ORJSONResponse
+)
 async def get_chat_sessions_legacy(
     current_user: UserInfo = Depends(get_current_user),
     include_messages: bool = Query(False, description="Include full message arrays"),
@@ -772,11 +825,17 @@ async def get_chat_sessions_legacy(
     all_sessions = new_sessions + old_sessions
     all_sessions.sort(key=lambda s: s.updated_at, reverse=True)
 
-    logger.info(f"[Sessions] Returning {len(all_sessions)} total sessions ({len(new_sessions)} new, {len(old_sessions)} old)")
+    logger.info(
+        f"[Sessions] Returning {len(all_sessions)} total sessions ({len(new_sessions)} new, {len(old_sessions)} old)"
+    )
     return all_sessions
 
 
-@router.get("/v2/sessions/{session_id}/messages", response_model=List[Message], response_class=ORJSONResponse)
+@router.get(
+    "/v2/sessions/{session_id}/messages",
+    response_model=List[Message],
+    response_class=ORJSONResponse,
+)
 async def get_session_messages(
     session_id: str, current_user: UserInfo = Depends(get_current_user)
 ):
@@ -833,11 +892,17 @@ async def get_session_messages(
         return []
 
 
-@router.get("/messages/{chat_id:path}", response_model=List[Message], response_class=ORJSONResponse)
+@router.get(
+    "/messages/{chat_id:path}",
+    response_model=List[Message],
+    response_class=ORJSONResponse,
+)
 async def get_messages_legacy(
     chat_id: str,
-    model: Optional[str] = Query(None, description="Model ID (for UUID format chat_ids)"),
-    current_user: UserInfo = Depends(get_current_user)
+    model: Optional[str] = Query(
+        None, description="Model ID (for UUID format chat_ids)"
+    ),
+    current_user: UserInfo = Depends(get_current_user),
 ):
     """
     Legacy endpoint for fetching messages.
@@ -848,6 +913,7 @@ async def get_messages_legacy(
     """
     logger.info(f"[Messages] Function called with chat_id: {chat_id}")
     from urllib.parse import unquote
+
     user_id = str(current_user.id)
 
     # URL decode the chat_id to handle encoded characters like %3A
@@ -862,7 +928,9 @@ async def get_messages_legacy(
         if chat_id in session_mapping:
             # This is a hashed cache_key, map it back to the original cache_key
             original_cache_key = session_mapping[chat_id]
-            logger.info(f"[Messages] Mapped hashed ID {chat_id} back to cache_key: {original_cache_key}")
+            logger.info(
+                f"[Messages] Mapped hashed ID {chat_id} back to cache_key: {original_cache_key}"
+            )
             chat_id = original_cache_key
 
         # Handle cache_key format: user_{user_id}_model_{model}
@@ -875,7 +943,9 @@ async def get_messages_legacy(
                 cache_key_user_id = parts[0].replace("user_", "")
                 model_from_key = parts[1]
 
-                logger.info(f"[Messages] Parsed user_id={cache_key_user_id}, model={model_from_key}")
+                logger.info(
+                    f"[Messages] Parsed user_id={cache_key_user_id}, model={model_from_key}"
+                )
 
                 # Validate ownership
                 if cache_key_user_id != user_id:
@@ -887,30 +957,46 @@ async def get_messages_legacy(
                     services = get_services()
                     conversation_manager = services["conversation_manager"]
 
-                    logger.info(f"[Messages] Fetching conversation history for user {user_id} with model {model_from_key}")
-
-                    # Get conversation history for this specific model
-                    context_messages = await conversation_manager.get_conversation_history(
-                        user_id=int(user_id),
-                        model=model_from_key,
-                        max_messages=100  # Get all messages
+                    logger.info(
+                        f"[Messages] Fetching conversation history for user {user_id} with model {model_from_key}"
                     )
 
-                    logger.info(f"[Messages] Retrieved {len(context_messages)} raw messages from conversation manager")
+                    # Get conversation history for this specific model
+                    context_messages = (
+                        await conversation_manager.get_conversation_history(
+                            user_id=int(user_id),
+                            model=model_from_key,
+                            max_messages=100,  # Get all messages
+                        )
+                    )
+
+                    logger.info(
+                        f"[Messages] Retrieved {len(context_messages)} raw messages from conversation manager"
+                    )
                     if context_messages:
-                        logger.debug(f"[Messages] First message sample: {context_messages[0]}")
-                        logger.debug(f"[Messages] Message keys: {list(context_messages[0].keys()) if context_messages[0] else 'None'}")
+                        logger.debug(
+                            f"[Messages] First message sample: {context_messages[0]}"
+                        )
+                        logger.debug(
+                            f"[Messages] Message keys: {list(context_messages[0].keys()) if context_messages[0] else 'None'}"
+                        )
 
                     # If no messages from conversation manager, try model_history_manager directly
                     if not context_messages:
-                        logger.info("[Messages] No messages from conversation manager, trying model_history_manager directly")
-                        model_history_manager = services["conversation_manager"].model_history_manager
+                        logger.info(
+                            "[Messages] No messages from conversation manager, trying model_history_manager directly"
+                        )
+                        model_history_manager = services[
+                            "conversation_manager"
+                        ].model_history_manager
                         context_messages = await model_history_manager.get_history(
                             user_id=int(user_id),
                             max_messages=100,
-                            model_id=model_from_key
+                            model_id=model_from_key,
                         )
-                        logger.info(f"[Messages] Retrieved {len(context_messages)} messages from model_history_manager")
+                        logger.info(
+                            f"[Messages] Retrieved {len(context_messages)} messages from model_history_manager"
+                        )
 
                     # Convert to Message format
                     messages = []
@@ -922,8 +1008,11 @@ async def get_messages_legacy(
                                 id=msg.get("id", f"msg_{i}"),
                                 role=msg.get("role", "user"),
                                 content=msg.get("content", ""),
-                                createdAt=msg.get("createdAt", msg.get("timestamp", datetime.now().isoformat())),
-                                model=msg.get("model", model_from_key)
+                                createdAt=msg.get(
+                                    "createdAt",
+                                    msg.get("timestamp", datetime.now().isoformat()),
+                                ),
+                                model=msg.get("model", model_from_key),
                             )
                         else:
                             # Enhanced format from conversation manager
@@ -931,16 +1020,24 @@ async def get_messages_legacy(
                                 id=msg.get("id", f"msg_{i}"),
                                 role=msg.get("role", "user"),
                                 content=msg.get("content", ""),
-                                createdAt=msg.get("createdAt", msg.get("timestamp", datetime.now().isoformat())),
-                                model=msg.get("model", model_from_key)
+                                createdAt=msg.get(
+                                    "createdAt",
+                                    msg.get("timestamp", datetime.now().isoformat()),
+                                ),
+                                model=msg.get("model", model_from_key),
                             )
                         messages.append(message)
 
-                    logger.info(f"[Messages] Converted to {len(messages)} Message objects for {chat_id}")
+                    logger.info(
+                        f"[Messages] Converted to {len(messages)} Message objects for {chat_id}"
+                    )
                     return messages
 
                 except Exception as e:
-                    logger.error(f"[Messages] Error retrieving from old memory system: {e}", exc_info=True)
+                    logger.error(
+                        f"[Messages] Error retrieving from old memory system: {e}",
+                        exc_info=True,
+                    )
                     return []
             else:
                 logger.warning(f"[Messages] Invalid cache_key format: {chat_id}")
@@ -1149,7 +1246,7 @@ async def webapp_health_check():
 async def create_chat_legacy(
     title: Optional[str] = Query(None, description="Chat title"),
     model: Optional[str] = Query(None, description="Model ID"),
-    current_user: UserInfo = Depends(get_current_user)
+    current_user: UserInfo = Depends(get_current_user),
 ):
     """
     Legacy endpoint for creating chats.
@@ -1177,7 +1274,7 @@ async def create_chat_legacy(
 async def list_chats_legacy(
     current_user: UserInfo = Depends(get_current_user),
     limit: int = Query(50, description="Max number of chats to return"),
-    offset: int = Query(0, description="Number of chats to skip")
+    offset: int = Query(0, description="Number of chats to skip"),
 ):
     """
     Legacy endpoint for listing chats.
@@ -1188,19 +1285,21 @@ async def list_chats_legacy(
 
     # Convert to chat format and apply pagination
     chats = []
-    for session in sessions[offset:offset+limit]:
-        chats.append({
-            "id": session.id,
-            "title": session.title,
-            "model": session.model,
-            "created_at": session.created_at,
-            "updated_at": session.updated_at,
-            "message_count": session.message_count,
-            "user_id": session.user_id,
-            "public": True,
-            "pinned": session.pinned,
-            "pinned_at": session.pinned_at,
-        })
+    for session in sessions[offset : offset + limit]:
+        chats.append(
+            {
+                "id": session.id,
+                "title": session.title,
+                "model": session.model,
+                "created_at": session.created_at,
+                "updated_at": session.updated_at,
+                "message_count": session.message_count,
+                "user_id": session.user_id,
+                "public": True,
+                "pinned": session.pinned,
+                "pinned_at": session.pinned_at,
+            }
+        )
 
     return chats
 
@@ -1209,7 +1308,7 @@ async def list_chats_legacy(
 async def list_history_legacy(
     current_user: UserInfo = Depends(get_current_user),
     limit: int = Query(50, description="Max number of chats to return"),
-    offset: int = Query(0, description="Number of chats to skip")
+    offset: int = Query(0, description="Number of chats to skip"),
 ):
     """
     Legacy endpoint for listing chat history.
@@ -1220,8 +1319,7 @@ async def list_history_legacy(
 
 @router.delete("/chats/{chat_id:path}")
 async def delete_chat_legacy(
-    chat_id: str,
-    current_user: UserInfo = Depends(get_current_user)
+    chat_id: str, current_user: UserInfo = Depends(get_current_user)
 ):
     """
     Legacy endpoint for deleting chats.
@@ -1232,61 +1330,67 @@ async def delete_chat_legacy(
     Deletes the corresponding session from the appropriate collection.
     """
     from urllib.parse import unquote
-    
+
     # Decode URL-encoded characters (e.g., %3A -> :, %2F -> /)
     chat_id = unquote(chat_id)
-    
+
     sessions_collection = get_sessions_collection()
     user_id = str(current_user.id)
     deleted = False
 
     try:
         # Try deleting from new format (chat_sessions collection with session_id)
-        result = sessions_collection.delete_one({
-            "session_id": chat_id,
-            "user_id": user_id
-        })
+        result = sessions_collection.delete_one(
+            {"session_id": chat_id, "user_id": user_id}
+        )
 
         if result.deleted_count > 0:
             deleted = True
-            logger.info(f"[Chats] Deleted new format session {chat_id} for user {user_id}")
+            logger.info(
+                f"[Chats] Deleted new format session {chat_id} for user {user_id}"
+            )
         else:
             # Try deleting from old format (conversations collection)
             from src.database.connection import get_database
+
             db, _ = get_database()
-            
+
             if db is not None:
                 conversations = db.conversations
-                
+
                 # Case 1: chat_id is the cache_key directly (e.g., user_806762900_model_gemini)
                 if chat_id.startswith(f"user_{user_id}_model_"):
-                    result = conversations.delete_one({
-                        "cache_key": chat_id
-                    })
-                    
+                    result = conversations.delete_one({"cache_key": chat_id})
+
                     if result.deleted_count > 0:
                         deleted = True
-                        logger.info(f"[Chats] Deleted old format conversation {chat_id} for user {user_id}")
+                        logger.info(
+                            f"[Chats] Deleted old format conversation {chat_id} for user {user_id}"
+                        )
                 else:
                     # Case 2: chat_id is a hashed session ID - look up the original cache_key
                     session_mapping = await get_cached_session_mapping(current_user)
                     if chat_id in session_mapping:
                         cache_key = session_mapping[chat_id]
-                        
+
                         # Verify it belongs to this user
                         if cache_key.startswith(f"user_{user_id}_model_"):
-                            result = conversations.delete_one({
-                                "cache_key": cache_key
-                            })
-                            
+                            result = conversations.delete_one({"cache_key": cache_key})
+
                             if result.deleted_count > 0:
                                 deleted = True
-                                logger.info(f"[Chats] Deleted hashed session {chat_id} (cache_key: {cache_key}) for user {user_id}")
+                                logger.info(
+                                    f"[Chats] Deleted hashed session {chat_id} (cache_key: {cache_key}) for user {user_id}"
+                                )
                         else:
-                            logger.warning(f"[Chats] Hashed session {chat_id} resolved to cache_key {cache_key} which doesn't belong to user {user_id}")
+                            logger.warning(
+                                f"[Chats] Hashed session {chat_id} resolved to cache_key {cache_key} which doesn't belong to user {user_id}"
+                            )
                     else:
                         # Not in mapping - might be an invalid or very old chat ID
-                        logger.warning(f"[Chats] Chat ID {chat_id} not found in any format for user {user_id}")
+                        logger.warning(
+                            f"[Chats] Chat ID {chat_id} not found in any format for user {user_id}"
+                        )
 
         if not deleted:
             raise HTTPException(status_code=404, detail="Chat not found")

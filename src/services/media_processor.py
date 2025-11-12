@@ -65,7 +65,10 @@ class MediaProcessor:
             with Image.open(io.BytesIO(img_bytes)) as img:
                 if img.format not in MediaProcessor.SUPPORTED_IMAGE_FORMATS:
                     return False
-                if img.width > MediaProcessor.MAX_IMAGE_SIZE or img.height > MediaProcessor.MAX_IMAGE_SIZE:
+                if (
+                    img.width > MediaProcessor.MAX_IMAGE_SIZE
+                    or img.height > MediaProcessor.MAX_IMAGE_SIZE
+                ):
                     return False
             return True
         except Exception:
@@ -82,16 +85,27 @@ class MediaProcessor:
 
             with Image.open(io.BytesIO(img_bytes)) as img:
                 # Convert to RGB if necessary
-                if img.mode not in ('RGB', 'L'):
-                    img = img.convert('RGB')
+                if img.mode not in ("RGB", "L"):
+                    img = img.convert("RGB")
 
                 # Resize if too large
-                if img.width > MediaProcessor.MAX_IMAGE_SIZE or img.height > MediaProcessor.MAX_IMAGE_SIZE:
-                    img.thumbnail((MediaProcessor.MAX_IMAGE_SIZE, MediaProcessor.MAX_IMAGE_SIZE), Image.Resampling.LANCZOS)
+                if (
+                    img.width > MediaProcessor.MAX_IMAGE_SIZE
+                    or img.height > MediaProcessor.MAX_IMAGE_SIZE
+                ):
+                    img.thumbnail(
+                        (MediaProcessor.MAX_IMAGE_SIZE, MediaProcessor.MAX_IMAGE_SIZE),
+                        Image.Resampling.LANCZOS,
+                    )
 
                 # Save optimized image
                 output = io.BytesIO()
-                img.save(output, format='JPEG', quality=MediaProcessor.IMAGE_QUALITY, optimize=True)
+                img.save(
+                    output,
+                    format="JPEG",
+                    quality=MediaProcessor.IMAGE_QUALITY,
+                    optimize=True,
+                )
                 output.seek(0)
                 return output
         except Exception as e:
@@ -108,16 +122,16 @@ class MediaProcessor:
                 img_bytes = image_data
 
             with Image.open(io.BytesIO(img_bytes)) as img:
-                if img.format == 'JPEG':
-                    return 'image/jpeg'
-                elif img.format == 'PNG':
-                    return 'image/png'
-                elif img.format == 'WEBP':
-                    return 'image/webp'
-                elif img.format == 'GIF':
-                    return 'image/gif'
+                if img.format == "JPEG":
+                    return "image/jpeg"
+                elif img.format == "PNG":
+                    return "image/png"
+                elif img.format == "WEBP":
+                    return "image/webp"
+                elif img.format == "GIF":
+                    return "image/gif"
                 else:
-                    return 'image/jpeg'
+                    return "image/jpeg"
         except Exception:
             return "image/jpeg"
 

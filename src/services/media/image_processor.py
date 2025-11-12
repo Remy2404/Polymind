@@ -3,17 +3,21 @@ import logging
 from typing import Optional, Union
 from PIL import Image
 import re
+
+
 class ImageProcessor:
     """
     Handles image processing, analysis, and generation operations.
     Supports both bytes and BytesIO objects consistently.
     """
+
     def __init__(self, ai_client=None):
         """Initialize with optional AI client for image analysis"""
         self.ai_client = ai_client
         self.logger = logging.getLogger(__name__)
         self.max_image_size = 4096
         self.image_quality = 95
+
     async def generate_image(self, prompt: str) -> Optional[bytes]:
         """
         Generate an image based on the provided text prompt.
@@ -27,7 +31,9 @@ class ImageProcessor:
             return None
         try:
             if hasattr(self.ai_client, "generate_image"):
-                self.logger.info(f"Generating image with prompt length: {len(prompt)} characters")
+                self.logger.info(
+                    f"Generating image with prompt length: {len(prompt)} characters"
+                )
                 return await self.ai_client.generate_image(prompt)
             else:
                 self.logger.error("AI client does not support image generation")
@@ -35,6 +41,7 @@ class ImageProcessor:
         except Exception as e:
             self.logger.error(f"Error generating image: {str(e)}")
             return None
+
     async def analyze_image(
         self,
         image_data: Union[bytes, io.BytesIO],
@@ -64,6 +71,7 @@ class ImageProcessor:
         except Exception as e:
             self.logger.error(f"Error analyzing image: {str(e)}")
             return f"Sorry, I couldn't analyze this image: {str(e)}"
+
     def _ensure_bytesio(self, image_data: Union[bytes, io.BytesIO]) -> io.BytesIO:
         """
         Ensure the image data is in BytesIO format for consistent processing.
@@ -79,6 +87,7 @@ class ImageProcessor:
             return io.BytesIO(image_data)
         else:
             raise TypeError(f"Unsupported image data type: {type(image_data)}")
+
     def validate_image(self, image_data: Union[bytes, io.BytesIO]) -> bool:
         """
         Validate if the image data is in a supported format.
@@ -102,6 +111,7 @@ class ImageProcessor:
         except Exception as e:
             self.logger.error(f"Image validation failed: {str(e)}")
             return False
+
     def get_mime_type(self, image_data: Union[bytes, io.BytesIO]) -> str:
         """
         Determine the MIME type of an image.
@@ -119,6 +129,7 @@ class ImageProcessor:
         except Exception as e:
             self.logger.error(f"Error determining MIME type: {str(e)}")
             return "image/jpeg"
+
     async def prepare_image(self, image_data: Union[bytes, io.BytesIO]) -> io.BytesIO:
         """
         Prepare an image for AI processing by optimizing size and format.
@@ -155,6 +166,7 @@ class ImageProcessor:
         except Exception as e:
             self.logger.error(f"Error processing image: {str(e)}")
             raise ValueError(f"Image processing failed: {str(e)}")
+
     def is_image_generation_request(self, message: str) -> bool:
         """
         Detect if a text message is requesting image generation.
@@ -180,6 +192,7 @@ class ImageProcessor:
             if re.search(pattern, message):
                 return True
         return False
+
     async def detect_image_generation_request(self, message: str) -> tuple[bool, str]:
         """
         Detect if a message is requesting image generation and extract the prompt.

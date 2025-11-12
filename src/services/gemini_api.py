@@ -195,7 +195,6 @@ class GeminiAPI:
         """
 
         def sanitize_schema(schema: Any) -> Any:
-
             if not isinstance(schema, dict):
                 return schema
 
@@ -524,7 +523,7 @@ class GeminiAPI:
                 if hasattr(tool, "function_declarations") and tool.function_declarations
             ]
             tool_instructions = f"""
-You have access to the following tools: {', '.join(tool_names)}
+You have access to the following tools: {", ".join(tool_names)}
 - **When user asks to "summary this link", "analyze this URL", "get content from", "fetch this page"**:
   - **MUST use fetch_html** to get the webpage content first
   - Then provide summary/analysis based on the fetched content
@@ -1152,7 +1151,7 @@ Focus on providing the most helpful and accurate response possible using the ava
                         contents.append(image_part)
 
                         self.logger.info(
-                            f"Successfully processed image attachment {i+1}: {attachment.name} ({attachment.content_type})"
+                            f"Successfully processed image attachment {i + 1}: {attachment.name} ({attachment.content_type})"
                         )
 
                         # Add descriptive text about the image

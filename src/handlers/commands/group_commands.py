@@ -2,25 +2,32 @@
 Group Commands Handler
 Handles all group-specific commands for the Polymind Telegram bot.
 """
+
 import sys
 import os
 import logging
+
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 from telegram import Update
 from telegram.ext import ContextTypes
+
 logger = logging.getLogger(__name__)
+
+
 class GroupCommands:
     """
     Handles group-specific commands for the Polymind Telegram bot.
     Follows single responsibility principle by focusing solely on group operations.
     """
+
     def __init__(self):
         """
         Initialize GroupCommands.
         """
         self.logger = logging.getLogger(__name__)
+
     async def group_settings_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -60,6 +67,7 @@ class GroupCommands:
             await update.message.reply_text(
                 "❌ Error retrieving group settings. Please try again."
             )
+
     async def group_context_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -105,6 +113,7 @@ class GroupCommands:
             await update.message.reply_text(
                 "❌ Error retrieving group context. Please try again."
             )
+
     async def group_threads_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -152,6 +161,7 @@ class GroupCommands:
             await update.message.reply_text(
                 "❌ Error retrieving conversation threads. Please try again."
             )
+
     async def clean_threads_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:

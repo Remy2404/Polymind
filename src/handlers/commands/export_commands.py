@@ -3,6 +3,7 @@ import io
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+
 try:
     from spire.doc import Document, Section, FileFormat
     from spire.doc.common import (
@@ -12,6 +13,7 @@ try:
         BorderStyle,
         HyperlinkType,
     )
+
     SPIRE_AVAILABLE = True
 except ImportError:
     SPIRE_AVAILABLE = False
@@ -27,21 +29,29 @@ except ImportError:
 # Try to import python-docx as fallback
 try:
     from docx import Document as DocxDocument
+
     DOCX_AVAILABLE = True
 except ImportError:
     DOCX_AVAILABLE = False
     DocxDocument = None
 from pydantic import BaseModel, Field
+
+
 class ExportContent(BaseModel):
     """Simplified export content structure - content only"""
+
     content: str = Field(..., description="Main document content")
+
+
 class SpireDocumentExporter:
     """Simplified document exporter using Spire.Doc"""
+
     def __init__(self, logger: logging.Logger):
         self.logger = logger
         self.current_table = None
         self.table_rows = []
         self.in_table = False
+
     def create_docx(self, content: str) -> bytes:
         """Create DOCX using Spire.Doc - simplified to export content only"""
         if not SPIRE_AVAILABLE:
@@ -65,6 +75,7 @@ class SpireDocumentExporter:
             self._add_formatted_content(section, content)
             import tempfile
             import os
+
             with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as temp_file:
                 temp_path = temp_file.name
             try:
@@ -78,6 +89,7 @@ class SpireDocumentExporter:
         except Exception as e:
             self.logger.error(f"Spire.Doc export failed: {e}")
             raise
+
     def _add_formatted_content(self, section, content: str):
         """Enhanced markdown to DOCX formatting with comprehensive support"""
         lines = content.split("\n")
@@ -173,6 +185,7 @@ class SpireDocumentExporter:
                 paragraph.Format.SpaceAfter = 3
         if self.in_table:
             self._finalize_current_table(section)
+
     def _add_formatted_text_with_inline(self, paragraph, text):
         """Add text with inline formatting support (bold, italic, code, strikethrough, links)"""
         if not text:
@@ -240,6 +253,7 @@ class SpireDocumentExporter:
                     text_range = paragraph.AppendText(remaining_text)
                     text_range.CharacterFormat.FontName = "Arial"
                 break
+
     def _collect_table_row(self, line):
         """Collect table row data for proper table creation"""
         if not re.match(r"^\s*\|.*\|\s*$", line):
@@ -254,6 +268,7 @@ class SpireDocumentExporter:
             self.in_table = True
             self.table_rows = []
         self.table_rows.append(cells)
+
     def _finalize_current_table(self, section):
         """Create actual DOCX table from collected table rows - improved version"""
         if not self.in_table or not self.table_rows:
@@ -330,6 +345,7 @@ class SpireDocumentExporter:
             self.in_table = False
             self.table_rows = []
             self.current_table = None
+
     def _create_text_fallback_table(self, section):
         """Create a well-formatted text table as fallback"""
         if not self.table_rows:
@@ -365,6 +381,7 @@ class SpireDocumentExporter:
             paragraph.Format.SpaceBefore = 2
             paragraph.Format.SpaceAfter = 2
         section.AddParagraph()
+
     def _apply_table_borders(self, table):
         """Apply professional borders to the table - fixed version"""
         try:
@@ -397,10 +414,12 @@ class SpireDocumentExporter:
                         continue
         except Exception as e:
             self.logger.warning(f"Could not apply table borders: {e}")
+
     def _add_emoji_support(self, text_range):
         """Enhance emoji rendering with proper font support"""
         text_range.CharacterFormat.FontName = "Segoe UI Emoji"
         return text_range
+
 
 class DocxDocumentExporter:
     """Fallback document exporter using python-docx"""
@@ -437,16 +456,17 @@ class DocxDocumentExporter:
                     document.add_heading(line[4:].strip(), level=3)
                 elif line.startswith("- ") or line.startswith("* "):
                     # Bullet point
-                    document.add_paragraph(line[2:].strip(), style='List Bullet')
+                    document.add_paragraph(line[2:].strip(), style="List Bullet")
                 elif re.match(r"^\d+\.\s", line):
                     # Numbered list
-                    document.add_paragraph(line, style='List Number')
+                    document.add_paragraph(line, style="List Number")
                 else:
                     # Regular paragraph
                     document.add_paragraph(line)
 
             # Save to bytes
             import io
+
             docx_bytes = io.BytesIO()
             document.save(docx_bytes)
             docx_bytes.seek(0)
@@ -455,11 +475,15 @@ class DocxDocumentExporter:
         except Exception as e:
             self.logger.error(f"python-docx export failed: {e}")
             raise
+
     def _process_inline_formatting(self, paragraph, text):
         """Process inline markdown formatting like **bold**, *italic*, etc."""
         self._add_formatted_text_with_inline(paragraph, text)
+
+
 class EnhancedExportCommands:
     """Streamlined export commands using Spire.Doc with python-docx fallback"""
+
     def __init__(self, gemini_api, user_data_manager, telegram_logger):
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
@@ -478,16 +502,19 @@ class EnhancedExportCommands:
             self.logger.warning("No document export library available")
 
         self.memory_manager = self._init_memory_manager()
+
     def _init_memory_manager(self):
         """Initialize memory manager with fallback"""
         try:
             from src.services.memory_context.memory_manager import MemoryManager
             from src.database.connection import get_database
+
             db, _ = get_database()
             return MemoryManager(db=db)
         except Exception as e:
             self.logger.warning(f"Memory manager initialization failed: {e}")
             return None
+
     async def export_to_document(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -523,6 +550,7 @@ class EnhancedExportCommands:
             await update.message.reply_text(
                 "❌ An error occurred while processing your export request."
             )
+
     async def handle_export_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -543,6 +571,7 @@ class EnhancedExportCommands:
             await update.callback_query.edit_message_text(
                 "❌ An error occurred while processing your request."
             )
+
     async def handle_export_conversation(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -567,6 +596,7 @@ class EnhancedExportCommands:
                 await update.callback_query.edit_message_text(error_msg)
             else:
                 await update.message.reply_text(error_msg)
+
     async def _handle_conversation_export(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -581,6 +611,7 @@ class EnhancedExportCommands:
         context.user_data["doc_export_text"] = conversation_content
         context.user_data["export_type"] = "conversation"
         await self._show_format_selection(update, context)
+
     async def _handle_custom_export(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -593,6 +624,7 @@ class EnhancedExportCommands:
             "After sending your text, I'll ask you to choose the format (DOCX).",
             parse_mode="Markdown",
         )
+
     async def _show_format_selection(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -615,11 +647,13 @@ class EnhancedExportCommands:
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown",
             )
+
     async def generate_document(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, format_type: str
     ) -> None:
         """Public method to generate document - delegates to private _generate_document"""
         await self._generate_document(update, context, format_type)
+
     async def _generate_document(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, format_type: str
     ) -> None:
@@ -653,7 +687,9 @@ class EnhancedExportCommands:
             self._cleanup_user_data(context)
         except Exception as e:
             self.logger.error(f"Error generating document: {e}")
-            error_msg = f"❌ Sorry, there was an error generating your document: {str(e)}"
+            error_msg = (
+                f"❌ Sorry, there was an error generating your document: {str(e)}"
+            )
             if "Spire.Doc is not available" in str(e):
                 error_msg += "\n\n💡 Using fallback document generator..."
                 # Try with fallback if Spire.Doc failed
@@ -668,6 +704,7 @@ class EnhancedExportCommands:
                         error_msg = f"❌ Fallback also failed: {str(fallback_e)}"
 
             await update.callback_query.edit_message_text(error_msg)
+
     async def _send_document(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, document_bytes: bytes
     ) -> None:
@@ -689,11 +726,13 @@ class EnhancedExportCommands:
         except Exception as e:
             self.logger.error(f"Error sending document: {e}")
             raise
+
     def _cleanup_user_data(self, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Clean up user data"""
         keys_to_remove = ["doc_export_text", "export_type", "awaiting_doc_text"]
         for key in keys_to_remove:
             context.user_data.pop(key, None)
+
     async def _get_conversation_history(self, user_id: int) -> str:
         """Get conversation history from various sources, omitting unwanted headers/messages."""
         try:
@@ -721,4 +760,6 @@ class EnhancedExportCommands:
         except Exception as e:
             self.logger.error(f"Error getting conversation history: {e}")
             return None
+
+
 ExportCommands = EnhancedExportCommands

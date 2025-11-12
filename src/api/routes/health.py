@@ -2,12 +2,16 @@
 Health and root endpoint routes for the Telegram Bot API.
 Provides basic application status information and health checks.
 """
+
 import time
 import psutil
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+
 router = APIRouter()
 __version__ = "1.0.0"
+
+
 @router.get("/")
 @router.head("/")
 async def root_get():
@@ -20,6 +24,8 @@ async def root_get():
         },
         status_code=200,
     )
+
+
 @router.post("/")
 async def root_post():
     """Root endpoint for POST requests."""
@@ -27,6 +33,8 @@ async def root_post():
         content={"status": "ok", "message": "Telegram Bot API is running"},
         status_code=200,
     )
+
+
 @router.get("/health")
 @router.head("/health")
 async def health_check(bot=Depends(lambda: None)):

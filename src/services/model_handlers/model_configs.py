@@ -2,19 +2,26 @@
 Model Configuration System
 Defines all available models in a centralized configuration.
 """
+
 import json
 import os
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Any, List
 from enum import Enum
+
+
 class Provider(Enum):
     """Supported API providers."""
+
     GEMINI = "gemini"
     OPENROUTER = "openrouter"
     DEEPSEEK = "deepseek"
+
+
 @dataclass
 class ModelConfig:
     """Configuration for an AI model."""
+
     model_id: str
     display_name: str
     provider: Provider
@@ -31,8 +38,11 @@ class ModelConfig:
     type: str = "general_purpose"
     capabilities: List[str] = field(default_factory=list)
     supported_parameters: List[str] = field(default_factory=list)
+
+
 class ModelConfigurations:
     """Central configuration for all available models."""
+
     @staticmethod
     def get_all_models() -> Dict[str, ModelConfig]:
         """Get all available model configurations from JSON file, merged with hardcoded models."""
@@ -54,37 +64,63 @@ class ModelConfigurations:
                                     model_id = model_data.get("id", "")
                                     if not model_id:
                                         continue
-                                    provider = ModelConfigurations._determine_provider_from_id(model_id)
-                                    capabilities = (
-                                        ModelConfigurations._extract_capabilities_from_model_data(
-                                            model_data
+                                    provider = (
+                                        ModelConfigurations._determine_provider_from_id(
+                                            model_id
                                         )
                                     )
-                                    model_type = ModelConfigurations._determine_model_type(capabilities)
+                                    capabilities = ModelConfigurations._extract_capabilities_from_model_data(
+                                        model_data
+                                    )
+                                    model_type = (
+                                        ModelConfigurations._determine_model_type(
+                                            capabilities
+                                        )
+                                    )
                                     max_tokens = 32000
-                                    description = model_data.get("description", "").lower()
-                                    if "reasoning" in description or "thinking" in description:
+                                    description = model_data.get(
+                                        "description", ""
+                                    ).lower()
+                                    if (
+                                        "reasoning" in description
+                                        or "thinking" in description
+                                    ):
                                         max_tokens = 65536
-                                    elif "code" in description or "programming" in description:
+                                    elif (
+                                        "code" in description
+                                        or "programming" in description
+                                    ):
                                         max_tokens = 49152
                                     elif any(
                                         keyword in description
-                                        for keyword in ["small", "lightweight", "nano", "mini"]
+                                        for keyword in [
+                                            "small",
+                                            "lightweight",
+                                            "nano",
+                                            "mini",
+                                        ]
                                     ):
                                         max_tokens = 16384
-                                    elif "vision" in description or "multimodal" in description:
+                                    elif (
+                                        "vision" in description
+                                        or "multimodal" in description
+                                    ):
                                         max_tokens = 24576
                                     config = ModelConfig(
                                         model_id=model_id,
                                         display_name=model_data.get("name", model_id),
                                         provider=provider,
                                         openrouter_model_key=(
-                                            model_id if provider == Provider.OPENROUTER else None
+                                            model_id
+                                            if provider == Provider.OPENROUTER
+                                            else None
                                         ),
                                         description=model_data.get("description", ""),
                                         type=model_type,
                                         capabilities=capabilities,
-                                        supported_parameters=model_data.get("supported_parameters", []),
+                                        supported_parameters=model_data.get(
+                                            "supported_parameters", []
+                                        ),
                                         system_message=ModelConfigurations._generate_system_message(
                                             model_id, model_data.get("name", "")
                                         ),
@@ -92,8 +128,10 @@ class ModelConfigurations:
                                             provider, model_type
                                         ),
                                         max_tokens=max_tokens,
-                                        supports_images="supports_images" in capabilities,
-                                        supports_documents="supports_documents" in capabilities,
+                                        supports_images="supports_images"
+                                        in capabilities,
+                                        supports_documents="supports_documents"
+                                        in capabilities,
                                     )
                                     models[model_id] = config
                 # Handle legacy format (simple list)
@@ -103,13 +141,15 @@ class ModelConfigurations:
                             model_id = model_data.get("id", "")
                             if not model_id:
                                 continue
-                            provider = ModelConfigurations._determine_provider_from_id(model_id)
-                            capabilities = (
-                                ModelConfigurations._extract_capabilities_from_model_data(
-                                    model_data
-                                )
+                            provider = ModelConfigurations._determine_provider_from_id(
+                                model_id
                             )
-                            model_type = ModelConfigurations._determine_model_type(capabilities)
+                            capabilities = ModelConfigurations._extract_capabilities_from_model_data(
+                                model_data
+                            )
+                            model_type = ModelConfigurations._determine_model_type(
+                                capabilities
+                            )
                             max_tokens = 32000
                             description = model_data.get("description", "").lower()
                             if "reasoning" in description or "thinking" in description:
@@ -128,12 +168,16 @@ class ModelConfigurations:
                                 display_name=model_data.get("name", model_id),
                                 provider=provider,
                                 openrouter_model_key=(
-                                    model_id if provider == Provider.OPENROUTER else None
+                                    model_id
+                                    if provider == Provider.OPENROUTER
+                                    else None
                                 ),
                                 description=model_data.get("description", ""),
                                 type=model_type,
                                 capabilities=capabilities,
-                                supported_parameters=model_data.get("supported_parameters", []),
+                                supported_parameters=model_data.get(
+                                    "supported_parameters", []
+                                ),
                                 system_message=ModelConfigurations._generate_system_message(
                                     model_id, model_data.get("name", "")
                                 ),
@@ -152,6 +196,7 @@ class ModelConfigurations:
             return ModelConfigurations._get_hardcoded_models()
         models.update(ModelConfigurations._get_hardcoded_models())
         return models
+
     @staticmethod
     def _get_hardcoded_models() -> Dict[str, ModelConfig]:
         """Fallback hardcoded models when JSON loading fails."""
@@ -199,6 +244,7 @@ class ModelConfigurations:
                 ],
             ),
         }
+
     @staticmethod
     def _determine_provider_from_id(model_id: str) -> Provider:
         """Determine provider from model ID."""
@@ -216,6 +262,7 @@ class ModelConfigurations:
             return Provider.DEEPSEEK
         else:
             return Provider.OPENROUTER
+
     @staticmethod
     def _extract_capabilities_from_model_data(model_data: Dict[str, Any]) -> List[str]:
         """Extract capabilities from model data (description + supported_parameters)."""
@@ -273,6 +320,7 @@ class ModelConfigurations:
         if not capabilities:
             capabilities.append("general_purpose")
         return capabilities
+
     @staticmethod
     def _extract_capabilities_from_description(description: str) -> List[str]:
         """Extract capabilities from model description."""
@@ -311,6 +359,7 @@ class ModelConfigurations:
         if not capabilities:
             capabilities.append("general_purpose")
         return capabilities
+
     @staticmethod
     def _determine_model_type(capabilities: List[str]) -> str:
         """Determine model type from capabilities."""
@@ -324,6 +373,7 @@ class ModelConfigurations:
             return "multilingual"
         else:
             return "general_purpose"
+
     @staticmethod
     def _generate_system_message(model_id: str, display_name: str) -> str:
         """Generate appropriate system message for the model."""
@@ -339,6 +389,7 @@ class ModelConfigurations:
             return f"You are {display_name}, a powerful and efficient AI assistant by Mistral AI."
         else:
             return f"You are {display_name}, a helpful AI assistant."
+
     @staticmethod
     def _get_indicator_emoji(provider: Provider, model_type: str) -> str:
         """Get appropriate indicator emoji based on provider and type."""
@@ -354,6 +405,7 @@ class ModelConfigurations:
             return "🤔"
         else:
             return "🤖"
+
     @staticmethod
     def get_models_by_provider(provider: Provider) -> Dict[str, ModelConfig]:
         """Get all models for a specific provider."""
@@ -363,6 +415,7 @@ class ModelConfigurations:
             )
         all_models = ModelConfigurations.get_all_models()
         return {k: v for k, v in all_models.items() if v.provider == provider}
+
     @staticmethod
     def get_models_with_tool_calls() -> Dict[str, ModelConfig]:
         """Get all models that support tool calls based on logic rather than configuration."""
@@ -372,6 +425,7 @@ class ModelConfigurations:
             for k, v in all_models.items()
             if ModelConfigurations._model_supports_tool_calls_logic(k, v)
         }
+
     @staticmethod
     def _model_supports_tool_calls_logic(
         model_id: str, model_config: ModelConfig
@@ -396,6 +450,7 @@ class ModelConfigurations:
         elif model_config.provider == Provider.GEMINI:
             return True
         return False
+
     @staticmethod
     def get_models_with_tool_calls_by_provider(
         provider: Provider,
@@ -407,6 +462,7 @@ class ModelConfigurations:
             )
         tool_call_models = ModelConfigurations.get_models_with_tool_calls()
         return {k: v for k, v in tool_call_models.items() if v.provider == provider}
+
     @staticmethod
     def model_supports_tool_calls(model_id: str) -> bool:
         """Check if a specific model supports tool calls."""
@@ -417,6 +473,7 @@ class ModelConfigurations:
         if not model:
             return False
         return ModelConfigurations._model_supports_tool_calls_logic(model_id, model)
+
     @staticmethod
     def get_model_capabilities(model_id: str) -> Dict[str, Any]:
         """
@@ -433,20 +490,32 @@ class ModelConfigurations:
             return ModelConfigurations._get_default_capabilities()
 
         capabilities = {
-            "supports_tools": ModelConfigurations._model_supports_tool_calls_logic(model_id, model),
-            "supports_system_messages": ModelConfigurations._model_supports_system_messages(model_id, model),
-            "supports_temperature": "temperature" in model.supported_parameters if model.supported_parameters else True,
-            "supports_max_tokens": "max_tokens" in model.supported_parameters if model.supported_parameters else True,
+            "supports_tools": ModelConfigurations._model_supports_tool_calls_logic(
+                model_id, model
+            ),
+            "supports_system_messages": ModelConfigurations._model_supports_system_messages(
+                model_id, model
+            ),
+            "supports_temperature": "temperature" in model.supported_parameters
+            if model.supported_parameters
+            else True,
+            "supports_max_tokens": "max_tokens" in model.supported_parameters
+            if model.supported_parameters
+            else True,
             "provider": model.provider.value,
             "model_type": model.type,
             "fallback_model": ModelConfigurations._get_fallback_model(model_id, model),
-            "limitations": ModelConfigurations._detect_model_limitations(model_id, model),
+            "limitations": ModelConfigurations._detect_model_limitations(
+                model_id, model
+            ),
         }
 
         return capabilities
 
     @staticmethod
-    def _model_supports_system_messages(model_id: str, model_config: ModelConfig) -> bool:
+    def _model_supports_system_messages(
+        model_id: str, model_config: ModelConfig
+    ) -> bool:
         """
         Determine if a model supports system messages/developer instructions.
         Some models (like Gemma) don't support system messages on certain providers.
@@ -471,24 +540,41 @@ class ModelConfigurations:
         return True
 
     @staticmethod
-    def _detect_model_limitations(model_id: str, model_config: ModelConfig) -> List[str]:
+    def _detect_model_limitations(
+        model_id: str, model_config: ModelConfig
+    ) -> List[str]:
         """
         Detect specific limitations of a model based on its configuration and known issues.
         """
         limitations = []
 
         # Check for tool calling limitations
-        if not ModelConfigurations._model_supports_tool_calls_logic(model_id, model_config):
+        if not ModelConfigurations._model_supports_tool_calls_logic(
+            model_id, model_config
+        ):
             limitations.append("no_tool_calling")
 
         # Check for system message limitations
-        if not ModelConfigurations._model_supports_system_messages(model_id, model_config):
+        if not ModelConfigurations._model_supports_system_messages(
+            model_id, model_config
+        ):
             limitations.append("no_system_messages")
 
         # Check for parameter limitations
         if model_config.supported_parameters:
-            all_params = ["temperature", "max_tokens", "top_p", "top_k", "frequency_penalty", "presence_penalty"]
-            unsupported_params = [param for param in all_params if param not in model_config.supported_parameters]
+            all_params = [
+                "temperature",
+                "max_tokens",
+                "top_p",
+                "top_k",
+                "frequency_penalty",
+                "presence_penalty",
+            ]
+            unsupported_params = [
+                param
+                for param in all_params
+                if param not in model_config.supported_parameters
+            ]
             if unsupported_params:
                 limitations.append(f"limited_parameters:{','.join(unsupported_params)}")
 
@@ -504,7 +590,10 @@ class ModelConfigurations:
             return "google/gemini-2.0-flash-exp:free"
 
         # For other Google models with limitations, suggest DeepSeek
-        if model_id.startswith("google/") and model_config.provider == Provider.OPENROUTER:
+        if (
+            model_id.startswith("google/")
+            and model_config.provider == Provider.OPENROUTER
+        ):
             return "deepseek/deepseek-chat-v3.1:free"
 
         # Default fallback
@@ -552,10 +641,14 @@ class ModelConfigurations:
         warnings = []
 
         if not capabilities["supports_tools"]:
-            warnings.append("This model doesn't support tool calling. Advanced features may be limited.")
+            warnings.append(
+                "This model doesn't support tool calling. Advanced features may be limited."
+            )
 
         if not capabilities["supports_system_messages"]:
-            warnings.append("This model doesn't support system instructions. Responses may be less structured.")
+            warnings.append(
+                "This model doesn't support system instructions. Responses may be less structured."
+            )
 
         if capabilities["limitations"]:
             for limitation in capabilities["limitations"]:
@@ -570,7 +663,9 @@ class ModelConfigurations:
         return warnings
 
     @staticmethod
-    def adapt_request_for_model(model_id: str, request_params: Dict[str, Any]) -> Dict[str, Any]:
+    def adapt_request_for_model(
+        model_id: str, request_params: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Adapt API request parameters based on model capabilities.
         Removes unsupported parameters and adjusts values as needed.
@@ -591,7 +686,8 @@ class ModelConfigurations:
             if "messages" in adapted_params:
                 # Remove system messages from the messages array
                 adapted_params["messages"] = [
-                    msg for msg in adapted_params["messages"]
+                    msg
+                    for msg in adapted_params["messages"]
                     if msg.get("role") != "system"
                 ]
 
@@ -603,6 +699,7 @@ class ModelConfigurations:
                 del adapted_params["tool_choice"]
 
         return adapted_params
+
     @staticmethod
     def get_free_models() -> Dict[str, ModelConfig]:
         """Get all free models (OpenRouter models with :free suffix)."""
@@ -614,6 +711,7 @@ class ModelConfigurations:
             and v.openrouter_model_key
             and ":free" in v.openrouter_model_key
         }
+
     @staticmethod
     def add_openrouter_models(additional_models: List[Dict[str, Any]]) -> None:
         """
@@ -649,17 +747,18 @@ class ModelConfigurations:
                 description=model_data.get("description", ""),
             )
             current_models[model_data["model_id"]] = model_config
+
     @staticmethod
     def get_model_with_fallback(model_id: str) -> str:
         """Get OpenRouter model key with fallback to reliable alternatives"""
         if not isinstance(model_id, str) or not model_id.strip():
             raise ValueError("Invalid model_id: must be a non-empty string")
-        
+
         # If model has provider prefix (e.g., alibaba/, openai/, etc.) with version suffix, use as-is
         # This handles: alibaba/tongyi-deepresearch-30b-a3b:free, meta-llama/llama-3.3-70b:free, etc.
         if "/" in model_id and (":" in model_id or model_id in ["gemini", "deepseek"]):
             return model_id
-        
+
         model_map = {
             "gemini": "gemini",
             "deepseek": "deepseek",
@@ -693,6 +792,6 @@ class ModelConfigurations:
         elif model_id.startswith("alibaba/"):
             # Alibaba models - return as-is for OpenRouter
             return model_id
-        
+
         # Default fallback
         return "deepseek/deepseek-chat-v3.1:free"

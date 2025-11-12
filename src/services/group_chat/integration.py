@@ -2,18 +2,23 @@
 Group Chat Integration Module for Telegram Bot
 Seamlessly integrates advanced group features into the existing bot architecture.
 """
+
 import logging
 from typing import Dict, Any, Optional
 from telegram import Update, Chat
 from telegram.ext import ContextTypes
 from src.services.group_chat.group_manager import GroupManager
 from src.services.group_chat.ui_components import GroupUIManager
+
 logger = logging.getLogger(__name__)
+
+
 class GroupChatIntegration:
     """
     Integration layer for group chat functionality.
     Extends the existing bot with advanced group features.
     """
+
     def __init__(self, user_data_manager, conversation_manager):
         self.user_data_manager = user_data_manager
         self.conversation_manager = conversation_manager
@@ -21,6 +26,7 @@ class GroupChatIntegration:
         self.group_manager = GroupManager(user_data_manager, conversation_manager)
         self.ui_manager = GroupUIManager()
         self.logger.info("GroupChatIntegration initialized")
+
     async def process_group_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_text: str
     ) -> tuple[str, Dict[str, Any]]:
@@ -52,6 +58,7 @@ class GroupChatIntegration:
         except Exception as e:
             self.logger.error(f"Error processing group message: {e}")
             return message_text, {}
+
     async def handle_group_command(
         self,
         update: Update,
@@ -102,9 +109,11 @@ class GroupChatIntegration:
         except Exception as e:
             self.logger.error(f"Error handling group command '{command}': {e}")
             return f"❌ Error processing command: {str(e)}"
+
     def is_group_chat(self, chat: Chat) -> bool:
         """Check if the chat is a group chat."""
         return chat and chat.type in ["group", "supergroup"]
+
     async def get_group_context_for_ai(self, group_id: int) -> Optional[str]:
         """Get formatted group context for AI processing."""
         try:

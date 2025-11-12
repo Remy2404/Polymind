@@ -8,12 +8,13 @@ from pymongo.database import Database
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from pymongo.collection import Collection
 from dotenv import load_dotenv
+
 load_dotenv()
 logger = logging.getLogger(__name__)
 CONNECTION_POOL = {}
 # Production-optimized connection settings
-MAX_POOL_SIZE = int(os.getenv("MONGODB_MAX_POOL_SIZE", "50"))  
-MIN_POOL_SIZE = int(os.getenv("MONGODB_MIN_POOL_SIZE", "10")) 
+MAX_POOL_SIZE = int(os.getenv("MONGODB_MAX_POOL_SIZE", "50"))
+MIN_POOL_SIZE = int(os.getenv("MONGODB_MIN_POOL_SIZE", "10"))
 CONNECTION_TIMEOUT = int(os.getenv("MONGODB_CONNECTION_TIMEOUT", "30000"))
 SERVER_SELECTION_TIMEOUT = int(os.getenv("MONGODB_SERVER_SELECTION_TIMEOUT", "30000"))
 SOCKET_TIMEOUT = int(os.getenv("MONGODB_SOCKET_TIMEOUT", "45000"))
@@ -26,8 +27,11 @@ CONNECT_TIMEOUT = int(os.getenv("MONGODB_CONNECT_TIMEOUT", "30000"))
 MAX_STALENESS_SECONDS = int(os.getenv("MONGODB_MAX_STALENESS", "90"))
 READ_PREFERENCE = os.getenv("MONGODB_READ_PREFERENCE", "primaryPreferred")
 WRITE_CONCERN = os.getenv("MONGODB_WRITE_CONCERN", "majority")
+
+
 class MockDatabase:
     """Mock database implementation for development without MongoDB"""
+
     def __init__(self):
         self.collections = {}
         logger.warning("Using mock database (development mode)")
@@ -43,34 +47,44 @@ class MockDatabase:
         if name not in self.collections:
             self.collections[name] = MockCollection(name)
         return self.collections[name]
+
     def list_collection_names(self):
         """Return mock collection names"""
         return list(self.collections.keys())
+
     def get_collection(self, name):
         """Return a mock collection by name"""
         if name not in self.collections:
             self.collections[name] = MockCollection(name)
         return self.collections[name]
+
+
 class MockCollection:
     """Mock collection for development mode"""
+
     def __init__(self, name):
         self.name = name
         self.data = []
         self.indexes = []
+
     def create_index(self, *args, **kwargs):
         """Mock create_index"""
         self.indexes.append(args)
         return None
+
     def find_one(self, query=None, *args, **kwargs):
         """Mock find_one"""
         return None
+
     def insert_one(self, document, *args, **kwargs):
         """Mock insert_one"""
         self.data.append(document)
         return type("", (), {"inserted_id": len(self.data)})
+
     def find(self, *args, **kwargs):
         """Mock find"""
         return []
+
     def update_one(self, query, update, *args, **kwargs):
         """Mock update_one to prevent AttributeError"""
         logger.debug(f"Mock update_one called with query: {query}, update: {update}")
@@ -79,10 +93,13 @@ class MockCollection:
             (),
             {"acknowledged": True, "matched_count": 1, "modified_count": 1},
         )
+
     def delete_many(self, query, *args, **kwargs):
         """Mock delete_many"""
         logger.debug(f"Mock delete_many called with query: {query}")
         return type("DeleteResult", (), {"acknowledged": True, "deleted_count": 0})
+
+
 def get_database(
     max_retries: int = 3, retry_interval: float = 1.0
 ) -> Tuple[Optional[Database], Optional[MongoClient]]:
@@ -118,6 +135,7 @@ def get_database(
     for attempt in range(max_retries):
         try:
             import importlib
+
             if importlib.util.find_spec("snappy") is not None:
                 compressors = ["snappy", "zlib"]
             else:
@@ -195,6 +213,8 @@ def get_database(
                 mock_db = MockDatabase()
                 return mock_db, None
             return None, None
+
+
 def _ensure_indexes(db: Database) -> None:
     """
     Create indexes on commonly queried fields to improve performance
@@ -214,6 +234,8 @@ def _ensure_indexes(db: Database) -> None:
         logger.info("Database indexes created or confirmed")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")
+
+
 def close_database_connection(client: Optional[MongoClient]) -> None:
     """
     Safely close a MongoDB client connection
@@ -226,6 +248,8 @@ def close_database_connection(client: Optional[MongoClient]) -> None:
             logger.info("Database connection closed successfully")
         except Exception as e:
             logger.error(f"Error closing database connection: {str(e)}")
+
+
 async def get_database_async(
     max_retries: int = 3, retry_interval: float = 1.0
 ) -> Tuple[Optional[Database], Optional[MongoClient]]:
@@ -238,6 +262,8 @@ async def get_database_async(
     return await loop.run_in_executor(
         None, lambda: get_database(max_retries, retry_interval)
     )
+
+
 def get_image_cache_collection(db: Optional[Database]) -> Optional[Collection]:
     """Get the image cache collection"""
     if db is None:

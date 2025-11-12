@@ -10,17 +10,22 @@ from .semantic_search_manager import SemanticSearchManager
 from .group_memory_operations import GroupMemoryOperations
 import sys
 import os
+
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 from database.connection import get_database
+
 logger = logging.getLogger(__name__)
+
+
 @dataclass
 class Message:
     role: str
     content: str
     timestamp: float = field(default_factory=time.time)
     metadata: Dict[str, Any] = field(default_factory=dict)
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert message to dictionary format."""
         return {
@@ -29,6 +34,7 @@ class Message:
             "timestamp": self.timestamp,
             "metadata": self.metadata,
         }
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Message":
         """Create a message from dictionary data."""
@@ -38,17 +44,21 @@ class Message:
             timestamp=data.get("timestamp", time.time()),
             metadata=data.get("metadata", {}),
         )
+
+
 @dataclass
 class Conversation:
     messages: List[Message] = field(default_factory=list)
     system_prompt: str = ""
     id: str = field(default_factory=lambda: f"conv_{int(time.time())}")
     metadata: Dict[str, Any] = field(default_factory=dict)
+
     def add_message(self, role: str, content: str, **metadata) -> Message:
         """Add a message to the conversation."""
         message = Message(role=role, content=content, metadata=metadata)
         self.messages.append(message)
         return message
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert conversation to dictionary format."""
         return {
@@ -57,6 +67,7 @@ class Conversation:
             "messages": [msg.to_dict() for msg in self.messages],
             "metadata": self.metadata,
         }
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Conversation":
         """Create a conversation from dictionary data."""
@@ -67,8 +78,11 @@ class Conversation:
         )
         conv.messages = [Message.from_dict(msg) for msg in data.get("messages", [])]
         return conv
+
+
 class MemoryManager:
     """Enhanced memory manager with modular components for better maintainability"""
+
     def __init__(self, db=None, client=None, storage_path=None):
         if db is None:
             try:
@@ -106,6 +120,7 @@ class MemoryManager:
         if self.db is not None:
             self.persistence_manager.ensure_indexes()
         logger.info("Enhanced MemoryManager initialized with modular components")
+
     async def add_user_message(
         self,
         conversation_id: str,
@@ -154,6 +169,7 @@ class MemoryManager:
                     self._get_memory_data(persist_key, is_group),
                     is_group,
                 )
+
     async def add_assistant_message(
         self,
         conversation_id: str,
@@ -213,6 +229,7 @@ class MemoryManager:
                     self._get_memory_data(persist_key, is_group),
                     is_group,
                 )
+
     async def get_relevant_memory(
         self,
         conversation_id: str,
@@ -259,6 +276,7 @@ class MemoryManager:
             return await self.get_short_term_memory(
                 conversation_id, limit, is_group, group_id
             )
+
     async def get_short_term_memory(
         self,
         conversation_id: str,
@@ -285,6 +303,7 @@ class MemoryManager:
         if not message_cache:
             return []
         return message_cache[-limit:]
+
     async def get_conversation_summary(
         self,
         conversation_id: str,
@@ -301,6 +320,7 @@ class MemoryManager:
         if cache_key in summary_cache:
             return summary_cache[cache_key]
         return await self._generate_conversation_summary(cache_key, is_group)
+
     async def clear_conversation(
         self,
         conversation_id: str,
@@ -317,11 +337,13 @@ class MemoryManager:
             else:
                 self.memory_cache.pop(conversation_id, None)
                 self.conversation_summaries.pop(conversation_id, None)
+
     async def get_group_participants(self, group_id: str) -> List[str]:
         """Get list of participants in a group conversation"""
         return await self.group_operations.get_group_participants(
             group_id, self.group_memory_cache
         )
+
     async def get_group_activity_summary(
         self, group_id: str, days: int = 7
     ) -> Dict[str, Any]:
@@ -332,27 +354,33 @@ class MemoryManager:
         if summary:
             summary["summary"] = await self.get_conversation_summary("", True, group_id)
         return summary
+
     async def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]):
         """Save user profile information"""
         return await self.user_profile_manager.save_user_profile(user_id, profile_data)
+
     async def get_user_profile(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Retrieve user profile information"""
         return await self.user_profile_manager.get_user_profile(user_id)
+
     async def update_user_profile_field(self, user_id: int, field: str, value: Any):
         """Update a specific field in user profile"""
         return await self.user_profile_manager.update_user_profile_field(
             user_id, field, value
         )
+
     async def extract_and_save_user_info(self, user_id: int, message_content: str):
         """Extract and save user information from message content"""
         return await self.user_profile_manager.extract_and_save_user_info(
             user_id, message_content
         )
+
     async def load_memory(self, cache_key: str, is_group: bool = False):
         """Load memory from storage"""
         memory_data = await self.persistence_manager.load_memory(cache_key, is_group)
         if memory_data:
             self._populate_cache_from_data(cache_key, memory_data, is_group)
+
     async def get_all_conversation_history(
         self,
         conversation_id: str,
@@ -374,6 +402,7 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"Error retrieving conversation history: {e}")
             return []
+
     async def export_conversation_data(
         self,
         conversation_id: str,
@@ -411,6 +440,7 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"Error exporting conversation data: {e}")
             return {}
+
     def _get_memory_data(self, cache_key: str, is_group: bool) -> Dict[str, Any]:
         """Get memory data for persistence"""
         memory_data = {
@@ -433,6 +463,7 @@ class MemoryManager:
                 self.group_operations.get_shared_knowledge_for_group(cache_key)
             )
         return memory_data
+
     def _populate_cache_from_data(
         self, cache_key: str, memory_data: Dict[str, Any], is_group: bool
     ):
@@ -449,12 +480,14 @@ class MemoryManager:
             self.memory_cache[cache_key] = memory_data.get("messages", [])
             if memory_data.get("summary"):
                 self.conversation_summaries[cache_key] = memory_data["summary"]
+
     async def _generate_conversation_summary(
         self, cache_key: str, is_group: bool = False
     ) -> str:
         """Generate a summary of the conversation"""
         try:
             from collections import defaultdict
+
             message_cache = (
                 self.group_memory_cache.get(cache_key, [])
                 if is_group

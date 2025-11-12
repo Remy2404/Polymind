@@ -3,12 +3,17 @@ import time
 import re
 from typing import Dict, Any, Optional
 from pymongo.database import Database
+
 logger = logging.getLogger(__name__)
+
+
 class UserProfileManager:
     """Manages user profile data and information extraction"""
+
     def __init__(self, db: Optional[Database] = None):
         self.db = db
         self.user_profiles_collection = db.user_profiles if db is not None else None
+
     async def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]):
         """Save user profile information to MongoDB"""
         try:
@@ -27,6 +32,7 @@ class UserProfileManager:
             logger.info(f"Saved user profile for user {user_id}")
         except Exception as e:
             logger.error(f"Error saving user profile for {user_id}: {e}")
+
     async def get_user_profile(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Retrieve user profile information from MongoDB"""
         try:
@@ -40,6 +46,7 @@ class UserProfileManager:
         except Exception as e:
             logger.error(f"Error retrieving user profile for {user_id}: {e}")
             return None
+
     async def update_user_profile_field(self, user_id: int, field: str, value: Any):
         """Update a specific field in user profile"""
         try:
@@ -56,6 +63,7 @@ class UserProfileManager:
             logger.error(
                 f"Error updating user profile field {field} for {user_id}: {e}"
             )
+
     async def extract_and_save_user_info(self, user_id: int, message_content: str):
         """Extract and save user information from message content"""
         try:

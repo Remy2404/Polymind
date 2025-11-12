@@ -3,6 +3,7 @@ Enhanced OpenRouter API with MCP Tool Integration
 This module extends the base OpenRouter API to include automatic MCP server
 integration, enabling LLMs to use MCP tools seamlessly.
 """
+
 import asyncio
 import logging
 from typing import Dict, List, Optional, Any
@@ -12,12 +13,15 @@ from src.services.model_handlers.model_configs import ModelConfigurations, Provi
 from src.utils.log.telegramlog import telegram_logger
 from src.services.gemini_api import GeminiAPI
 from src.services.system_message_builder import SystemMessageBuilder
+
+
 class OpenRouterAPIWithMCP(OpenRouterAPI):
     """
     Enhanced OpenRouter API with MCP (Model Context Protocol) integration.
     This class extends the base OpenRouterAPI to automatically load and use
     MCP server tools, converting them to OpenAI-compatible format.
     """
+
     def __init__(self, rate_limiter, mcp_config_path: str = "mcp.json"):
         """
         Initialize the enhanced OpenRouter API with MCP support and Gemini integration.
@@ -37,6 +41,7 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         except Exception as e:
             self.logger.warning(f"Failed to initialize Gemini API: {e}")
             self.gemini_api = None
+
     def _get_model_provider(self, model: str) -> Provider:
         """
         Determine which provider to use for a given model.
@@ -49,29 +54,29 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         if model_config:
             return model_config.provider
         return Provider.OPENROUTER
-    
+
     def _get_tool_format_for_model(self, model: str) -> str:
         """
         Determine which tool format to use based on the model provider.
-        
+
         Args:
             model: Model identifier
-        
+
         Returns:
             "meta" for Meta models, "openai" for others
         """
         # Check if this is a Meta model by looking at the model ID
         meta_indicators = ["meta-llama", "llama", "meta."]
         model_lower = model.lower()
-        
+
         for indicator in meta_indicators:
             if indicator in model_lower:
                 self.logger.info(f"Detected Meta model {model}, using Meta tool format")
                 return "meta"
-        
+
         # Default to OpenAI format
         return "openai"
-    
+
     def _should_use_gemini(self, model: str) -> bool:
         """
         Check if we should use Gemini for the given model.
@@ -84,6 +89,7 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
             return False
         provider = self._get_model_provider(model)
         return provider == Provider.GEMINI
+
     async def initialize_mcp_tools(self) -> bool:
         """
         Initialize and load MCP tools from configured servers.
@@ -95,10 +101,12 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
             # Check if singleton instance is already initialized
             if self.mcp_manager._initialized:
                 self.mcp_tools_loaded = True
-                self.logger.info("MCP tools already initialized (using shared instance)")
+                self.logger.info(
+                    "MCP tools already initialized (using shared instance)"
+                )
                 telegram_logger.log_message("MCP tools already initialized (shared)", 0)
                 return True
-                
+
             self.logger.info("Initializing MCP tools...")
             telegram_logger.log_message("Initializing MCP tools...", 0)
             success = await self.mcp_manager.load_servers()
@@ -118,6 +126,7 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
             self.logger.error(f"Error initializing MCP tools: {str(e)}")
             telegram_logger.log_error(f"Error initializing MCP tools: {str(e)}", 0)
             return False
+
     async def generate_response_with_mcp_tools(
         self,
         prompt: str,
@@ -141,7 +150,7 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         """
         # Use singleton state - no need to initialize on every request
         self.mcp_tools_loaded = self.mcp_manager._initialized
-        
+
         if self._should_use_gemini(model):
             self.logger.info(f"Using Gemini API for model {model}")
             return await self._generate_gemini_with_mcp_tools(
@@ -172,12 +181,14 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
                 else:
                     if model_config.openrouter_model_key:
                         actual_model = model_config.openrouter_model_key
-        
+
         # Determine tool format based on model
         tool_format = self._get_tool_format_for_model(actual_model)
-        
+
         mcp_tools = (
-            await self.mcp_manager.get_all_tools(provider=tool_format) if self.mcp_tools_loaded else []
+            await self.mcp_manager.get_all_tools(provider=tool_format)
+            if self.mcp_tools_loaded
+            else []
         )
         if mcp_tools:
             if actual_model in self._tool_unsupported_models:
@@ -216,6 +227,7 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
                 max_tokens=max_tokens,
                 timeout=timeout,
             )
+
     def _build_system_message(
         self,
         model_id: str,
@@ -223,17 +235,17 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """Return a system message based on model and context, with dynamic tool usage instructions.
-        
+
         Extends the base class implementation to add tool-specific instructions.
         """
         # Get base system message from parent class
         base_message = super()._build_system_message(model_id, context, tools)
-        
+
         # Add tool-specific instructions if tools are provided
         if tools:
             tool_names = [tool["function"]["name"] for tool in tools]
             tool_categories = SystemMessageBuilder.categorize_tools_generic(tools)
-            
+
             # OpenRouter-specific tool instructions
             provider_specific = """- **Documentation & Code Examples**: Use documentation tools when users ask about libraries, frameworks, APIs, or need code examples
 - **Search & Research**: Use search tools for finding information, current data, or web content
@@ -244,9 +256,9 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
                 tool_names, tool_categories, provider_specific
             )
             return base_message + tool_instructions
-        
+
         return base_message
-    
+
     async def generate_response_with_tools(
         self,
         prompt: str,
@@ -291,7 +303,9 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
                 "max_tokens": max_tokens,
                 "timeout": timeout,
             }
-            adapted_params = ModelConfigurations.adapt_request_for_model(openrouter_model, request_params)
+            adapted_params = ModelConfigurations.adapt_request_for_model(
+                openrouter_model, request_params
+            )
 
             response = await self.client.chat.completions.create(**adapted_params)
             if (
@@ -306,6 +320,7 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
                     try:
                         if isinstance(tool_args, str):
                             import json
+
                             tool_args = json.loads(tool_args)
                             self.logger.info(
                                 f"Parsed tool arguments for {tool_name}: {tool_args}"
@@ -313,12 +328,12 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
                         self.logger.info(
                             f"Executing MCP tool: {tool_name} with args: {tool_args}"
                         )
-                        
+
                         # Small delay to prevent overwhelming MCP server with rapid calls
                         # especially important for document operations
                         if len(tool_calls) > 1:
                             await asyncio.sleep(0.5)
-                        
+
                         tool_result = await self.mcp_manager.execute_tool(
                             tool_name, tool_args
                         )
@@ -359,9 +374,13 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
                     "max_tokens": max_tokens,
                     "timeout": timeout,
                 }
-                final_adapted_params = ModelConfigurations.adapt_request_for_model(openrouter_model, final_request_params)
+                final_adapted_params = ModelConfigurations.adapt_request_for_model(
+                    openrouter_model, final_request_params
+                )
 
-                final_response = await self.client.chat.completions.create(**final_adapted_params)
+                final_response = await self.client.chat.completions.create(
+                    **final_adapted_params
+                )
                 cleaned_content = self._clean_response_content(
                     final_response.choices[0].message.content
                 )
@@ -426,6 +445,7 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
                     f"Bad request error for model '{openrouter_model}' - likely tool calling not supported"
                 )
             return "I encountered an error while processing your request. Please try again or use a different model."
+
     def _clean_response_content(self, content: str) -> str:
         """
         Clean response content by removing thinking tags and tool calls.
@@ -437,12 +457,14 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         if not content:
             return content
         import re
+
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
         content = re.sub(r"<tool_call>.*?</tool_call>", "", content, flags=re.DOTALL)
         content = re.sub(r"<[^>]+>.*?</[^>]+>", "", content, flags=re.DOTALL)
         content = content.strip()
         content = re.sub(r"\n\s*\n\s*\n+", "\n\n", content)
         return content
+
     async def get_available_mcp_tools(self) -> List[Dict[str, Any]]:
         """
         Get all available MCP tools in OpenAI format.
@@ -451,11 +473,12 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
         """
         # Use singleton state - no need to initialize on every request
         self.mcp_tools_loaded = self.mcp_manager._initialized
-        
+
         if self.mcp_tools_loaded:
             return await self.mcp_manager.get_all_tools()
         else:
             return []
+
     def get_mcp_server_info(self) -> Dict[str, Any]:
         """
         Get information about connected MCP servers.
@@ -466,6 +489,7 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
             return self.mcp_manager.get_server_info()
         else:
             return {}
+
     async def close(self):
         """Close the API client and MCP connections."""
         await super().close()
@@ -473,6 +497,7 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
             await self.mcp_manager.disconnect_all()
         if self.gemini_api:
             await self.gemini_api.close()
+
     async def _generate_gemini_with_mcp_tools(
         self,
         prompt: str,

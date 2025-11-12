@@ -1,14 +1,18 @@
 import logging
 import os
 import sys
+
 if sys.stdout.encoding != "utf-8":
     try:
         if os.name == "nt":
             import codecs
+
             sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "strict")
             sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer, "strict")
     except Exception as e:
         print(f"Could not set UTF-8 encoding: {e}")
+
+
 class TelegramLogger:
     def __init__(self):
         self.logger = logging.getLogger("src.utils.telegramlog")
@@ -25,6 +29,7 @@ class TelegramLogger:
         )
         file_handler.setFormatter(formatter)
         self.logger.addHandler(file_handler)
+
     def log_message(self, message, user_id=None):
         """Log a message with user_id if available."""
         extra = {"user_id": user_id if user_id else "SYSTEM"}
@@ -35,12 +40,16 @@ class TelegramLogger:
             self.logger.info(
                 f"Message contained special characters: {repr(message)}", extra=extra
             )
+
     def log_error(self, error, user_id=None):
         """Log an error with user_id if available."""
         extra = {"user_id": user_id if user_id else "SYSTEM"}
         self.logger.error(str(error), extra=extra)
+
     def log_warning(self, warning, user_id=None):
         """Log a warning with user_id if available."""
         extra = {"user_id": user_id if user_id else "SYSTEM"}
         self.logger.warning(str(warning), extra=extra)
+
+
 telegram_logger = TelegramLogger()

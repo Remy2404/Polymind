@@ -12,10 +12,13 @@ from services.user_data_manager import UserDataManager
 from aiocache import cached, Cache
 from telegram import Update
 from telegram.ext import MessageHandler, filters
+
+
 class FileHandler:
     MAX_FILE_SIZE = 10 * 1024 * 1024
     MAX_ZIP_SIZE = 50 * 1024 * 1024
     MAX_CODE_SIZE = 5 * 1024 * 1024
+
     def __init__(
         self,
         telegram_logger: TelegramLogger,
@@ -25,9 +28,11 @@ class FileHandler:
         self.telegram_logger = telegram_logger
         self.gemini_api = gemini_api
         self.user_data_manager = user_data_manager
+
     @cached(ttl=3600, cache=Cache.MEMORY)
     async def analyze_text_cached(self, text: str) -> str:
         return await self.gemini_api.analyze_text(text)
+
     async def handle_pdf(self, file_content: io.BytesIO, user_id: int) -> str:
         try:
             if self._validate_file_size(file_content, self.MAX_FILE_SIZE):
@@ -41,6 +46,7 @@ class FileHandler:
         except Exception as e:
             self.telegram_logger.log_error(f"PDF processing error: {str(e)}", user_id)
             return "❌ Error processing PDF file."
+
     async def handle_docx(self, file_content: io.BytesIO, user_id: int) -> str:
         try:
             if self._validate_file_size(file_content, self.MAX_FILE_SIZE):
@@ -61,6 +67,7 @@ class FileHandler:
         except Exception as e:
             self.telegram_logger.log_error(f"DOCX processing error: {str(e)}", user_id)
             return "❌ Error processing DOCX file."
+
     async def handle_zip(self, file_content: io.BytesIO, user_id: int) -> str:
         try:
             if self._validate_file_size(file_content, self.MAX_ZIP_SIZE):
@@ -79,6 +86,7 @@ class FileHandler:
         except Exception as e:
             self.telegram_logger.log_error(f"ZIP processing error: {str(e)}", user_id)
             return "❌ Error processing ZIP file."
+
     async def handle_code_as_txt(
         self, file_content: io.BytesIO, user_id: int, language: str
     ) -> str:
@@ -109,10 +117,12 @@ class FileHandler:
         except Exception as e:
             self.telegram_logger.log_error(f"Code processing error: {str(e)}", user_id)
             return "❌ Error processing code file."
+
     async def handle_code(
         self, file_content: io.BytesIO, user_id: int, language: str
     ) -> str:
         return await self.handle_code_as_txt(file_content, user_id, language)
+
     async def handle_additional_file_types(
         self, file_content: io.BytesIO, user_id: int, file_type: str
     ) -> str:
@@ -134,11 +144,13 @@ class FileHandler:
             )
         else:
             return "❌ Unsupported file type."
+
     def _validate_file_size(self, file_content: io.BytesIO, max_size: int) -> bool:
         file_content.seek(0, os.SEEK_END)
         size = file_content.tell()
         file_content.seek(0)
         return size <= max_size
+
     def _safe_extract(self, zip_ref: zipfile.ZipFile, extract_path: str) -> None:
         """
         Safely extract ZIP files to prevent path traversal attacks.
@@ -150,14 +162,19 @@ class FileHandler:
             ):
                 raise zipfile.BadZipFile("Attempted Path Traversal in ZIP file")
         zip_ref.extractall(extract_path)
+
     def _preprocess_text(self, text: str) -> str:
         return text.strip()
+
     def _preprocess_code(self, code: str) -> str:
         return code.strip()
+
     async def _update_user_stats(self, user_id: int, file_type: str) -> None:
         await self.user_data_manager.update_stats(user_id, file_type=file_type)
+
     async def setUp_handler(self, application: "Application") -> None:
         """Set up file handling handlers with the Telegram bot application."""
+
         async def handle_document(update: Update, context):
             document = update.message.document
             file_id = document.file_id
@@ -170,5 +187,6 @@ class FileHandler:
                 file_bytes, user_id=update.message.from_user.id, file_type=file_type
             )
             await update.message.reply_text(response)
+
         document_handler = MessageHandler(filters.Document.ALL, handle_document)
         application.add_handler(document_handler)

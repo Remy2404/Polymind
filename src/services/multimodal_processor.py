@@ -3,6 +3,7 @@ Multimodal Processing Helper for Telegram Bot
 Simplifies the integration of text + images + documents processing
 Updated for new Gemini 2.0 Flash API
 """
+
 import io
 import logging
 from typing import List, Dict, Any, Optional
@@ -15,14 +16,18 @@ from src.services.gemini_api import (
     create_image_input,
     create_document_input,
 )
+
+
 class TelegramMultimodalProcessor:
     """
     Helper class to process Telegram messages with multiple media types
     Integrates seamlessly with the new Gemini API
     """
+
     def __init__(self, gemini_api: GeminiAPI):
         self.gemini_api = gemini_api
         self.logger = logging.getLogger(__name__)
+
     async def process_telegram_message(
         self,
         message: Message,
@@ -56,6 +61,7 @@ class TelegramMultimodalProcessor:
             return ProcessingResult(
                 success=False, error=f"Message processing failed: {str(e)}"
             )
+
     async def _extract_media_from_message(self, message: Message) -> List[MediaInput]:
         """Extract all media from a Telegram message"""
         media_inputs = []
@@ -83,6 +89,7 @@ class TelegramMultimodalProcessor:
         except Exception as e:
             self.logger.error(f"Failed to extract media from message: {e}")
         return media_inputs
+
     async def _process_telegram_photo(
         self, photos: List[PhotoSize]
     ) -> Optional[MediaInput]:
@@ -96,6 +103,7 @@ class TelegramMultimodalProcessor:
         except Exception as e:
             self.logger.error(f"Failed to process photo: {e}")
             return None
+
     async def _process_telegram_document(
         self, document: Document
     ) -> Optional[MediaInput]:
@@ -116,6 +124,7 @@ class TelegramMultimodalProcessor:
         except Exception as e:
             self.logger.error(f"Failed to process document: {e}")
             return None
+
     async def _process_telegram_audio(self, audio: Audio) -> Optional[MediaInput]:
         """Process Telegram audio"""
         try:
@@ -133,6 +142,7 @@ class TelegramMultimodalProcessor:
         except Exception as e:
             self.logger.error(f"Failed to process audio: {e}")
             return None
+
     async def _process_telegram_video(self, video: Video) -> Optional[MediaInput]:
         """Process Telegram video"""
         try:
@@ -150,6 +160,7 @@ class TelegramMultimodalProcessor:
         except Exception as e:
             self.logger.error(f"Failed to process video: {e}")
             return None
+
     async def _process_telegram_voice(self, voice: Voice) -> Optional[MediaInput]:
         """Process Telegram voice message"""
         try:
@@ -163,14 +174,18 @@ class TelegramMultimodalProcessor:
         except Exception as e:
             self.logger.error(f"Failed to process voice: {e}")
             return None
+
+
 class BatchProcessor:
     """
     Process multiple files at once
     Useful for handling albums or multiple documents
     """
+
     def __init__(self, gemini_api: GeminiAPI):
         self.gemini_api = gemini_api
         self.logger = logging.getLogger(__name__)
+
     async def process_file_batch(
         self,
         files: List[Dict[str, Any]],
@@ -220,6 +235,8 @@ class BatchProcessor:
             return ProcessingResult(
                 success=False, error=f"Batch processing failed: {str(e)}"
             )
+
+
 async def quick_image_analysis(
     gemini_api: GeminiAPI, image_data: bytes, prompt: str
 ) -> str:
@@ -229,6 +246,8 @@ async def quick_image_analysis(
         text_prompt=prompt, media_inputs=[media_input]
     )
     return result.content if result.success else f"Error: {result.error}"
+
+
 async def quick_document_analysis(
     gemini_api: GeminiAPI, doc_data: bytes, filename: str, prompt: str
 ) -> str:
@@ -238,6 +257,8 @@ async def quick_document_analysis(
         text_prompt=prompt, media_inputs=[media_input]
     )
     return result.content if result.success else f"Error: {result.error}"
+
+
 async def analyze_mixed_content(
     gemini_api: GeminiAPI,
     text: str,

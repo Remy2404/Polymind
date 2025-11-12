@@ -2,6 +2,7 @@
 AI-Powered Poll Creation Command Handler
 Generates and sends Telegram polls based on user prompts using AI models.
 """
+
 import sys
 import os
 import logging
@@ -9,18 +10,23 @@ from typing import Dict, Any, Optional
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
+
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
 from src.services.user_data_manager import UserDataManager
 from src.utils.log.telegramlog import TelegramLogger
+
 logger = logging.getLogger(__name__)
+
+
 class PollCommands:
     """
     Handles AI-powered poll creation commands.
     Follows single responsibility principle by focusing solely on poll generation and sending.
     """
+
     def __init__(
         self,
         api_manager: SuperSimpleAPIManager,
@@ -37,6 +43,7 @@ class PollCommands:
         self.api_manager = api_manager
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
+
     async def create_poll_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -78,6 +85,7 @@ class PollCommands:
             await update.message.reply_text(
                 f"❌ Sorry, there was an error creating your poll: {str(e)}"
             )
+
     async def _generate_poll_with_ai(
         self, prompt: str, user_id: int
     ) -> Optional[Dict[str, Any]]:
@@ -115,15 +123,16 @@ class PollCommands:
 
             # Clean the response - remove any markdown formatting or extra text
             response = response.strip()
-            if response.startswith('```json'):
+            if response.startswith("```json"):
                 response = response[7:]
-            if response.startswith('```'):
+            if response.startswith("```"):
                 response = response[3:]
-            if response.endswith('```'):
+            if response.endswith("```"):
                 response = response[:-3]
             response = response.strip()
 
             import json
+
             poll_data = json.loads(response)
 
             if (
@@ -143,11 +152,16 @@ class PollCommands:
                 return None
 
             # Validate that question and options are strings
-            if not isinstance(poll_data["question"], str) or not poll_data["question"].strip():
+            if (
+                not isinstance(poll_data["question"], str)
+                or not poll_data["question"].strip()
+            ):
                 logger.warning(f"Invalid question in poll data: {poll_data}")
                 return None
 
-            poll_data["options"] = [str(opt).strip() for opt in poll_data["options"] if str(opt).strip()]
+            poll_data["options"] = [
+                str(opt).strip() for opt in poll_data["options"] if str(opt).strip()
+            ]
             if len(poll_data["options"]) < 2:
                 logger.warning(f"Not enough valid options after cleanup: {poll_data}")
                 return None
@@ -159,7 +173,8 @@ class PollCommands:
 
             # Try to extract JSON from the response if it contains extra text
             import re
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
             if json_match:
                 try:
                     poll_data = json.loads(json_match.group())
@@ -183,6 +198,7 @@ class PollCommands:
             # Fallback: Create a simple poll based on the prompt
             logger.info("Using fallback poll generation due to error")
             return self._create_fallback_poll(prompt)
+
     async def _send_poll(
         self,
         update: Update,
@@ -210,6 +226,7 @@ class PollCommands:
             await update.message.reply_text(
                 "❌ Sorry, there was an error sending the poll. Please try again."
             )
+
     async def _get_user_preferred_model(self, user_id: int) -> str:
         """
         Get user's preferred AI model for poll generation.
@@ -220,6 +237,7 @@ class PollCommands:
         """
         try:
             from src.services.user_preferences_manager import UserPreferencesManager
+
             preferences_manager = UserPreferencesManager(self.user_data_manager)
             preferred_model = await preferences_manager.get_user_model_preference(
                 user_id
@@ -227,6 +245,7 @@ class PollCommands:
             return preferred_model or "gemini"
         except Exception:
             return "gemini"
+
     async def _send_help_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -268,12 +287,11 @@ class PollCommands:
         options = ["Yes", "No"]
 
         # Try to make it more relevant based on the prompt
-        if any(word in prompt.lower() for word in ["what", "which", "choose", "prefer"]):
+        if any(
+            word in prompt.lower() for word in ["what", "which", "choose", "prefer"]
+        ):
             options = ["Option A", "Option B", "Option C"]
         elif any(word in prompt.lower() for word in ["rate", "how", "scale"]):
             options = ["1", "2", "3", "4", "5"]
 
-        return {
-            "question": question,
-            "options": options
-        }
+        return {"question": question, "options": options}

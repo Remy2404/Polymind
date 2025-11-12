@@ -2,18 +2,23 @@
 Request tracking middleware for FastAPI applications.
 Provides request ID generation, timing, and logging functionality.
 """
+
 import time
 import uuid
 import logging
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse
+
 logger = logging.getLogger(__name__)
+
+
 class RequestTrackingMiddleware(BaseHTTPMiddleware):
     """
     Middleware for tracking and logging HTTP requests.
     Adds request ID, timing information, and structured logging.
     """
+
     async def dispatch(self, request: Request, call_next):
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id

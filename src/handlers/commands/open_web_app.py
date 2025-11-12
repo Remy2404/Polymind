@@ -2,12 +2,16 @@
 Web App opening command handlers.
 Contains commands to open and manage Telegram Mini Web App integration.
 """
+
 import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ContextTypes
+
+
 class OpenWebAppCommands:
     """Handles Web App opening and integration commands"""
+
     def __init__(self, user_data_manager, telegram_logger):
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
@@ -19,6 +23,7 @@ class OpenWebAppCommands:
             self.logger.info(f"Web App URL: {self.web_app_url}")
         else:
             self.logger.warning("No Web App URL configured")
+
     def _validate_web_app_url(self, url: str) -> bool:
         """Allow only HTTPS URLs that are not localhost or 127.0.0.1"""
         if not url or not url.startswith("https://"):
@@ -28,6 +33,7 @@ class OpenWebAppCommands:
             if f"https://{forbidden}" in url or f"https://{forbidden}:" in url:
                 return False
         return True
+
     async def open_web_app_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -41,7 +47,7 @@ class OpenWebAppCommands:
                     "❌ Web App is not available at the moment. (Invalid or non-public URL)"
                 )
                 return
-            
+
             # Create two buttons:
             # 1. "webapp" button: Opens within Telegram WebApp (full Telegram integration)
             # 2. "Open" button: Opens in browser with user_id parameter (works outside Telegram)
@@ -53,10 +59,9 @@ class OpenWebAppCommands:
                 ],
                 [
                     InlineKeyboardButton(
-                        "🔗 Open",
-                        url=f"{web_app_url}?user_id={user_id}"
+                        "🔗 Open", url=f"{web_app_url}?user_id={user_id}"
                     )
-                ]
+                ],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(
@@ -64,7 +69,7 @@ class OpenWebAppCommands:
                 "• **webapp** - Open within Telegram (full features)\n"
                 "• **Open** - Open in browser (use this to access from outside Telegram)",
                 reply_markup=reply_markup,
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
             self.logger.info(
                 f"Web app opened for user {user_id} with URL: {web_app_url}"

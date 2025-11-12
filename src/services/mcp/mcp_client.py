@@ -3,6 +3,7 @@ MCP (Model Context Protocol) Integration for AI Agent Tool Calling
 This module provides automatic MCP server integration with OpenRouter,
 enabling LLMs to use MCP tools without hardcoded definitions.
 """
+
 import json
 import logging
 import os
@@ -13,11 +14,15 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import Tool as MCPTool
 from src.utils.log.telegramlog import telegram_logger
+
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
+
+
 def substitute_env_vars(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Substitute environment variables in MCP configuration.
@@ -27,6 +32,7 @@ def substitute_env_vars(config: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Configuration with environment variables substituted
     """
+
     def substitute_value(value: Any) -> Any:
         if isinstance(value, str):
             if value.startswith("$"):
@@ -45,7 +51,10 @@ def substitute_env_vars(config: Dict[str, Any]) -> Dict[str, Any]:
             return [substitute_value(item) for item in value]
         else:
             return value
+
     return substitute_value(config)
+
+
 def validate_mcp_environment() -> bool:
     """
     Validate that required MCP environment variables are available.
@@ -67,9 +76,11 @@ def validate_mcp_environment() -> bool:
         return False
     logging.info("All required MCP environment variables are present")
     return True
+
+
 class MCPToolConverter:
     """Converts MCP tool definitions to OpenAI-compatible format with structured schemas."""
-    
+
     @staticmethod
     def convert_mcp_tool_to_openai(mcp_tool: MCPTool) -> Dict[str, Any]:
         """
@@ -84,42 +95,46 @@ class MCPToolConverter:
             "function": {
                 "name": mcp_tool.name,
                 "description": mcp_tool.description or f"Execute {mcp_tool.name} tool",
-                "parameters": MCPToolConverter._convert_input_schema(mcp_tool.inputSchema),
+                "parameters": MCPToolConverter._convert_input_schema(
+                    mcp_tool.inputSchema
+                ),
             },
         }
-        
+
         # Add output schema if available for better validation
         if hasattr(mcp_tool, "outputSchema") and mcp_tool.outputSchema:
-            openai_tool["function"]["output_schema"] = MCPToolConverter._convert_output_schema(mcp_tool.outputSchema)
-        
+            openai_tool["function"]["output_schema"] = (
+                MCPToolConverter._convert_output_schema(mcp_tool.outputSchema)
+            )
+
         # Add additional metadata for robustness
-        openai_tool["function"]["strict"] = True  # Enable strict mode for better validation
-        
+        openai_tool["function"]["strict"] = (
+            True  # Enable strict mode for better validation
+        )
+
         return openai_tool
-    
+
     @staticmethod
     def _convert_input_schema(input_schema: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Convert MCP input schema to OpenAI format with validation.
         """
         if not input_schema:
-            return {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        
+            return {"type": "object", "properties": {}, "required": []}
+
         # Ensure required fields
         schema = {
             "type": input_schema.get("type", "object"),
             "properties": input_schema.get("properties", {}),
-            "required": input_schema.get("required", [])
+            "required": input_schema.get("required", []),
         }
-        
+
         return schema
-    
+
     @staticmethod
-    def _convert_output_schema(output_schema: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    def _convert_output_schema(
+        output_schema: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
         """
         Convert MCP output schema to structured format.
         """
@@ -127,25 +142,38 @@ class MCPToolConverter:
             return {
                 "type": "object",
                 "properties": {
-                    "result": {"type": "string", "description": "Tool execution result"},
-                    "success": {"type": "boolean", "description": "Whether the operation succeeded"}
-                }
+                    "result": {
+                        "type": "string",
+                        "description": "Tool execution result",
+                    },
+                    "success": {
+                        "type": "boolean",
+                        "description": "Whether the operation succeeded",
+                    },
+                },
             }
-        
+
         # Ensure the output schema is well-structured
         schema = dict(output_schema)
-        
+
         # Add standard fields for consistency
         if schema.get("type") == "object" and "properties" in schema:
             properties = schema["properties"]
             # Ensure success indicator
             if "success" not in properties:
-                properties["success"] = {"type": "boolean", "description": "Operation success status"}
+                properties["success"] = {
+                    "type": "boolean",
+                    "description": "Operation success status",
+                }
             # Ensure error field for failed operations
             if "error" not in properties:
-                properties["error"] = {"type": "string", "description": "Error message if operation failed"}
-        
+                properties["error"] = {
+                    "type": "string",
+                    "description": "Error message if operation failed",
+                }
+
         return schema
+
     @staticmethod
     def convert_mcp_tools_to_openai(mcp_tools: List[MCPTool]) -> List[Dict[str, Any]]:
         """
@@ -156,23 +184,24 @@ class MCPToolConverter:
             List of OpenAI-compatible tool definitions
         """
         return [MCPToolConverter.convert_mcp_tool_to_openai(tool) for tool in mcp_tools]
-    
+
     @staticmethod
     def convert_mcp_tool_to_meta(mcp_tool: MCPTool) -> Dict[str, Any]:
         """
         Convert an MCP tool definition to Meta-compatible format.
         Meta models require explicit 'items' property for array types.
-        
+
         Args:
             mcp_tool: MCP tool definition
         Returns:
             Meta-compatible tool definition
         """
+
         def add_items_to_arrays(schema: Any) -> Any:
             """Recursively ensure all arrays have 'items' property."""
             if not isinstance(schema, dict):
                 return schema
-            
+
             result = {}
             for key, value in schema.items():
                 if key == "type" and value == "array":
@@ -184,16 +213,19 @@ class MCPToolConverter:
                 elif isinstance(value, dict):
                     result[key] = add_items_to_arrays(value)
                 elif isinstance(value, list):
-                    result[key] = [add_items_to_arrays(item) if isinstance(item, dict) else item for item in value]
+                    result[key] = [
+                        add_items_to_arrays(item) if isinstance(item, dict) else item
+                        for item in value
+                    ]
                 else:
                     result[key] = value
-            
+
             # If this schema defines an array, ensure it has items
             if result.get("type") == "array" and "items" not in result:
                 result["items"] = {"type": "string"}
-            
+
             return result
-        
+
         # Convert base tool structure
         meta_tool = {
             "type": "function",
@@ -205,20 +237,20 @@ class MCPToolConverter:
                 ),
             },
         }
-        
+
         # Add output schema if available
         if hasattr(mcp_tool, "outputSchema") and mcp_tool.outputSchema:
             meta_tool["function"]["output_schema"] = add_items_to_arrays(
                 MCPToolConverter._convert_output_schema(mcp_tool.outputSchema)
             )
-        
+
         return meta_tool
-    
+
     @staticmethod
     def convert_mcp_tools_to_meta(mcp_tools: List[MCPTool]) -> List[Dict[str, Any]]:
         """
         Convert multiple MCP tools to Meta-compatible format.
-        
+
         Args:
             mcp_tools: List of MCP tool definitions
         Returns:
@@ -226,9 +258,10 @@ class MCPToolConverter:
         """
         return [MCPToolConverter.convert_mcp_tool_to_meta(tool) for tool in mcp_tools]
 
+
 class MCPServerClient:
     """Client for connecting to and managing MCP servers with enhanced capabilities."""
-    
+
     def __init__(self, server_config: Dict[str, Any], server_name: str = "unknown"):
         """
         Initialize MCP server client with enhanced capabilities.
@@ -247,26 +280,26 @@ class MCPServerClient:
         self.meta_tools: List[Dict[str, Any]] = []
         self._connection_task = None
         self._cleanup_done = False
-        
+
         # Enhanced capabilities
         self._progress_callbacks: List[Callable[[str, float, str], None]] = []
         self._context_providers: List[Callable[[], Dict[str, Any]]] = []
-        
+
         # Circuit breaker for reliability
         self._circuit_breaker_failures = 0
         self._circuit_breaker_last_failure = 0
         self._circuit_breaker_timeout = 60.0  # 1 minute circuit breaker
         self._max_consecutive_failures = 5
-        
+
         # Adaptive timeouts based on operation type
         self._timeout_multipliers = {
-            "search": 2.0, 
-            "fetch": 1.5,   
-            "process": 3.0, 
+            "search": 2.0,
+            "fetch": 1.5,
+            "process": 3.0,
             "analyze": 2.0,
-            "default": 1.0
+            "default": 1.0,
         }
-        
+
     def add_progress_callback(self, callback: Callable[[str, float, str], None]):
         """
         Add a progress callback function.
@@ -274,7 +307,7 @@ class MCPServerClient:
             callback: Function called with (operation, progress, message)
         """
         self._progress_callbacks.append(callback)
-    
+
     def add_context_provider(self, provider: Callable[[], Dict[str, Any]]):
         """
         Add a context provider function.
@@ -282,7 +315,7 @@ class MCPServerClient:
             provider: Function that returns context dictionary
         """
         self._context_providers.append(provider)
-    
+
     def _report_progress(self, operation: str, progress: float, message: str = ""):
         """Report progress to all registered callbacks."""
         for callback in self._progress_callbacks:
@@ -290,7 +323,7 @@ class MCPServerClient:
                 callback(operation, progress, message)
             except Exception as e:
                 self.logger.warning(f"Progress callback failed: {e}")
-    
+
     def _get_context(self) -> Dict[str, Any]:
         """Get combined context from all providers."""
         context = {}
@@ -301,42 +334,46 @@ class MCPServerClient:
             except Exception as e:
                 self.logger.warning(f"Context provider failed: {e}")
         return context
-    
+
     def _is_circuit_breaker_open(self) -> bool:
         """Check if circuit breaker is open (failing)."""
         if self._circuit_breaker_failures >= self._max_consecutive_failures:
             current_time = asyncio.get_event_loop().time()
-            if current_time - self._circuit_breaker_last_failure < self._circuit_breaker_timeout:
+            if (
+                current_time - self._circuit_breaker_last_failure
+                < self._circuit_breaker_timeout
+            ):
                 return True
             else:
                 # Reset circuit breaker after timeout
                 self._circuit_breaker_failures = 0
                 self.logger.info(f"Circuit breaker reset for server {self.server_name}")
         return False
-    
+
     def _record_failure(self):
         """Record a failure for circuit breaker."""
         self._circuit_breaker_failures += 1
         self._circuit_breaker_last_failure = asyncio.get_event_loop().time()
-    
+
     def _record_success(self):
         """Record a success to reset circuit breaker."""
         self._circuit_breaker_failures = 0
-    
+
     def _get_adaptive_timeout(self, tool_name: str) -> float:
         """Get adaptive timeout based on tool type."""
         base_timeout = 60.0 if os.getenv("INSIDE_DOCKER") else 30.0
-        
+
         # Determine operation type from tool name
         tool_lower = tool_name.lower()
         multiplier = self._timeout_multipliers["default"]
-        
+
         for op_type, mult in self._timeout_multipliers.items():
             if op_type in tool_lower:
                 multiplier = mult
                 break
-        
+
         return base_timeout * multiplier
+
     async def connect(self) -> bool:
         """
         Connect to the MCP server and retrieve available tools.
@@ -380,6 +417,7 @@ class MCPServerClient:
                 f"Failed to connect to MCP server '{self.server_name}': {str(e)}", 0
             )
             return False
+
     async def _try_connect_with_config(self, config: Dict[str, Any]) -> bool:
         """
         Try to connect using a specific configuration.
@@ -462,12 +500,13 @@ class MCPServerClient:
                 f"Failed to connect to MCP server '{self.server_name}': {str(e)}", 0
             )
             return False
+
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
         Call a tool on the MCP server with enhanced capabilities.
         Implements retry mechanism with exponential backoff for reliability.
         Supports progress reporting and context injection for long-running operations.
-        
+
         Args:
             tool_name: Name of the tool to call
             arguments: Arguments to pass to the tool
@@ -476,13 +515,13 @@ class MCPServerClient:
         """
         max_retries = 3
         retry_delays = [1.0, 2.0, 4.0]  # Exponential backoff
-        
+
         # Inject context if providers are available
         enhanced_args = dict(arguments)
         context = self._get_context()
         if context:
             enhanced_args["_context"] = context
-        
+
         for attempt in range(max_retries):
             try:
                 if attempt > 0:
@@ -490,65 +529,61 @@ class MCPServerClient:
                         f"Retry attempt {attempt + 1}/{max_retries} for tool '{tool_name}'"
                     )
                     self._report_progress(
-                        f"retry_{tool_name}", 
-                        attempt / max_retries, 
-                        f"Retrying tool execution (attempt {attempt + 1})"
+                        f"retry_{tool_name}",
+                        attempt / max_retries,
+                        f"Retrying tool execution (attempt {attempt + 1})",
                     )
-                
+
                 # Check circuit breaker
                 if self._is_circuit_breaker_open():
                     raise RuntimeError(
                         f"Circuit breaker is open for server '{self.server_name}' due to consecutive failures"
                     )
-                
+
                 # Get adaptive timeout for this tool
                 adaptive_timeout = self._get_adaptive_timeout(tool_name)
-                        
+
                 # Report initial progress
                 self._report_progress(tool_name, 0.0, f"Starting {tool_name} execution")
-                        
+
                 result = await self._call_tool_with_config(
                     self.server_config, tool_name, enhanced_args, adaptive_timeout
                 )
-                        
+
                 # Record success for circuit breaker
                 self._record_success()
-                        
+
                 # Report completion
-                self._report_progress(tool_name, 1.0, f"Completed {tool_name} execution")
-                        
+                self._report_progress(
+                    tool_name, 1.0, f"Completed {tool_name} execution"
+                )
+
                 return result
-                        
+
             except Exception as primary_error:
                 self.logger.warning(
                     f"Primary tool call failed for '{tool_name}': {str(primary_error)}"
                 )
-                        
+
                 # Report error progress
                 self._report_progress(
-                    tool_name, 
-                    -1.0, 
-                    f"Primary execution failed: {str(primary_error)}"
+                    tool_name, -1.0, f"Primary execution failed: {str(primary_error)}"
                 )
-                        
+
                 fallback_config = self.server_config.get("fallback")
                 if fallback_config:
                     self.logger.info(
                         f"Trying fallback configuration for tool '{tool_name}'"
                     )
                     self._report_progress(
-                        tool_name, 
-                        0.5, 
-                        "Trying fallback configuration"
+                        tool_name, 0.5, "Trying fallback configuration"
                     )
                     try:
                         result = await self._call_tool_with_config(
                             fallback_config, tool_name, enhanced_args
                         )
                         self._report_progress(
-                            tool_name, 
-                            1.0, 
-                            "Fallback execution successful"
+                            tool_name, 1.0, "Fallback execution successful"
                         )
                         return result
                     except Exception as fallback_error:
@@ -556,25 +591,30 @@ class MCPServerClient:
                             f"Fallback tool call also failed for '{tool_name}': {str(fallback_error)}"
                         )
                         # Continue to retry logic below
-                        
+
                 # Retry logic for both primary and fallback failures
                 if attempt < max_retries - 1:
                     delay = retry_delays[attempt]
                     self.logger.info(f"Waiting {delay}s before retry...")
                     await asyncio.sleep(delay)
                     continue
-                        
+
                 # Final failure - record and raise
                 error_msg = f"Tool '{tool_name}' failed after {max_retries} attempts"
                 if fallback_config:
                     error_msg += " (including fallback)"
                 error_msg += f": {str(primary_error)}"
-                        
+
                 self.logger.error(error_msg)
                 self._record_failure()
                 raise RuntimeError(error_msg) from primary_error
+
     async def _call_tool_with_config(
-        self, config: Dict[str, Any], tool_name: str, arguments: Dict[str, Any], timeout: Optional[float] = None
+        self,
+        config: Dict[str, Any],
+        tool_name: str,
+        arguments: Dict[str, Any],
+        timeout: Optional[float] = None,
     ) -> Any:
         """
         Call a tool using a specific configuration.
@@ -594,8 +634,8 @@ class MCPServerClient:
             try:
                 # Extended timeouts for document operations (Word, PDF, etc.)
                 # which require more processing time for large content
-                connection_timeout = 180.0  
-                init_timeout = 60.0  
+                connection_timeout = 180.0
+                init_timeout = 60.0
                 execution_timeout = timeout or 120.0
                 async with asyncio.timeout(connection_timeout):
                     async with stdio_client(server_params) as (stdio, write):
@@ -632,6 +672,7 @@ class MCPServerClient:
             raise RuntimeError(
                 f"Unsupported server type for tool calls: {config.get('type')}"
             )
+
     async def disconnect(self):
         """Disconnect from the MCP server."""
         try:
@@ -652,13 +693,15 @@ class MCPServerClient:
             self.openai_tools = []
         except Exception as e:
             self.logger.warning(f"Error during disconnect: {str(e)}")
+
+
 class MCPManager:
     """Manages multiple MCP server connections and tool aggregation (Singleton)."""
-    
-    _instance: Optional['MCPManager'] = None
+
+    _instance: Optional["MCPManager"] = None
     _lock = asyncio.Lock()
     _initialized = False
-    
+
     def __new__(cls, mcp_config_path: str = "mcp.json"):
         """
         Singleton pattern: Ensure only one instance exists.
@@ -666,7 +709,7 @@ class MCPManager:
         if cls._instance is None:
             cls._instance = super(MCPManager, cls).__new__(cls)
         return cls._instance
-    
+
     def __init__(self, mcp_config_path: str = "mcp.json"):
         """
         Initialize MCP manager (only once due to singleton).
@@ -676,15 +719,15 @@ class MCPManager:
         # Skip re-initialization if already initialized
         if self.__class__._initialized:
             return
-            
+
         self.mcp_config_path = Path(mcp_config_path)
         self.servers: Dict[str, MCPServerClient] = {}
         self.logger = logging.getLogger(__name__)
         self.all_openai_tools: List[Dict[str, Any]] = []
         self.tool_to_server_map: Dict[str, str] = {}
-        
+
     @classmethod
-    def get_instance(cls, mcp_config_path: str = "mcp.json") -> 'MCPManager':
+    def get_instance(cls, mcp_config_path: str = "mcp.json") -> "MCPManager":
         """
         Get the singleton instance of MCPManager.
         Args:
@@ -695,7 +738,7 @@ class MCPManager:
         if cls._instance is None:
             cls._instance = cls(mcp_config_path)
         return cls._instance
-    
+
     @classmethod
     def reset_instance(cls):
         """
@@ -703,6 +746,7 @@ class MCPManager:
         """
         cls._instance = None
         cls._initialized = False
+
     async def load_servers(self) -> bool:
         """
         Load and connect to all MCP servers from configuration.
@@ -714,20 +758,26 @@ class MCPManager:
         async with self.__class__._lock:
             # If already initialized, return success
             if self.__class__._initialized:
-                self.logger.info("MCP servers already initialized, skipping re-initialization")
+                self.logger.info(
+                    "MCP servers already initialized, skipping re-initialization"
+                )
                 return len(self.servers) > 0
-            
+
             if not validate_mcp_environment():
                 self.logger.error("MCP environment validation failed")
                 return False
             if not self.mcp_config_path.exists():
-                self.logger.warning(f"MCP config file not found: {self.mcp_config_path}")
+                self.logger.warning(
+                    f"MCP config file not found: {self.mcp_config_path}"
+                )
                 return False
             try:
                 with open(self.mcp_config_path, "r") as f:
                     config = json.load(f)
                 config = substitute_env_vars(config)
-                self.logger.info("Environment variables substituted in MCP configuration")
+                self.logger.info(
+                    "Environment variables substituted in MCP configuration"
+                )
                 telegram_logger.log_message(
                     "Environment variables substituted in MCP configuration", 0
                 )
@@ -779,7 +829,9 @@ class MCPManager:
                             self.logger.warning("No MCP servers connected successfully")
                             return False
                     except Exception as e:
-                        self.logger.error(f"Error during MCP server connections: {str(e)}")
+                        self.logger.error(
+                            f"Error during MCP server connections: {str(e)}"
+                        )
                         return False
                 else:
                     self.logger.warning("No MCP servers configured")
@@ -788,6 +840,7 @@ class MCPManager:
                 self.logger.error(f"Error loading MCP servers: {str(e)}")
                 telegram_logger.log_error(f"Error loading MCP servers: {str(e)}", 0)
                 return False
+
     async def _connect_single_server(
         self, server_name: str, server_config: Dict[str, Any]
     ) -> bool:
@@ -833,23 +886,29 @@ class MCPManager:
                 f"Error connecting to MCP server '{server_name}': {str(e)}"
             )
             return False
+
     async def get_all_tools(self, provider: str = "openai") -> List[Dict[str, Any]]:
         """
         Get all available tools from connected MCP servers in the specified format.
-        
+
         Args:
             provider: Tool format to return ("openai" or "meta")
-        
+
         Returns:
             List of tool definitions in the requested format
         """
         if provider.lower() == "meta":
             # Aggregate Meta-format tools from all servers
-            return [tool for server in self.servers.values() for tool in server.meta_tools]
+            return [
+                tool for server in self.servers.values() for tool in server.meta_tools
+            ]
         else:
             # Default to OpenAI format
             return self.all_openai_tools.copy()
-    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def execute_tool(
+        self, tool_name: str, arguments: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Execute a tool by name with robust error handling and fallback mechanisms.
         Args:
@@ -859,24 +918,24 @@ class MCPManager:
             Structured response with consistent format for success and error cases
         """
         start_time = asyncio.get_event_loop().time()
-        
+
         try:
             if tool_name not in self.tool_to_server_map:
                 return self._create_error_response(
-                    tool_name, 
-                    "TOOL_NOT_FOUND", 
+                    tool_name,
+                    "TOOL_NOT_FOUND",
                     f"Tool '{tool_name}' not found in any connected MCP server",
-                    arguments
+                    arguments,
                 )
-            
+
             server_name = self.tool_to_server_map[tool_name]
             server = self.servers[server_name]
-            
+
             # Execute the tool with timeout and error handling
             result = await server.call_tool(tool_name, arguments)
-            
+
             execution_time = asyncio.get_event_loop().time() - start_time
-            
+
             # Return structured success response
             return {
                 "success": True,
@@ -884,9 +943,9 @@ class MCPManager:
                 "server": server_name,
                 "result": result,
                 "execution_time": round(execution_time, 3),
-                "status": "completed"
+                "status": "completed",
             }
-            
+
         except asyncio.TimeoutError:
             execution_time = asyncio.get_event_loop().time() - start_time
             return self._create_error_response(
@@ -894,39 +953,45 @@ class MCPManager:
                 "TIMEOUT",
                 f"Tool execution timed out after {execution_time:.1f}s",
                 arguments,
-                execution_time
+                execution_time,
             )
-            
+
         except Exception as e:
             execution_time = asyncio.get_event_loop().time() - start_time
             error_type = self._classify_error(e)
-            
+
             # Try fallback if available and this is a recoverable error
-            if error_type in ["CONNECTION_ERROR", "SERVER_ERROR", "TIMEOUT"] and self._has_fallback_available(tool_name):
+            if error_type in [
+                "CONNECTION_ERROR",
+                "SERVER_ERROR",
+                "TIMEOUT",
+            ] and self._has_fallback_available(tool_name):
                 try:
-                    self.logger.info(f"Attempting fallback execution for tool '{tool_name}'")
-                    fallback_result = await self._execute_tool_with_fallback(tool_name, arguments)
+                    self.logger.info(
+                        f"Attempting fallback execution for tool '{tool_name}'"
+                    )
+                    fallback_result = await self._execute_tool_with_fallback(
+                        tool_name, arguments
+                    )
                     if fallback_result:
                         fallback_result["used_fallback"] = True
                         return fallback_result
                 except Exception as fallback_error:
-                    self.logger.warning(f"Fallback execution also failed for '{tool_name}': {str(fallback_error)}")
-            
+                    self.logger.warning(
+                        f"Fallback execution also failed for '{tool_name}': {str(fallback_error)}"
+                    )
+
             return self._create_error_response(
-                tool_name,
-                error_type,
-                str(e),
-                arguments,
-                execution_time
+                tool_name, error_type, str(e), arguments, execution_time
             )
-    
+
     def _create_error_response(
-        self, 
-        tool_name: str, 
-        error_type: str, 
-        error_message: str, 
+        self,
+        tool_name: str,
+        error_type: str,
+        error_message: str,
         arguments: Dict[str, Any],
-        execution_time: float = 0.0
+        execution_time: float = 0.0,
     ) -> Dict[str, Any]:
         """
         Create a consistent error response structure.
@@ -939,15 +1004,15 @@ class MCPManager:
             "arguments": arguments,
             "execution_time": round(execution_time, 3),
             "status": "failed",
-            "timestamp": asyncio.get_event_loop().time()
+            "timestamp": asyncio.get_event_loop().time(),
         }
-    
+
     def _classify_error(self, error: Exception) -> str:
         """
         Classify the type of error for better handling.
         """
         error_str = str(error).lower()
-        
+
         if "timeout" in error_str or "timed out" in error_str:
             return "TIMEOUT"
         elif "connection" in error_str or "connect" in error_str:
@@ -964,42 +1029,44 @@ class MCPManager:
             return "VALIDATION_ERROR"
         else:
             return "UNKNOWN_ERROR"
-    
+
     def _has_fallback_available(self, tool_name: str) -> bool:
         """
         Check if a fallback is available for the given tool.
         """
         if tool_name not in self.tool_to_server_map:
             return False
-        
+
         server_name = self.tool_to_server_map[tool_name]
         server = self.servers.get(server_name)
         if not server:
             return False
-        
+
         # Check if server config has fallback
-        return hasattr(server, 'server_config') and 'fallback' in server.server_config
-    
-    async def _execute_tool_with_fallback(self, tool_name: str, arguments: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        return hasattr(server, "server_config") and "fallback" in server.server_config
+
+    async def _execute_tool_with_fallback(
+        self, tool_name: str, arguments: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """
         Execute a tool using fallback configuration.
         """
         if tool_name not in self.tool_to_server_map:
             return None
-        
+
         server_name = self.tool_to_server_map[tool_name]
         server = self.servers.get(server_name)
-        if not server or not hasattr(server, 'server_config'):
+        if not server or not hasattr(server, "server_config"):
             return None
-        
-        fallback_config = server.server_config.get('fallback')
+
+        fallback_config = server.server_config.get("fallback")
         if not fallback_config:
             return None
-        
+
         try:
             # Create a temporary client for fallback execution
             temp_client = MCPServerClient(fallback_config, f"{server_name}_fallback")
-            
+
             # Try to connect and execute with shorter timeout for fallback
             connect_timeout = 30.0 if os.getenv("INSIDE_DOCKER") else 15.0
             async with asyncio.timeout(connect_timeout):
@@ -1010,22 +1077,23 @@ class MCPManager:
                         fallback_config, tool_name, arguments, adaptive_timeout
                     )
                     await temp_client.disconnect()
-                    
+
                     return {
                         "success": True,
                         "tool_name": tool_name,
                         "server": f"{server_name}_fallback",
                         "result": result,
                         "execution_time": 0.0,  # Would need to track this properly
-                        "status": "completed"
+                        "status": "completed",
                     }
-            
+
             await temp_client.disconnect()
             return None
-            
+
         except Exception as e:
             self.logger.warning(f"Fallback execution failed: {str(e)}")
             return None
+
     async def disconnect_all(self):
         """Disconnect from all MCP servers."""
         disconnect_tasks = []
@@ -1045,6 +1113,7 @@ class MCPManager:
         self.servers.clear()
         self.all_openai_tools.clear()
         self.tool_to_server_map.clear()
+
     def get_server_info(self) -> Dict[str, Any]:
         """
         Get information about connected servers and their tools.

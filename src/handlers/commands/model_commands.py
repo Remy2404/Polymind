@@ -2,12 +2,14 @@
 Model switching and listing commands for the Telegram bot.
 Provides categorized model lists and easy switching between AI models.
 """
+
 import os
 import sys
 import logging
 from typing import List
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
@@ -17,7 +19,10 @@ from src.services.model_handlers.simple_api_manager import (
 from src.services.user_data_manager import UserDataManager
 from src.handlers.support_tool_call import ToolCallSupportDetector
 from src.handlers.commands.callback_data_mapper import callback_mapper
+
 logger = logging.getLogger(__name__)
+
+
 class ModelCommands:
     def __init__(
         self, api_manager: SuperSimpleAPIManager, user_data_manager: UserDataManager
@@ -25,6 +30,7 @@ class ModelCommands:
         self.api_manager = api_manager
         self.user_data_manager = user_data_manager
         self.tool_call_detector = ToolCallSupportDetector(api_manager)
+
     async def switchmodel_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -84,6 +90,7 @@ class ModelCommands:
         await update.message.reply_text(
             message, reply_markup=reply_markup, parse_mode="Markdown"
         )
+
     async def handle_category_selection(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -99,6 +106,7 @@ class ModelCommands:
             await self._show_tool_call_models(query)
         else:
             await self._show_category_models(query, category_id)
+
     async def _show_category_models(self, query, category_id: str) -> None:
         """Show models in a specific category"""
         categories = self.api_manager.get_models_by_category()
@@ -137,6 +145,7 @@ class ModelCommands:
         await query.edit_message_text(
             message, reply_markup=reply_markup, parse_mode="Markdown"
         )
+
     async def _show_all_models(self, query) -> None:
         """Show all models alphabetically"""
         all_models = self.api_manager.get_all_models()
@@ -174,6 +183,7 @@ class ModelCommands:
         await query.edit_message_text(
             message, reply_markup=reply_markup, parse_mode="Markdown"
         )
+
     async def _show_tool_call_models(self, query) -> None:
         """Show only models that support tool calling"""
         tool_call_models = self.tool_call_detector.get_tool_call_supported_models()
@@ -228,6 +238,7 @@ class ModelCommands:
         await query.edit_message_text(
             message, reply_markup=reply_markup, parse_mode="Markdown"
         )
+
     async def _show_current_model(self, query) -> None:
         """Show current model information"""
         user_id = query.from_user.id
@@ -264,6 +275,7 @@ class ModelCommands:
         await query.edit_message_text(
             message, reply_markup=reply_markup, parse_mode="Markdown"
         )
+
     async def handle_model_selection(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -306,6 +318,7 @@ class ModelCommands:
         await query.edit_message_text(
             message, reply_markup=reply_markup, parse_mode="Markdown"
         )
+
     async def handle_back_to_categories(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -369,6 +382,7 @@ class ModelCommands:
         await query.edit_message_text(
             message, reply_markup=reply_markup, parse_mode="Markdown"
         )
+
     async def current_model_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -397,6 +411,7 @@ class ModelCommands:
         else:
             message = f"❌ Current model '{current_model}' not found in configuration."
         await update.message.reply_text(message, parse_mode="Markdown")
+
     async def list_models_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -419,6 +434,8 @@ class ModelCommands:
         message_parts.append("\n💡 Use `/switchmodel` for interactive model selection.")
         message_parts.append("💡 Use `/currentmodel` to see your active model.")
         await update.message.reply_text("\n".join(message_parts), parse_mode="Markdown")
+
+
 def get_model_command_handlers(model_commands: ModelCommands) -> List[tuple]:
     """Get list of callback handlers for model commands"""
     return [

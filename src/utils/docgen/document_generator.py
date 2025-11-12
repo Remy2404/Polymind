@@ -1,6 +1,7 @@
 """
 Document Generator for creating professionally formatted PDF and DOCX documents.
 """
+
 import io
 import re
 from datetime import datetime
@@ -24,10 +25,14 @@ from .shared_imports import (
     Spacer,
     ListFlowable,
 )
+
+
 class DocumentGenerator:
     """Utility for generating professionally formatted documents"""
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+
     async def create_pdf(
         self, content: str, title: Optional[str] = None, author: str = "DeepGem Bot"
     ) -> bytes:
@@ -135,6 +140,7 @@ class DocumentGenerator:
         doc.build(elements)
         buffer.seek(0)
         return buffer.getvalue()
+
     async def create_docx(
         self, content: str, title: Optional[str] = None, author: str = "DeepGem Bot"
     ) -> bytes:
@@ -326,6 +332,7 @@ class DocumentGenerator:
         doc.save(buffer)
         buffer.seek(0)
         return buffer.getvalue()
+
     def _process_mixed_formatting(self, paragraph, text):
         """Process text with mixed formatting (bold, code, italic)"""
         in_bold = False
@@ -388,6 +395,7 @@ class DocumentGenerator:
                 run.font.name = "Courier New"
                 run.font.size = Pt(9)
                 run.font.color.rgb = RGBColor(63, 127, 127)
+
     def _process_mixed_bold_italic(self, paragraph, text):
         """Process text with mixed bold and italic formatting"""
         parts = text.split("**")
@@ -417,6 +425,7 @@ class DocumentGenerator:
                 else:
                     bold_run = paragraph.add_run(part)
                     bold_run.bold = True
+
     def _clean_markdown_formatting(self, content: str) -> str:
         """Fix common markdown formatting issues"""
         lines = content.splitlines()

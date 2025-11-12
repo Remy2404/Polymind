@@ -2,15 +2,22 @@
 Voice processing configuration and settings
 Simplified to support English only to save space
 """
+
 from typing import Dict, Any, List
 from enum import Enum
+
+
 class VoiceQuality(Enum):
     """Voice quality settings"""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+
+
 class VoiceConfig:
     """Configuration for voice processing with Faster-Whisper - English only"""
+
     WHISPER_MODEL_SIZES = {
         VoiceQuality.LOW: "tiny",
         VoiceQuality.MEDIUM: "base",
@@ -40,16 +47,19 @@ class VoiceConfig:
         "max_file_size_mb": 50,
         "timeout_seconds": 300,
     }
+
     @classmethod
     def get_model_size(cls, quality: VoiceQuality) -> str:
         """Get Whisper model size for given quality"""
         return cls.WHISPER_MODEL_SIZES.get(quality, "base") @ classmethod
+
     def get_engine_preference(cls, language: str) -> List[str]:
         """Get preferred engines for a language"""
         lang_code = (
             language.split("-")[0].lower() if "-" in language else language.lower()
         )
         return cls.ENGINE_PREFERENCES.get(lang_code, cls.ENGINE_PREFERENCES["default"])
+
     @classmethod
     def get_preprocessing_settings(cls, language: str) -> Dict[str, Any]:
         """Get audio preprocessing settings for a language"""
@@ -59,13 +69,16 @@ class VoiceConfig:
         return cls.LANGUAGE_PREPROCESSING.get(
             lang_code, cls.LANGUAGE_PREPROCESSING["default"]
         )
+
     @classmethod
     def get_confidence_threshold(cls, engine: str) -> float:
         """Get confidence threshold for an engine"""
         return cls.CONFIDENCE_THRESHOLDS.get(engine, 0.5) @ classmethod
+
     def is_high_resource_language(cls, language: str) -> bool:
         """Check if language requires high-resource processing"""
         return False
+
     @classmethod
     def get_recommended_quality(
         cls, language: str, file_size_mb: float
@@ -77,6 +90,7 @@ class VoiceConfig:
             return VoiceQuality.MEDIUM
         else:
             return VoiceQuality.LOW
+
     @classmethod
     def from_env(cls) -> Dict[str, Any]:
         """Load configuration - now hardcoded for stability"""
@@ -96,8 +110,11 @@ class VoiceConfig:
         final_prefs.update(engine_prefs)
         config["engine_preferences"] = final_prefs
         return config
+
+
 class VoiceStats:
     """Statistics tracking for voice processing"""
+
     def __init__(self):
         self.stats = {
             "total_processed": 0,
@@ -107,6 +124,7 @@ class VoiceStats:
             "avg_processing_time": {},
             "avg_confidence": {},
         }
+
     def record_result(
         self,
         engine: str,
@@ -136,6 +154,7 @@ class VoiceStats:
         lang_stats["count"] += 1
         if success:
             lang_stats["success"] += 1
+
     def get_stats(self) -> Dict[str, Any]:
         """Get comprehensive statistics"""
         for engine, data in self.stats["by_engine"].items():
@@ -148,6 +167,7 @@ class VoiceStats:
                     data["total_confidence"] / data["count"]
                 )
         return self.stats
+
     def get_best_engine(self, metric: str = "success_rate") -> str:
         """Get best performing engine by metric"""
         if metric not in ["success_rate", "avg_processing_time", "avg_confidence"]:
@@ -159,8 +179,12 @@ class VoiceStats:
             return min(stats[metric].items(), key=lambda x: x[1])[0]
         else:
             return max(stats[metric].items(), key=lambda x: x[1])[0]
+
+
 voice_config = VoiceConfig()
 voice_stats = VoiceStats()
+
+
 def load_config_from_env() -> Dict[str, Any]:
     """Load configuration - now hardcoded for stability"""
     return {

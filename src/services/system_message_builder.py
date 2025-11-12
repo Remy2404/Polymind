@@ -2,16 +2,19 @@
 Shared utility for building system messages with consistent tool instructions.
 This module provides reusable components for creating system messages across different AI providers.
 """
+
 from typing import Optional, List, Dict, Any, Callable
 from src.services.model_handlers.model_configs import ModelConfigurations
 
 
 class SystemMessageBuilder:
     """Builder for creating consistent system messages across AI providers."""
-    
-    DEFAULT_BASE_MESSAGE = "You are an advanced AI assistant that helps users with various tasks."
+
+    DEFAULT_BASE_MESSAGE = (
+        "You are an advanced AI assistant that helps users with various tasks."
+    )
     CONCISE_HINT = " Be concise, helpful, and accurate."
-    
+
     # Template for tool instructions
     TOOL_INSTRUCTIONS_TEMPLATE = """
 You have access to the following tools: {tool_names}
@@ -32,14 +35,14 @@ You have access to the following tools: {tool_names}
 - Do not mention tool internal details or <think> tags in your final response
 
 Focus on providing the most helpful and accurate response possible using the available tools."""
-    
+
     @staticmethod
     def get_base_message(model_id: str) -> str:
         """Get base message from model configuration or use default.
-        
+
         Args:
             model_id: The model identifier
-            
+
         Returns:
             Base system message string
         """
@@ -47,65 +50,67 @@ Focus on providing the most helpful and accurate response possible using the ava
         if model_config and model_config.system_message:
             return model_config.system_message
         return SystemMessageBuilder.DEFAULT_BASE_MESSAGE
-    
+
     @staticmethod
     def get_context_hint(context: Optional[List[Dict]] = None) -> str:
         """Get context hint text if context is provided.
-        
+
         Args:
             context: Optional conversation context
-            
+
         Returns:
             Context hint string or empty string
         """
         if context:
             return " Use conversation history/context when relevant."
         return ""
-    
+
     @staticmethod
     def build_basic_message(
         model_id: str,
         context: Optional[List[Dict]] = None,
-        add_concise_hint: bool = False
+        add_concise_hint: bool = False,
     ) -> str:
         """Build a basic system message without tool instructions.
-        
+
         Args:
             model_id: The model identifier
             context: Optional conversation context
             add_concise_hint: Whether to add "Be concise, helpful, and accurate" hint
-            
+
         Returns:
             System message string
         """
         base_message = SystemMessageBuilder.get_base_message(model_id)
         context_hint = SystemMessageBuilder.get_context_hint(context)
-        
+
         # Add concise hint if requested (typically when no context and no model-specific config)
         if add_concise_hint:
             return base_message + SystemMessageBuilder.CONCISE_HINT
-        
+
         return base_message + context_hint
-    
+
     @staticmethod
     def categorize_tools_generic(
         tools: List[Dict[str, Any]],
         name_extractor: Callable[[Dict], str] = lambda t: t["function"]["name"],
-        description_extractor: Callable[[Dict], str] = lambda t: t["function"].get("description", "")
+        description_extractor: Callable[[Dict], str] = lambda t: t["function"].get(
+            "description", ""
+        ),
     ) -> Dict[str, List[str]]:
         """Categorize tools by their functionality.
-        
+
         This is a generic tool categorization that works with different tool formats.
         The default extractors assume OpenAI-compatible tool format where tools have
         a "function" key with "name" and "description" fields.
-        
+
         For other formats (e.g., Gemini), provide custom extractor functions.
-        
+
         Args:
             tools: List of tool definitions
             name_extractor: Function to extract tool name (default: OpenAI format)
             description_extractor: Function to extract description (default: OpenAI format)
-            
+
         Returns:
             Dictionary mapping categories to tool names
         """
@@ -119,63 +124,102 @@ Focus on providing the most helpful and accurate response possible using the ava
             "Document Processing": [],
             "Other": [],
         }
-        
+
         category_keywords = {
-            "Content Fetching": ["fetch", "html", "markdown", "txt", "json", "url", "webpage", "content", "crawl"],
-            "Documentation": ["doc", "docs", "documentation", "library", "api", "guide", "tutorial", "reference"],
-            "Search & Research": ["search", "find", "query", "lookup", "research", "web", "browse"],
+            "Content Fetching": [
+                "fetch",
+                "html",
+                "markdown",
+                "txt",
+                "json",
+                "url",
+                "webpage",
+                "content",
+                "crawl",
+            ],
+            "Documentation": [
+                "doc",
+                "docs",
+                "documentation",
+                "library",
+                "api",
+                "guide",
+                "tutorial",
+                "reference",
+            ],
+            "Search & Research": [
+                "search",
+                "find",
+                "query",
+                "lookup",
+                "research",
+                "web",
+                "browse",
+            ],
             "Development": ["code", "dev", "build", "compile", "test", "debug", "git"],
             "Analysis": ["analyze", "process", "calculate", "compute", "evaluate"],
             "Communication": ["send", "notify", "message", "email", "chat"],
-            "Document Processing": ["pdf", "docx", "export", "generate", "format", "convert"],
+            "Document Processing": [
+                "pdf",
+                "docx",
+                "export",
+                "generate",
+                "format",
+                "convert",
+            ],
         }
-        
+
         for tool in tools:
             try:
                 tool_name_full = name_extractor(tool)
                 tool_name = tool_name_full.lower()
                 description = description_extractor(tool).lower()
-                
+
                 categorized = False
                 for category, keywords in category_keywords.items():
-                    if any(keyword in tool_name or keyword in description for keyword in keywords):
+                    if any(
+                        keyword in tool_name or keyword in description
+                        for keyword in keywords
+                    ):
                         categories[category].append(tool_name_full)
                         categorized = True
                         break
-                
+
                 if not categorized:
                     categories["Other"].append(tool_name_full)
             except (KeyError, AttributeError, TypeError):
                 # Skip tools that don't match expected format
                 continue
-        
+
         # Remove empty categories
         return {k: v for k, v in categories.items() if v}
-    
+
     @staticmethod
     def build_tool_instructions(
         tool_names: List[str],
         tool_categories: Dict[str, List[str]],
-        provider_specific_instructions: str = ""
+        provider_specific_instructions: str = "",
     ) -> str:
         """Build tool usage instructions.
-        
+
         Args:
             tool_names: List of available tool names
             tool_categories: Dictionary of categorized tools
             provider_specific_instructions: Any provider-specific instructions to prepend
-            
+
         Returns:
             Tool instructions string
         """
         # Format tool categories for the template
-        formatted_categories = "\n".join([
-            f"- **{category}**: {', '.join(category_tools)}" 
-            for category, category_tools in tool_categories.items()
-        ])
-        
+        formatted_categories = "\n".join(
+            [
+                f"- **{category}**: {', '.join(category_tools)}"
+                for category, category_tools in tool_categories.items()
+            ]
+        )
+
         return SystemMessageBuilder.TOOL_INSTRUCTIONS_TEMPLATE.format(
-            tool_names=', '.join(tool_names),
+            tool_names=", ".join(tool_names),
             provider_specific_instructions=provider_specific_instructions,
-            tool_categories=formatted_categories
+            tool_categories=formatted_categories,
         )

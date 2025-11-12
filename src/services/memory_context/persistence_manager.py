@@ -2,6 +2,7 @@
 Persistence Management Module
 Handles all memory persistence operations (MongoDB and file fallback)
 """
+
 import logging
 import json
 import os
@@ -9,9 +10,13 @@ import time
 import aiofiles
 from typing import Dict, Any, Optional
 from pymongo.database import Database
+
 logger = logging.getLogger(__name__)
+
+
 class PersistenceManager:
     """Manages memory persistence to MongoDB and file storage"""
+
     def __init__(
         self, db: Optional[Database] = None, storage_path: Optional[str] = None
     ):
@@ -24,6 +29,7 @@ class PersistenceManager:
         self.conversation_summaries_collection = (
             db.conversation_summaries if db is not None else None
         )
+
     async def persist_memory(
         self, cache_key: str, memory_data: Dict[str, Any], is_group: bool = False
     ):
@@ -53,6 +59,7 @@ class PersistenceManager:
         except Exception as e:
             logger.error(f"Error persisting memory to MongoDB: {e}")
             await self.persist_memory_file(cache_key, memory_data, is_group)
+
     async def persist_memory_file(
         self, cache_key: str, memory_data: Dict[str, Any], is_group: bool = False
     ):
@@ -78,6 +85,7 @@ class PersistenceManager:
             logger.info(f"Persisted memory to file: {file_path}")
         except Exception as e:
             logger.error(f"Error persisting memory to file: {e}")
+
     async def load_memory(
         self, cache_key: str, is_group: bool = False
     ) -> Optional[Dict[str, Any]]:
@@ -99,6 +107,7 @@ class PersistenceManager:
         except Exception as e:
             logger.error(f"Error loading memory from MongoDB: {e}")
             return await self.load_memory_file(cache_key, is_group)
+
     async def load_memory_file(
         self, cache_key: str, is_group: bool = False
     ) -> Optional[Dict[str, Any]]:
@@ -124,6 +133,7 @@ class PersistenceManager:
         except Exception as e:
             logger.error(f"Error loading memory from file: {e}")
             return None
+
     def ensure_indexes(self):
         """Ensure database indexes are created for better performance"""
         try:

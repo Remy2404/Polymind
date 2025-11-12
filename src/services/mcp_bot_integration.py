@@ -3,20 +3,25 @@ MCP Integration for Telegram Bot
 This module provides MCP (Model Context Protocol) integration for the Telegram bot,
 enabling automatic tool calling and server management.
 """
+
 import os
 import logging
 from typing import Dict, List, Optional, Any
 from src.services.mcp.mcp_client import MCPManager
 from src.services.openrouter_api_with_mcp import OpenRouterAPIWithMCP
 from src.services.rate_limiter import RateLimiter
+
+
 class MCPBotIntegration:
     """MCP integration for Telegram bot."""
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.mcp_manager: Optional[MCPManager] = None
         self.openrouter_with_mcp: Optional[OpenRouterAPIWithMCP] = None
         self.is_initialized = False
         self.user_mcp_enabled: Dict[int, bool] = {}
+
     async def initialize_mcp(self) -> bool:
         """
         Initialize MCP manager and OpenRouter with MCP support.
@@ -24,6 +29,7 @@ class MCPBotIntegration:
             True if initialization successful, False otherwise
         """
         import asyncio
+
         try:
             self.logger.info("Initializing MCP integration...")
             self.mcp_manager = MCPManager()
@@ -80,6 +86,7 @@ class MCPBotIntegration:
                 await self.openrouter_with_mcp.close()
                 self.openrouter_with_mcp = None
             return False
+
     async def get_available_tools(self) -> List[Dict[str, Any]]:
         """
         Get all available MCP tools in OpenAI format.
@@ -93,6 +100,7 @@ class MCPBotIntegration:
         except Exception as e:
             self.logger.error(f"Error getting MCP tools: {str(e)}")
             return []
+
     async def is_mcp_available_for_user(self, user_id: int) -> bool:
         """
         Check if MCP is available and enabled for a user.
@@ -106,6 +114,7 @@ class MCPBotIntegration:
         if user_id in self.user_mcp_enabled:
             return self.user_mcp_enabled[user_id]
         return True
+
     async def set_mcp_enabled_for_user(self, user_id: int, enabled: bool):
         """
         Enable or disable MCP for a specific user.
@@ -116,6 +125,7 @@ class MCPBotIntegration:
         self.user_mcp_enabled[user_id] = enabled
         status = "enabled" if enabled else "disabled"
         self.logger.info(f"MCP {status} for user {user_id}")
+
     def is_model_mcp_compatible(self, model: str) -> bool:
         """
         Check if a model is compatible with MCP (tool calling via OpenRouter).
@@ -127,7 +137,9 @@ class MCPBotIntegration:
         if not model:
             return False
         from src.services.model_handlers.model_configs import ModelConfigurations
+
         return ModelConfigurations.model_supports_tool_calls(model)
+
     async def generate_response_with_mcp(
         self,
         prompt: str,
@@ -185,6 +197,7 @@ class MCPBotIntegration:
                     f"Model {model} appears incompatible with OpenRouter MCP integration"
                 )
             return None
+
     async def get_mcp_status(self) -> Dict[str, Any]:
         """
         Get MCP integration status.
@@ -204,6 +217,7 @@ class MCPBotIntegration:
                 info["tool_count"] for info in server_info.values()
             )
         return status
+
     async def cleanup(self):
         """Clean up MCP resources."""
         if self.mcp_manager:
@@ -214,15 +228,23 @@ class MCPBotIntegration:
             self.openrouter_with_mcp = None
         self.is_initialized = False
         self.logger.info("MCP integration cleaned up")
+
+
 mcp_integration = MCPBotIntegration()
+
+
 async def initialize_mcp_for_bot():
     """Initialize MCP integration for the bot."""
     return await mcp_integration.initialize_mcp()
+
+
 async def get_mcp_tools_for_user(user_id: int) -> List[Dict[str, Any]]:
     """Get available MCP tools for a user."""
     if await mcp_integration.is_mcp_available_for_user(user_id):
         return await mcp_integration.get_available_tools()
     return []
+
+
 async def generate_mcp_response(
     prompt: str, user_id: int, model: Optional[str] = None, **kwargs
 ) -> Optional[str]:
@@ -230,6 +252,8 @@ async def generate_mcp_response(
     return await mcp_integration.generate_response_with_mcp(
         prompt=prompt, user_id=user_id, model=model, **kwargs
     )
+
+
 def is_model_mcp_compatible(model: str) -> bool:
     """
     Check if a model is compatible with MCP integration.

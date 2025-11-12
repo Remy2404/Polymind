@@ -2,6 +2,7 @@
 Group Conversation Manager - Advanced Group Chat Intelligence System
 Handles multi-user conversations with shared memory and intelligent context management
 """
+
 import json
 import logging
 from datetime import datetime, timedelta
@@ -11,11 +12,15 @@ from collections import defaultdict, deque
 import uuid
 from src.database.connection import DatabaseConnection
 from src.utils.config import get_config
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
 @dataclass
 class GroupParticipant:
     """Represents a participant in a group conversation"""
+
     user_id: int
     username: str
     first_name: str
@@ -26,6 +31,7 @@ class GroupParticipant:
     message_count: int = 0
     is_active: bool = True
     preferences: Dict[str, Any] = None
+
     def __post_init__(self):
         if self.join_date is None:
             self.join_date = datetime.now()
@@ -33,9 +39,12 @@ class GroupParticipant:
             self.last_active = datetime.now()
         if self.preferences is None:
             self.preferences = {}
+
+
 @dataclass
 class GroupMessage:
     """Enhanced message structure for group conversations"""
+
     message_id: str
     user_id: int
     username: str
@@ -50,6 +59,7 @@ class GroupMessage:
     importance_score: float = 0.5
     context_relevance: float = 0.5
     metadata: Dict[str, Any] = None
+
     def __post_init__(self):
         if self.mentions is None:
             self.mentions = []
@@ -57,9 +67,12 @@ class GroupMessage:
             self.hashtags = []
         if self.metadata is None:
             self.metadata = {}
+
+
 @dataclass
 class GroupConversationState:
     """Represents the current state of a group conversation"""
+
     group_id: int
     group_name: str
     group_type: str
@@ -74,6 +87,7 @@ class GroupConversationState:
     model_preferences: Dict[str, Any] = None
     auto_responses: bool = True
     smart_notifications: bool = True
+
     def __post_init__(self):
         if self.active_threads is None:
             self.active_threads = []
@@ -95,8 +109,11 @@ class GroupConversationState:
                 "context_window": "adaptive",
                 "response_style": "collaborative",
             }
+
+
 class GroupConversationManager:
     """Advanced Group Conversation Manager with Intelligence Features"""
+
     def __init__(self):
         self.config = get_config()
         self.db_connection = DatabaseConnection()
@@ -153,6 +170,7 @@ class GroupConversationManager:
                 "trouble",
             ],
         }
+
     async def initialize_group(
         self, group_id: int, group_name: str, group_type: str = "group"
     ) -> GroupConversationState:
@@ -174,6 +192,7 @@ class GroupConversationManager:
         except Exception as e:
             logger.error(f"Error initializing group {group_id}: {str(e)}")
             raise
+
     async def add_participant(
         self,
         group_id: int,
@@ -204,6 +223,7 @@ class GroupConversationManager:
                 f"Error adding participant {user_id} to group {group_id}: {str(e)}"
             )
             return False
+
     async def process_group_message(
         self,
         group_id: int,
@@ -242,6 +262,7 @@ class GroupConversationManager:
         except Exception as e:
             logger.error(f"Error processing message in group {group_id}: {str(e)}")
             return None
+
     async def _analyze_message(
         self, message: GroupMessage, group_state: GroupConversationState
     ):
@@ -272,6 +293,7 @@ class GroupConversationManager:
             min(len(message.content) / 100, 0.3),
         ]
         message.importance_score = min(sum(importance_factors), 1.0)
+
     async def get_group_context(
         self, group_id: int, max_messages: int = 20
     ) -> Dict[str, Any]:
@@ -329,6 +351,7 @@ class GroupConversationManager:
         except Exception as e:
             logger.error(f"Error getting group context for {group_id}: {str(e)}")
             return {"error": str(e)}
+
     async def _generate_conversation_summary(
         self, group_state: GroupConversationState
     ) -> str:
@@ -362,6 +385,7 @@ class GroupConversationManager:
         except Exception as e:
             logger.error(f"Error generating conversation summary: {str(e)}")
             return "Unable to generate conversation summary."
+
     async def _update_conversation_context(self, group_id: int, message: GroupMessage):
         """Update conversation context based on new message"""
         try:
@@ -381,6 +405,7 @@ class GroupConversationManager:
             ]
         except Exception as e:
             logger.error(f"Error updating conversation context: {str(e)}")
+
     async def get_participant_insights(
         self, group_id: int, user_id: int
     ) -> Dict[str, Any]:
@@ -422,6 +447,7 @@ class GroupConversationManager:
         except Exception as e:
             logger.error(f"Error getting participant insights: {str(e)}")
             return {"error": str(e)}
+
     async def _create_group_record(
         self, group_id: int, group_name: str, group_type: str
     ):
@@ -446,6 +472,7 @@ class GroupConversationManager:
             )
         except Exception as e:
             logger.error(f"Error creating group record: {str(e)}")
+
     async def _save_participant(self, group_id: int, participant: GroupParticipant):
         """Save participant to database"""
         try:
@@ -473,6 +500,7 @@ class GroupConversationManager:
             )
         except Exception as e:
             logger.error(f"Error saving participant: {str(e)}")
+
     async def _save_message(self, group_id: int, message: GroupMessage):
         """Save message to database"""
         try:
@@ -503,6 +531,7 @@ class GroupConversationManager:
             )
         except Exception as e:
             logger.error(f"Error saving message: {str(e)}")
+
     async def get_group_statistics(self, group_id: int) -> Dict[str, Any]:
         """Get comprehensive group statistics"""
         try:
@@ -542,4 +571,6 @@ class GroupConversationManager:
         except Exception as e:
             logger.error(f"Error getting group statistics: {str(e)}")
             return {"error": str(e)}
+
+
 group_conversation_manager = GroupConversationManager()

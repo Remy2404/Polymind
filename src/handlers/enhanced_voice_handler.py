@@ -1,12 +1,16 @@
 """
 Voice message handler with Faster-Whisper support
 """
+
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from src.services.media.voice_processor import create_voice_processor, SpeechEngine
+
 logger = logging.getLogger(__name__)
 voice_processor = None
+
+
 async def initialize_voice_processor():
     """Initialize the voice processor with Faster-Whisper"""
     global voice_processor
@@ -26,6 +30,8 @@ async def initialize_voice_processor():
         except Exception as e:
             logger.error(f"❌ Failed to initialize voice processor: {e}")
             voice_processor = None
+
+
 async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Enhanced voice message handler with multiple engine support
@@ -86,6 +92,8 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(
             "❌ Voice processing failed. Please try sending a text message instead."
         )
+
+
 async def process_transcribed_text(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, processing_msg
 ):
@@ -95,6 +103,7 @@ async def process_transcribed_text(
     try:
         update.message.text = text
         from src.handlers.text_handlers import handle_text_message
+
         await handle_text_message(update, context, is_voice_transcription=True)
         try:
             await processing_msg.delete()
@@ -107,6 +116,8 @@ async def process_transcribed_text(
             f"_Note: AI processing unavailable - showing transcription only_",
             parse_mode="Markdown",
         )
+
+
 async def handle_voice_settings_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -130,6 +141,7 @@ async def handle_voice_settings_command(
         settings_msg += f"**Recommended for Multilingual:** {info['recommended_engines']['multilingual'].title()}\\n"
         settings_msg += "\\n"
         from src.services.media.voice_config import voice_stats
+
         stats = voice_stats.get_stats()
         if stats["total_processed"] > 0:
             settings_msg += "**Statistics:**\\n"
@@ -141,6 +153,8 @@ async def handle_voice_settings_command(
     except Exception as e:
         logger.error(f"Voice settings error: {e}")
         await update.message.reply_text("❌ Error retrieving voice settings")
+
+
 voice_handlers = {
     "voice_message": handle_voice_message,
     "voice_settings": handle_voice_settings_command,

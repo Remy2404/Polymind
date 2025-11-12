@@ -7,9 +7,12 @@ import logging
 from dotenv import load_dotenv
 import base64
 import time
+
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
 class FluxLoraImageGenerator:
     def __init__(
         self,
@@ -39,6 +42,7 @@ class FluxLoraImageGenerator:
         logger.info(
             f"Initialized FluxLoraImageGenerator with model '{self.model_name}'."
         )
+
     async def init_session(self):
         """Initialize the aiohttp session."""
         if self.session is None:
@@ -47,11 +51,13 @@ class FluxLoraImageGenerator:
                 timeout=aiohttp.ClientTimeout(total=self.timeout),
             )
             logger.info("aiohttp ClientSession initialized.")
+
     async def close(self):
         """Closes the aiohttp session."""
         if self.session:
             await self.session.close()
             logger.info("Closed aiohttp ClientSession.")
+
     async def text_to_image(
         self,
         prompt: str,
@@ -93,6 +99,7 @@ class FluxLoraImageGenerator:
         if valid_images:
             self.cache[prompt] = valid_images
         return valid_images
+
     async def _generate_single_image(
         self,
         prompt: str,
@@ -158,6 +165,7 @@ class FluxLoraImageGenerator:
                 return None
         logger.error("Max retries exceeded. Could not generate image.")
         return None
+
     def _process_response(self, data) -> Image.Image:
         """
         Processes the API response and converts it to a PIL Image.
@@ -181,6 +189,8 @@ class FluxLoraImageGenerator:
         except Exception as e:
             logger.error(f"Error processing response: {e}")
             return None
+
+
 flux_lora_image_generator = FluxLoraImageGenerator(
     model_name="black-forest-labs/FLUX.1-schnell",
     api_key=os.getenv("TEXT_TO_IMAGE_API_KEY"),
@@ -188,6 +198,8 @@ flux_lora_image_generator = FluxLoraImageGenerator(
     max_concurrent_requests=5,
     timeout=300,
 )
+
+
 def shutdown():
     """Safe shutdown function that doesn't rely on event loop"""
     try:

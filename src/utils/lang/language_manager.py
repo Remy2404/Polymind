@@ -2,9 +2,13 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from src.utils.log.telegramlog import telegram_logger
+
 logger = logging.getLogger(__name__)
+
+
 class LanguageManager:
     """Manages language preferences for users"""
+
     def __init__(self):
         self.supported_languages = {
             "en": "English",
@@ -19,6 +23,7 @@ class LanguageManager:
             "th": "Thai (ไทย)",
             "vi": "Vietnamese (Tiếng Việt)",
         }
+
     async def set_language(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:

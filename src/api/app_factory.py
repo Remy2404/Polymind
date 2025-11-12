@@ -9,8 +9,10 @@ from fastapi.responses import JSONResponse
 import src.api.routes.webhook as webhook_module
 import src.api.routes.webapp as webapp_module
 from src.api.routes import health, webhook, webapp
+
 try:
     from src.api.routes import webapp_streaming
+
     STREAMING_AVAILABLE = True
 except ImportError:
     STREAMING_AVAILABLE = False
@@ -21,12 +23,19 @@ from src.bot.telegram_bot import TelegramBot
 from starlette.middleware.cors import CORSMiddleware
 from src.services.mcp_bot_integration import initialize_mcp_for_bot
 from src.database.connection import close_database_connection
+
 logger = logging.getLogger(__name__)
+
+
 def get_telegram_bot_dependency(bot):
     """Creates a dependency that provides access to the TelegramBot instance."""
+
     def _get_bot():
         return bot
+
     return _get_bot
+
+
 @asynccontextmanager
 async def lifespan_context(app: FastAPI, bot: TelegramBot):
     """
@@ -35,12 +44,12 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
     """
     logger.info("Starting application with enhanced monitoring...")
     app.state.start_time = time.time()
-    
+
     try:
         # Initialize MCP for webapp (like Telegram bot)
         logger.info("Initializing MCP integration for webapp...")
         await initialize_mcp_for_bot()
-        
+
         await bot.application.initialize()
         await bot.application.start()
         if os.getenv("WEBHOOK_URL"):
@@ -48,6 +57,7 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
             raw_token = getattr(bot, "token", None)
             if raw_token:
                 from urllib.parse import quote
+
                 url_encoded_token = quote(raw_token, safe="")
                 bot.logger.info(
                     f"Webhook endpoints registered at /webhook/{raw_token} and /webhook/{url_encoded_token}"
@@ -58,6 +68,7 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
                 )
         else:
             from threading import Thread
+
             def _polling():
                 try:
                     bot.application.run_polling()
@@ -65,6 +76,7 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
                     logger.info("Polling thread cancelled during shutdown")
                 except Exception as e:
                     logger.error(f"Error in polling thread: {e}")
+
             polling_thread = Thread(target=_polling, daemon=True)
             polling_thread.start()
             bot.logger.info(
@@ -84,55 +96,71 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
                 await asyncio.wait_for(bot.application.stop(), timeout=shutdown_timeout)
                 logger.info("Application stop completed")
             except asyncio.TimeoutError:
-                logger.warning(f"Application stop did not complete within {shutdown_timeout} seconds")
+                logger.warning(
+                    f"Application stop did not complete within {shutdown_timeout} seconds"
+                )
             except asyncio.CancelledError:
-                logger.debug("Shutdown interrupted by cancellation (normal during container shutdown)")
+                logger.debug(
+                    "Shutdown interrupted by cancellation (normal during container shutdown)"
+                )
             except Exception as e:
                 logger.warning(f"Error stopping application: {e}")
-            
+
             try:
-                await asyncio.wait_for(bot.application.shutdown(), timeout=shutdown_timeout)
+                await asyncio.wait_for(
+                    bot.application.shutdown(), timeout=shutdown_timeout
+                )
                 logger.info("Application shutdown completed successfully")
             except asyncio.TimeoutError:
-                logger.warning(f"Application shutdown did not complete within {shutdown_timeout} seconds")
+                logger.warning(
+                    f"Application shutdown did not complete within {shutdown_timeout} seconds"
+                )
             except asyncio.CancelledError:
-                logger.debug("Shutdown interrupted by cancellation (normal during container shutdown)")
+                logger.debug(
+                    "Shutdown interrupted by cancellation (normal during container shutdown)"
+                )
             except Exception as e:
                 logger.warning(f"Error during shutdown: {e}")
-            
+
             # Close MongoDB connection to prevent background thread errors
             try:
-                if hasattr(bot, 'client') and bot.client is not None:
+                if hasattr(bot, "client") and bot.client is not None:
                     close_database_connection(bot.client)
                     logger.info("MongoDB connection closed successfully")
             except Exception as e:
                 logger.warning(f"Error closing MongoDB connection: {e}")
-            
+
         except asyncio.CancelledError:
             # Suppress CancelledError during shutdown - this is normal
             logger.debug("Application shutdown cancelled (normal)")
         except Exception as e:
-            logger.error(f"Unexpected error during application shutdown: {e}", exc_info=True)
+            logger.error(
+                f"Unexpected error during application shutdown: {e}", exc_info=True
+            )
+
+
 def create_application():
     os.environ["DEV_SERVER"] = "uvicorn"
     bot = TelegramBot()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         async with lifespan_context(app, bot):
             yield
+
     app = FastAPI(lifespan=lifespan)
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(RequestTrackingMiddleware)
-    
+
     # Add rate limiting middleware
     app.add_middleware(
         RateLimitMiddleware,
         default_requests_per_minute=60,
         streaming_requests_per_minute=20,
         auth_requests_per_minute=10,
-        enable_logging=True
+        enable_logging=True,
     )
-    
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -142,6 +170,7 @@ def create_application():
     )
     webhook_module._BOT_INSTANCE = bot
     webapp_module.set_bot_instance(bot)
+
     @app.exception_handler(webhook.WebhookException)
     async def webhook_exception_handler(
         request: Request, exc: webhook.WebhookException
@@ -153,19 +182,24 @@ def create_application():
                 "request_id": getattr(request.state, "request_id", "unknown"),
             },
         )
+
     app.include_router(health.router)
     app.include_router(webhook.router)
     app.include_router(webapp.router)
-    
+
     # Include streaming routes if available
     if STREAMING_AVAILABLE:
         app.include_router(webapp_streaming.router)
         logger.info("Streaming endpoints enabled at /webapp/chat/stream")
-    
+
     # Root route for API status
     @app.get("/")
     async def root():
-        return {"message": "Polymind API is running", "version": "1.0.0", "status": "active"}
-    
+        return {
+            "message": "Polymind API is running",
+            "version": "1.0.0",
+            "status": "active",
+        }
+
     app.state.bot = bot
     return app

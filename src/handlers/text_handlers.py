@@ -25,6 +25,8 @@ from src.services.mcp_bot_integration import (
 )
 from src.utils.bot_username_helper import BotUsernameHelper
 from .document_sender import DocumentSender
+
+
 class TextHandler:
     def __init__(
         self,
@@ -55,17 +57,20 @@ class TextHandler:
         self.model_fallback_handler = ModelFallbackHandler(self.response_formatter)
         self.intent_detector = EnhancedIntentDetector()
         self.user_model_manager = None
-        
+
         # Initialize document sender for MCP-generated documents
         self.document_sender = DocumentSender()
+
     class MockMessage:
         def __init__(self, bot, chat_id):
             self.bot = bot
             self.chat_id = chat_id
+
         async def reply_text(self, text, **kwargs):
             return await self.bot.send_message(
                 chat_id=self.chat_id, text=text, **kwargs
             )
+
     async def handle_text_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -85,13 +90,15 @@ class TextHandler:
         if message_text and not message_text.startswith("/"):
             context.user_data["user_questions"].append(message_text)
             # Limit to last 10 questions
-            context.user_data["user_questions"] = context.user_data["user_questions"][-10:]
+            context.user_data["user_questions"] = context.user_data["user_questions"][
+                -10:
+            ]
         # --- NEW: Detect "previous question" intent ---
         if self._is_previous_question_intent(message_text):
             prev_questions = context.user_data.get("user_questions", [])
             if prev_questions:
                 response = "Here are your last questions:\n\n" + "\n".join(
-                    [f"{i+1}. {q}" for i, q in enumerate(prev_questions[:-1])]
+                    [f"{i + 1}. {q}" for i, q in enumerate(prev_questions[:-1])]
                 )
             else:
                 response = "I don't have any previous questions from you yet."
@@ -202,6 +209,7 @@ class TextHandler:
             await self.response_formatter.safe_send_message(
                 update.message, "Sorry, I encountered an error. Please try again later."
             )
+
     async def _handle_edited_message(self, update, context):
         """Handle when a user edits their previous message"""
         original_message_id = update.edited_message.message_id
@@ -215,6 +223,7 @@ class TextHandler:
                     except Exception as e:
                         self.logger.error(f"Error deleting old message: {str(e)}")
             del context.user_data["bot_messages"][original_message_id]
+
     async def _extract_media_files(self, update, context):
         """Extract media files from the update"""
         has_attached_media = False
@@ -276,34 +285,41 @@ class TextHandler:
                 document = update.message.document
                 document_file = await context.bot.get_file(document.file_id)
                 document_bytes = await document_file.download_as_bytearray()
-                
+
                 # Debug logging for MIME type detection
                 self.logger.info(f"Document filename: {document.file_name}")
-                file_ext = os.path.splitext(document.file_name)[1].lower() if document.file_name else ""
+                file_ext = (
+                    os.path.splitext(document.file_name)[1].lower()
+                    if document.file_name
+                    else ""
+                )
                 self.logger.info(f"Extracted file extension: '{file_ext}'")
                 mime_type = MediaUtilities.get_mime_type(file_ext)
                 self.logger.info(f"MIME type from extension: {mime_type}")
-                
+
                 # Fallback to content-based detection if extension detection fails
                 if mime_type == "application/octet-stream" and document_bytes:
-                    content_mime = MediaUtilities.detect_mime_from_content(document_bytes[:50])
+                    content_mime = MediaUtilities.detect_mime_from_content(
+                        document_bytes[:50]
+                    )
                     if content_mime != "application/octet-stream":
                         mime_type = content_mime
                         self.logger.info(f"MIME type from content: {mime_type}")
-                
+
                 self.logger.info(f"Final MIME type: {mime_type}")
-                
+
                 # Special handling for image documents
                 if MediaUtilities.is_image_file(file_ext):
                     self.logger.info("Document is an image, reclassifying as photo")
                     media_type = "photo"  # Reclassify image documents as photos
-                
+
                 media_files.append(
                     {
                         "type": media_type,
                         "data": io.BytesIO(document_bytes),
                         "mime": mime_type,
-                        "filename": document.file_name or f"document_{document.file_id}",
+                        "filename": document.file_name
+                        or f"document_{document.file_id}",
                     }
                 )
             elif update.message.media_group_id:
@@ -329,18 +345,27 @@ class TextHandler:
                         document = update.message.document
                         document_file = await context.bot.get_file(document.file_id)
                         document_bytes = await document_file.download_as_bytearray()
-                        file_ext = os.path.splitext(document.file_name)[1].lower() if document.file_name else ""
+                        file_ext = (
+                            os.path.splitext(document.file_name)[1].lower()
+                            if document.file_name
+                            else ""
+                        )
                         mime_type = MediaUtilities.get_mime_type(file_ext)
-                        
+
                         # Special handling for image documents in media groups
-                        doc_type = "photo" if MediaUtilities.is_image_file(file_ext) else "document"
-                        
+                        doc_type = (
+                            "photo"
+                            if MediaUtilities.is_image_file(file_ext)
+                            else "document"
+                        )
+
                         context.bot_data["media_groups"][media_group_id].append(
                             {
                                 "type": doc_type,
                                 "data": io.BytesIO(document_bytes),
                                 "mime": mime_type,
-                                "filename": document.file_name or f"document_{document.file_id}",
+                                "filename": document.file_name
+                                or f"document_{document.file_id}",
                             }
                         )
                     return False, [], None
@@ -362,18 +387,27 @@ class TextHandler:
                         document = update.message.document
                         document_file = await context.bot.get_file(document.file_id)
                         document_bytes = await document_file.download_as_bytearray()
-                        file_ext = os.path.splitext(document.file_name)[1].lower() if document.file_name else ""
+                        file_ext = (
+                            os.path.splitext(document.file_name)[1].lower()
+                            if document.file_name
+                            else ""
+                        )
                         mime_type = MediaUtilities.get_mime_type(file_ext)
-                        
+
                         # Special handling for image documents in media groups (initialization)
-                        doc_type = "photo" if MediaUtilities.is_image_file(file_ext) else "document"
-                        
+                        doc_type = (
+                            "photo"
+                            if MediaUtilities.is_image_file(file_ext)
+                            else "document"
+                        )
+
                         context.bot_data["media_groups"][media_group_id].append(
                             {
                                 "type": doc_type,
                                 "data": io.BytesIO(document_bytes),
                                 "mime": mime_type,
-                                "filename": document.file_name or f"document_{document.file_id}",
+                                "filename": document.file_name
+                                or f"document_{document.file_id}",
                             }
                         )
                     asyncio.create_task(
@@ -387,6 +421,7 @@ class TextHandler:
                     )
                     return False, [], None
         return has_attached_media, media_files, media_type
+
     async def _process_complete_media_group(
         self, media_group_id, chat_id, user_id, caption, context
     ):
@@ -405,12 +440,18 @@ class TextHandler:
                     chat_id=chat_id, text="Processing multiple files... 🧠"
                 )
                 try:
-                    from src.services.user_preferences_manager import UserPreferencesManager
+                    from src.services.user_preferences_manager import (
+                        UserPreferencesManager,
+                    )
+
                     preferences_manager = UserPreferencesManager(self.user_data_manager)
                     preferred_model = (
                         await preferences_manager.get_user_model_preference(user_id)
                     )
-                    from src.services.media.multi_file_processor import MultiFileProcessor
+                    from src.services.media.multi_file_processor import (
+                        MultiFileProcessor,
+                    )
+
                     multi_processor = MultiFileProcessor(self.gemini_api)
                     result = await multi_processor.process_multiple_files(
                         media_files, caption or "Analyze these files"
@@ -467,6 +508,7 @@ class TextHandler:
                         chat_id=chat_id,
                         text="Sorry, there was an error processing your files. Please try again later.",
                     )
+
     async def _handle_media_analysis(
         self,
         update,
@@ -481,6 +523,7 @@ class TextHandler:
         """Handle analysis of media files"""
         if len(media_files) > 1:
             from src.services.media.multi_file_processor import MultiFileProcessor
+
             multi_processor = MultiFileProcessor(self.gemini_api)
             result = await multi_processor.process_multiple_files(
                 media_files, message_text or "Analyze these files"
@@ -529,13 +572,13 @@ class TextHandler:
                         response,
                         preferred_model,
                     )
-                    
-                    # Also save to main conversation history for follow-up questions  
+
+                    # Also save to main conversation history for follow-up questions
                     await self.conversation_manager.save_message_pair(
                         user_id,
                         message_text or "[Multiple files uploaded]",
                         response,
-                        preferred_model
+                        preferred_model,
                     )
                     return
             await update.message.reply_text(
@@ -567,15 +610,15 @@ class TextHandler:
             await self.conversation_manager.save_media_interaction(
                 user_id, media_type, media_description, result, preferred_model
             )
-            
+
             # Also save to main conversation history for follow-up questions
             await self.conversation_manager.save_message_pair(
-                user_id, 
-                message_text or f"[{media_type.capitalize()} uploaded]", 
-                result, 
-                preferred_model
+                user_id,
+                message_text or f"[{media_type.capitalize()} uploaded]",
+                result,
+                preferred_model,
             )
-            
+
             if self.user_data_manager:
                 # Map media_type to the correct stat parameter
                 stat_param = "image" if media_type == "photo" else media_type
@@ -585,6 +628,7 @@ class TextHandler:
                 update.message,
                 "Sorry, I couldn't analyze the content you provided. Please try again.",
             )
+
     async def _send_appropriate_chat_action(
         self, update, context, has_attached_media, media_type
     ):
@@ -602,13 +646,16 @@ class TextHandler:
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id, action=action
         )
+
     async def _get_user_preferred_model(self, user_id):
         """Get user's preferred model"""
         from src.services.user_preferences_manager import UserPreferencesManager
+
         preferences_manager = UserPreferencesManager(self.user_data_manager)
         preferred_model = await preferences_manager.get_user_model_preference(user_id)
         self.logger.info(f"Preferred model for user {user_id}: {preferred_model}")
         return preferred_model
+
     async def _handle_text_conversation(
         self,
         update,
@@ -628,28 +675,32 @@ class TextHandler:
             enhanced_prompt = self.prompt_formatter.add_context(
                 message_text, "quote", quoted_text
             )
-        
+
         # Get intelligent context including recent media interactions and conversation history
-        intelligent_context = await self.conversation_manager.get_intelligent_context(user_id, message_text)
-        
+        intelligent_context = await self.conversation_manager.get_intelligent_context(
+            user_id, message_text
+        )
+
         # Format context if available
         if intelligent_context and intelligent_context.get("relevant_memory"):
             # Extract relevant text from context data
             context_texts = []
             for item in intelligent_context["relevant_memory"]:
                 if isinstance(item, dict):
-                    if 'content' in item:
-                        context_texts.append(item['content'])
-                    elif 'assistant_message' in item:
-                        context_texts.append(item['assistant_message'])
-                    elif 'user_message' in item:
+                    if "content" in item:
+                        context_texts.append(item["content"])
+                    elif "assistant_message" in item:
+                        context_texts.append(item["assistant_message"])
+                    elif "user_message" in item:
                         context_texts.append(f"Previous: {item['user_message']}")
                 elif isinstance(item, str):
                     context_texts.append(item)
-            
+
             if context_texts:
                 formatted_context = "\n".join(context_texts)
-                self.logger.info(f"Adding intelligent context for user {user_id} (length: {len(formatted_context)})")
+                self.logger.info(
+                    f"Adding intelligent context for user {user_id} (length: {len(formatted_context)})"
+                )
                 enhanced_prompt = self.prompt_formatter.add_context(
                     enhanced_prompt, "context", formatted_context
                 )
@@ -684,7 +735,11 @@ class TextHandler:
         is_long_form_request = any(
             indicator in message_text.lower() for indicator in long_form_indicators
         )
-        from src.services.model_handlers.model_configs import ModelConfigurations, Provider
+        from src.services.model_handlers.model_configs import (
+            ModelConfigurations,
+            Provider,
+        )
+
         model_config = ModelConfigurations.get_all_models().get(preferred_model)
         # Determine max_tokens based on model and request type
         # Different models have different context length limits
@@ -697,11 +752,11 @@ class TextHandler:
         else:
             # Fallback to conservative default
             base_max_tokens = 6000
-        
+
         # Adjust max_tokens based on request type and provider limits
         # DeepSeek has 8193 token limit (input + output combined)
         is_deepseek = model_config and model_config.provider == Provider.DEEPSEEK
-        
+
         if is_long_form_request:
             # For DeepSeek, cap at 7500 to stay within 8193 total limit
             # This leaves ~693 tokens minimum for input context
@@ -775,12 +830,12 @@ class TextHandler:
                     self.logger.info(f"Using MCP-enhanced response for user {user_id}")
                     response = mcp_response
                     actual_model_used = preferred_model
-    
+
                     await self._handle_mcp_document_output(
                         context=context,
                         user_id=user_id,
                         message=message,
-                        mcp_response=mcp_response
+                        mcp_response=mcp_response,
                     )
                 else:
                     self.logger.debug(
@@ -905,6 +960,7 @@ class TextHandler:
             else:
                 error_message = "❌ Sorry, there was an error processing your request. Please try again or rephrase your question."
             await self.response_formatter.safe_send_message(message, error_message)
+
     async def _send_formatted_response(
         self,
         update,
@@ -958,6 +1014,7 @@ class TextHandler:
             context.user_data["bot_messages"][message.message_id] = [
                 msg.message_id for msg in sent_messages
             ]
+
     async def _load_user_context(self, user_id: int, update: Update) -> str:
         """Load user context including name and profile information from MongoDB."""
         try:
@@ -1009,6 +1066,7 @@ class TextHandler:
         except Exception as e:
             self.logger.error(f"Error loading user context: {e}")
             return ""
+
     def _clean_response_content(self, content: str) -> str:
         """
         Clean response content by removing thinking tags and tool calls.
@@ -1020,6 +1078,7 @@ class TextHandler:
         if not content:
             return content
         import re
+
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
         content = re.sub(r"<tool_call>.*?</tool_call>", "", content, flags=re.DOTALL)
         content = re.sub(r"<[^>]+>.*?</[^>]+>", "", content, flags=re.DOTALL)
@@ -1048,12 +1107,12 @@ class TextHandler:
         context: ContextTypes.DEFAULT_TYPE,
         user_id: int,
         message,
-        mcp_response: str
+        mcp_response: str,
     ) -> None:
         """
         Handle document outputs from MCP tools (e.g., office-word-mcp-server).
         Detects if documents were created and sends them to the user.
-        
+
         Args:
             context: Telegram context
             user_id: User ID
@@ -1063,56 +1122,64 @@ class TextHandler:
         try:
             # Check if the response indicates document creation
             document_indicators = [
-                'document created',
-                'saved to',
-                'file created',
-                '.docx',
-                '.pdf',
-                '.xlsx',
-                '.pptx'
+                "document created",
+                "saved to",
+                "file created",
+                ".docx",
+                ".pdf",
+                ".xlsx",
+                ".pptx",
             ]
-            
-            if not any(indicator in mcp_response.lower() for indicator in document_indicators):
-                self.logger.debug("No document creation indicators found in MCP response")
+
+            if not any(
+                indicator in mcp_response.lower() for indicator in document_indicators
+            ):
+                self.logger.debug(
+                    "No document creation indicators found in MCP response"
+                )
                 return
-            
+
             # Search for recently created documents (within last 5 minutes)
             recent_documents = self.document_sender.find_recent_documents(
-                directory=".",
-                max_age_seconds=300
+                directory=".", max_age_seconds=300
             )
-            
+
             if not recent_documents:
-                self.logger.info("No recent documents found despite document creation indicators")
+                self.logger.info(
+                    "No recent documents found despite document creation indicators"
+                )
                 return
-            
+
             # Send the most recent document
             document_path = recent_documents[0]
-            self.logger.info(f"Found recent document for user {user_id}: {document_path}")
-            
+            self.logger.info(
+                f"Found recent document for user {user_id}: {document_path}"
+            )
+
             # Prepare caption from document name
             import os
+
             file_name = os.path.basename(document_path)
             caption = f"📄 {file_name}"
-            
+
             # Send document to user
             success = await self.document_sender.send_document(
                 bot=context.bot,
                 chat_id=message.chat_id,
                 file_path=document_path,
                 caption=caption,
-                reply_to_message_id=message.message_id
+                reply_to_message_id=message.message_id,
             )
-            
+
             if success:
-                self.logger.info(f"Successfully sent document {document_path} to user {user_id}")
-                telegram_logger.log_message(
-                    f"Document sent: {file_name}",
-                    user_id
+                self.logger.info(
+                    f"Successfully sent document {document_path} to user {user_id}"
                 )
+                telegram_logger.log_message(f"Document sent: {file_name}", user_id)
             else:
-                self.logger.warning(f"Failed to send document {document_path} to user {user_id}")
-                
+                self.logger.warning(
+                    f"Failed to send document {document_path} to user {user_id}"
+                )
+
         except Exception as e:
             self.logger.error(f"Error handling MCP document output: {str(e)}")
-

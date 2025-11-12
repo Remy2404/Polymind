@@ -2,7 +2,10 @@ import logging
 from typing import Dict, Any, List, Optional, Set
 from dataclasses import dataclass, field
 from enum import Enum
+
 logger = logging.getLogger(__name__)
+
+
 class ModelCapability(Enum):
     TEXT = "text"
     IMAGES = "images"
@@ -11,9 +14,12 @@ class ModelCapability(Enum):
     DOCUMENTS = "documents"
     CODE = "code"
     FUNCTION_CALLING = "function_calling"
+
+
 @dataclass
 class ModelConfig:
     """Configuration for an AI model."""
+
     model_id: str
     display_name: str
     provider: str
@@ -26,19 +32,24 @@ class ModelConfig:
     default_params: Dict[str, Any] = field(default_factory=dict)
     indicator_emoji: str = "🤖"
     timeout_seconds: int = 60
+
     def get_model_indicator(self) -> str:
         """Get a formatted model indicator string."""
         return f"{self.indicator_emoji} {self.display_name}"
+
+
 class ModelRegistry:
     """
     Central registry for managing available AI models.
     Provides methods for model registration, lookup, and capability-based filtering.
     """
+
     def __init__(self):
         """Initialize the ModelRegistry with an empty model collection."""
         self.models: Dict[str, ModelConfig] = {}
         self.default_model_id = "gemini"
         logger.info("ModelRegistry initialized")
+
     def register_model(self, model_config: ModelConfig) -> None:
         """
         Register a new AI model with the system.
@@ -53,6 +64,7 @@ class ModelRegistry:
         logger.info(
             f"Registered model: {model_config.model_id} ({model_config.display_name})"
         )
+
     def register_models(self, model_configs: List[ModelConfig]) -> None:
         """
         Register multiple AI models at once.
@@ -61,6 +73,7 @@ class ModelRegistry:
         """
         for config in model_configs:
             self.register_model(config)
+
     def get_model_config(self, model_id: str) -> Optional[ModelConfig]:
         """
         Get the configuration for a specific model.
@@ -70,6 +83,7 @@ class ModelRegistry:
             The model configuration if found, None otherwise.
         """
         return self.models.get(model_id)
+
     def get_all_models(self) -> Dict[str, ModelConfig]:
         """
         Get all registered models.
@@ -77,6 +91,7 @@ class ModelRegistry:
             Dictionary of model_id -> ModelConfig
         """
         return self.models
+
     def get_models_with_capability(
         self, capability: ModelCapability
     ) -> List[ModelConfig]:
@@ -90,6 +105,7 @@ class ModelRegistry:
         return [
             model for model in self.models.values() if capability in model.capabilities
         ]
+
     def set_default_model(self, model_id: str) -> bool:
         """
         Set the default model for new users.
@@ -104,11 +120,14 @@ class ModelRegistry:
         self.default_model_id = model_id
         logger.info(f"Set default model to: {model_id}")
         return True
+
+
 class UserModelManager:
     """
     Manages user model preferences and provides a clean interface
     for model selection state.
     """
+
     def __init__(self, model_registry: ModelRegistry):
         """
         Initialize UserModelManager with a reference to the central model registry.
@@ -119,6 +138,7 @@ class UserModelManager:
         self.user_model_selections: Dict[int, str] = {}
         self.user_model_history: Dict[int, List[str]] = {}
         logger.info("UserModelManager initialized")
+
     def set_user_model(self, user_id: int, model_id: str) -> bool:
         """
         Set a user's selected model.
@@ -149,6 +169,7 @@ class UserModelManager:
         self.user_model_selections[user_id] = model_id
         logger.info(f"User {user_id} selected model: {model_id}")
         return True
+
     def get_user_model(self, user_id: int) -> str:
         """
         Get a user's currently selected model ID.
@@ -160,6 +181,7 @@ class UserModelManager:
         return self.user_model_selections.get(
             user_id, self.model_registry.default_model_id
         )
+
     def get_user_model_config(self, user_id: int) -> ModelConfig:
         """
         Get the ModelConfig for a user's currently selected model.
@@ -180,6 +202,7 @@ class UserModelManager:
                 logger.error(f"Default model {model_id} not found")
                 raise ValueError(f"Default model {model_id} not found")
         return model_config
+
     def get_previous_model(self, user_id: int) -> Optional[str]:
         """
         Get the user's previously selected model ID.
@@ -194,6 +217,7 @@ class UserModelManager:
         ):
             return None
         return self.user_model_history[user_id][-1]
+
     def clear_history(self, user_id: int) -> None:
         """
         Clear the model selection history for a user.
@@ -203,4 +227,6 @@ class UserModelManager:
         if user_id in self.user_model_history:
             self.user_model_history[user_id] = []
             logger.info(f"Cleared model history for user {user_id}")
+
+
 model_registry = ModelRegistry()

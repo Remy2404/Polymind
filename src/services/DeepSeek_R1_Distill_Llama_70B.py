@@ -5,11 +5,15 @@ import re
 from typing import List, Dict, Optional, AsyncGenerator
 from dotenv import load_dotenv
 from together import Together
+
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
 class DeepSeekLLM:
     """Handler for DeepSeek LLM using the Together AI API."""
+
     def __init__(
         self,
         model_name: str = "deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
@@ -24,12 +28,14 @@ class DeepSeekLLM:
         self.client = Together(api_key=self.api_key) if self.api_key else None
         self.recent_conversations = {}
         logger.info(f"Initialized DeepSeekLLM with model '{self.model_name}'")
+
     def _remove_thinking_tags(self, text: str) -> str:
         """Remove <think>...</think> tags from the model output."""
         pattern = r"<think>.*?</think>"
         cleaned_text = re.sub(pattern, "", text, flags=re.DOTALL)
         cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text)
         return cleaned_text.strip()
+
     def _add_anti_thinking_instruction(
         self, messages: List[Dict[str, str]]
     ) -> List[Dict[str, str]]:
@@ -45,14 +51,15 @@ class DeepSeekLLM:
             "Provide your answer directly without showing your reasoning process."
         )
         if system_message_idx >= 0:
-            modified_messages[system_message_idx][
-                "content"
-            ] += f"\n\n{anti_thinking_instruction}"
+            modified_messages[system_message_idx]["content"] += (
+                f"\n\n{anti_thinking_instruction}"
+            )
         else:
             modified_messages.insert(
                 0, {"role": "system", "content": anti_thinking_instruction}
             )
         return modified_messages
+
     async def generate_text(
         self,
         messages: List[Dict[str, str]],
@@ -67,6 +74,7 @@ class DeepSeekLLM:
             max_tokens=max_tokens,
         )
         return response
+
     async def generate_chat_response(
         self,
         messages: List[Dict[str, str]],
@@ -103,6 +111,7 @@ class DeepSeekLLM:
             except Exception as e:
                 logger.error(f"Error generating text with DeepSeek LLM: {str(e)}")
                 return None
+
     async def stream_chat_response(
         self,
         messages: List[Dict[str, str]],
@@ -162,6 +171,7 @@ class DeepSeekLLM:
             except Exception as e:
                 logger.error(f"Error streaming text with DeepSeek LLM: {str(e)}")
                 yield f"Error: {str(e)}"
+
     async def generate_response(
         self,
         prompt: str,
@@ -190,18 +200,21 @@ class DeepSeekLLM:
             temperature=temperature,
             max_tokens=max_tokens,
         )
+
     def get_model_indicator(self, model: str = None) -> str:
         """Get the model indicator emoji and name for DeepSeek models."""
         if not model:
             return "🧠 DeepSeek"
-            
+
         # Get model configuration for display name
         from src.services.model_handlers.model_configs import ModelConfigurations
+
         model_config = ModelConfigurations.get_all_models().get(model)
         if model_config:
             return f"🧠 {model_config.display_name}"
         else:
             return f"🧠 {model}"
+
     def get_system_message(self) -> str:
         """
         Return the system message for DeepSeek models.

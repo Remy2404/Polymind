@@ -3,16 +3,22 @@ Tool Calling Support Detection for AI Models
 This module provides functionality to identify which AI models support tool calling/function calling
 and provides utilities for filtering and displaying tool-call capable models.
 """
+
 import sys
 import logging
 from typing import Dict, Optional
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
 from src.services.model_handlers.model_configs import ModelConfigurations
+
 logger = logging.getLogger(__name__)
+
+
 class ToolCallSupportDetector:
     """Detects which AI models support tool calling/function calling."""
+
     def __init__(self, api_manager: Optional[SuperSimpleAPIManager] = None):
         """
         Initialize the tool call support detector.
@@ -21,9 +27,11 @@ class ToolCallSupportDetector:
         """
         self.api_manager = api_manager or SuperSimpleAPIManager()
         self._tool_call_models = None
+
     def reset_cache(self):
         """Reset the cached tool call models to force recalculation."""
         self._tool_call_models = None
+
     def get_tool_call_supported_models(self) -> Dict[str, Dict]:
         """
         Get all models that support tool calling.
@@ -41,6 +49,7 @@ class ToolCallSupportDetector:
                 tool_call_models[model_id] = config
         self._tool_call_models = tool_call_models
         return tool_call_models
+
     def _supports_tool_calling(self, model_id: str, config) -> bool:
         """
         Determine if a model supports tool calling based on supported_parameters.
@@ -80,6 +89,7 @@ class ToolCallSupportDetector:
             ):
                 return True
         return False
+
     def get_tool_call_models_by_category(self) -> Dict[str, Dict]:
         """
         Get tool-call supported models organized by category.
@@ -101,6 +111,7 @@ class ToolCallSupportDetector:
                     "models": category_models,
                 }
         return filtered_categories
+
     def get_tool_call_statistics(self) -> Dict[str, int]:
         """
         Get statistics about tool-call supported models.
@@ -118,6 +129,7 @@ class ToolCallSupportDetector:
                 else 0
             ),
         }
+
     def print_tool_call_models_report(self) -> str:
         """
         Generate a formatted report of tool-call supported models.
@@ -158,9 +170,12 @@ class ToolCallSupportDetector:
             ]
         )
         return "\n".join(report_lines)
+
+
 def main():
     """Main function for command-line usage."""
     import argparse
+
     parser = argparse.ArgumentParser(description="Tool Calling Support Detector")
     parser.add_argument(
         "--report", action="store_true", help="Generate detailed report"
@@ -191,5 +206,7 @@ def main():
             print(f"Category '{args.category}' not found")
     else:
         print(detector.print_tool_call_models_report())
+
+
 if __name__ == "__main__":
     main()

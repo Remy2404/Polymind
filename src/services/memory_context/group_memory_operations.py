@@ -2,17 +2,23 @@
 Group Memory Operations Module
 Handles group-specific memory operations and context management
 """
+
 import logging
 import time
 import re
 from typing import Dict, List, Any, Tuple
 from collections import defaultdict
+
 logger = logging.getLogger(__name__)
+
+
 class GroupMemoryOperations:
     """Handles group-specific memory operations and context management"""
+
     def __init__(self):
         self.group_contexts = {}
         self.shared_knowledge = {}
+
     async def get_group_participants(
         self, group_id: str, group_memory_cache: Dict
     ) -> List[str]:
@@ -24,6 +30,7 @@ class GroupMemoryOperations:
             if message.get("user_id"):
                 participants.add(message["user_id"])
         return list(participants)
+
     async def get_group_activity_summary(
         self, group_id: str, group_memory_cache: Dict, days: int = 7
     ) -> Dict[str, Any]:
@@ -57,6 +64,7 @@ class GroupMemoryOperations:
                 else None
             ),
         }
+
     async def update_group_context(self, group_id: str, message: Dict[str, Any]):
         """Update active group conversation context"""
         if group_id not in self.group_contexts:
@@ -82,6 +90,7 @@ class GroupMemoryOperations:
             context["current_topic"] = "help_request"
         else:
             context["current_topic"] = "general_chat"
+
     async def update_shared_knowledge(self, group_id: str, content: str):
         """Update shared knowledge base for the group"""
         if group_id not in self.shared_knowledge:
@@ -112,6 +121,7 @@ class GroupMemoryOperations:
                     reverse=True,
                 )
                 self.shared_knowledge[group_id] = self.shared_knowledge[group_id][:100]
+
     async def get_shared_knowledge(
         self, group_id: str, query: str
     ) -> List[Tuple[int, float]]:
@@ -129,12 +139,15 @@ class GroupMemoryOperations:
                 if similarity > 0.2:
                     relevant_knowledge.append((-(idx + 1000), similarity))
         return relevant_knowledge
+
     def get_group_contexts(self) -> Dict[str, Any]:
         """Get all group contexts"""
         return self.group_contexts
+
     def get_shared_knowledge_for_group(self, group_id: str) -> List[Dict[str, Any]]:
         """Get all shared knowledge for a specific group"""
         return self.shared_knowledge.get(group_id, [])
+
     def clear_group_data(self, group_id: str):
         """Clear all group-specific data"""
         self.group_contexts.pop(group_id, None)

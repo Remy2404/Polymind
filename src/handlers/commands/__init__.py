@@ -8,6 +8,7 @@ from .open_web_app import OpenWebAppCommands
 from .telegram_poll import PollCommands
 from .group_commands import GroupCommands
 from .mcp_commands import MCPCommands
+
 __all__ = [
     "BasicCommands",
     "ImageCommands",

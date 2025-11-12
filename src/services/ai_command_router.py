@@ -5,6 +5,7 @@ Designed specifically for resource-constrained environments:
 - NO spaCy or heavy NLP dependencies
 - Uses only fast regex patterns for maximum performance
 """
+
 import logging
 import re
 from typing import Dict, Any, Tuple, List
@@ -12,8 +13,11 @@ from enum import Enum
 from dataclasses import dataclass
 from telegram import Update
 from telegram.ext import ContextTypes
+
+
 class CommandIntent(Enum):
     """Streamlined command intents for production"""
+
     GENERATE_DOCUMENT = "generate_document"
     GENERATE_IMAGE = "generate_image"
     GENERATE_VIDEO = "generate_video"
@@ -32,20 +36,27 @@ class CommandIntent(Enum):
     MULTILINGUAL = "multilingual"
     VISION = "vision"
     UNKNOWN = "unknown"
+
+
 @dataclass
 class IntentResult:
     """Lightweight result structure for intent detection"""
+
     intent: CommandIntent
     confidence: float
     recommended_models: List[str]
     reasoning: str
     detected_entities: List[Dict[str, Any]]
     linguistic_features: Dict[str, Any]
+
+
 class EnhancedIntentDetector:
     """
     Uses ONLY fast regex patterns - zero NLP overhead"""
+
     def __init__(self):
         import gc
+
         gc.set_threshold(50, 5, 5)
         gc.collect()
         self.logger = logging.getLogger(__name__)
@@ -127,6 +138,7 @@ class EnhancedIntentDetector:
                 "priority": 2,
             },
         }
+
     async def detect_intent(self, text: str) -> IntentResult:
         """
         Ultra-fast intent detection using only regex patterns
@@ -144,6 +156,7 @@ class EnhancedIntentDetector:
                 detected_entities=[],
                 linguistic_features={},
             )
+
     def _detect_intent_fast(self, text: str) -> IntentResult:
         """Ultra-fast regex-based intent detection - zero overhead"""
         text_lower = text.lower().strip()
@@ -184,6 +197,7 @@ class EnhancedIntentDetector:
             detected_entities=[],
             linguistic_features={},
         )
+
     def _get_recommended_models(self, intent: CommandIntent) -> List[str]:
         """Get recommended models for each intent type - minimal memory usage"""
         model_map = {
@@ -198,28 +212,35 @@ class EnhancedIntentDetector:
             CommandIntent.SWITCH_MODEL: [],
         }
         return model_map.get(intent, ["deepseek-v3-base"])
+
+
 class AICommandRouter:
     """
     Ultra-lightweight AI command router for production
     Optimized for resource-constrained environments"""
+
     def __init__(self, command_handlers, gemini_api=None):
         import gc
+
         gc.collect()
         self.intent_detector = EnhancedIntentDetector()
         self.command_handlers = command_handlers
         self.gemini_api = gemini_api
         self.logger = logging.getLogger(__name__)
+
     async def detect_intent(
         self, message: str, has_attached_media: bool = False
     ) -> Tuple[CommandIntent, float]:
         """Detect intent and return tuple for backward compatibility"""
         result = await self.intent_detector.detect_intent(message)
         return result.intent, result.confidence
+
     async def detect_intent_with_recommendations(
         self, message: str, has_attached_media: bool = False
     ) -> IntentResult:
         """Detect intent with model recommendations"""
         return await self.intent_detector.detect_intent(message)
+
     async def route_command(
         self,
         update: Update,
@@ -263,6 +284,7 @@ class AICommandRouter:
         except Exception as e:
             self.logger.error(f"❌ Error routing command for intent {intent}: {str(e)}")
             return False
+
     async def _handle_document_generation(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, message: str
     ) -> bool:
@@ -277,6 +299,7 @@ class AICommandRouter:
         except Exception as e:
             self.logger.error(f"Error handling document generation: {str(e)}")
             return False
+
     async def _handle_image_generation(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, message: str
     ) -> bool:
@@ -294,6 +317,7 @@ class AICommandRouter:
         except Exception as e:
             self.logger.error(f"Error handling image generation: {str(e)}")
             return False
+
     async def _handle_video_generation(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, message: str
     ) -> bool:
@@ -305,6 +329,7 @@ class AICommandRouter:
             "📊 Data exports"
         )
         return True
+
     async def _handle_export_chat(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> bool:
@@ -315,6 +340,7 @@ class AICommandRouter:
         except Exception as e:
             self.logger.error(f"Error handling chat export: {str(e)}")
             return False
+
     async def _handle_model_switch(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> bool:
@@ -325,6 +351,7 @@ class AICommandRouter:
         except Exception as e:
             self.logger.error(f"Error handling model switch: {str(e)}")
             return False
+
     async def _handle_stats(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> bool:
@@ -335,6 +362,7 @@ class AICommandRouter:
         except Exception as e:
             self.logger.error(f"Error handling stats: {str(e)}")
             return False
+
     async def _handle_help(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> bool:
@@ -345,6 +373,7 @@ class AICommandRouter:
         except Exception as e:
             self.logger.error(f"Error handling help: {str(e)}")
             return False
+
     async def _handle_reset(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> bool:
@@ -355,6 +384,7 @@ class AICommandRouter:
         except Exception as e:
             self.logger.error(f"Error handling reset: {str(e)}")
             return False
+
     async def _handle_settings(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> bool:
@@ -365,6 +395,7 @@ class AICommandRouter:
         except Exception as e:
             self.logger.error(f"Error handling settings: {str(e)}")
             return False
+
     def _extract_prompt_for_document(self, message: str) -> str:
         """Extract document prompt - optimized for speed"""
         cleaned = re.sub(
@@ -380,6 +411,7 @@ class AICommandRouter:
             count=1,
         )
         return cleaned.strip() or message
+
     def _extract_prompt_for_image(self, message: str) -> str:
         """Extract image prompt - optimized for speed"""
         cleaned = re.sub(
@@ -396,12 +428,15 @@ class AICommandRouter:
         )
         result = cleaned.strip()
         return result if len(result) > 3 else None
+
     def cleanup_memory(self):
         """Force garbage collection to free memory on low-resource instances"""
         import gc
+
         gc.collect()
         if hasattr(gc, "set_debug"):
             gc.set_debug(0)
+
     async def should_route_message(
         self, message: str, has_attached_media: bool = False
     ) -> bool:

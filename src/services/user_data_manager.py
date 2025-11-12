@@ -1,10 +1,13 @@
 import sys
 import os
 import time
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Union, Optional
 import logging
+
+
 class UserDataManager:
     def __init__(self, db):
         """
@@ -29,6 +32,7 @@ class UserDataManager:
         self.user_data_cache = {}
         self.personal_info_cache = {}
         self.preference_cache = {}
+
     async def initialize_user(self, user_id: Union[int, str]) -> None:
         """Initialize a new user in the database."""
         try:
@@ -43,6 +47,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error initializing user {user_id}: {str(e)}")
             raise
+
     async def update_stats(
         self,
         user_id: int,
@@ -72,6 +77,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error updating user stats: {str(e)}")
             return False
+
     async def update_user_data(self, user_id: Union[int, str], user_data: dict) -> None:
         """Update user data in the database."""
         try:
@@ -88,6 +94,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error updating data for user {user_id}: {str(e)}")
             raise
+
     def clear_history(self, user_id: Union[int, str]) -> None:
         """
         Clear the conversation history for a user.
@@ -116,6 +123,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error clearing history for user {user_id}: {str(e)}")
             raise
+
     def add_message(self, user_id: Union[int, str], message: Dict[str, Any]) -> None:
         """
         Add a message dictionary to the user's conversation history.
@@ -170,6 +178,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error adding message for user {user_id}: {str(e)}")
             raise
+
     async def get_user_data(self, user_id: Union[int, str]) -> Dict[str, Any]:
         """
         Retrieve all data for a specific user with improved error handling.
@@ -193,6 +202,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error retrieving data for user {user_id}: {str(e)}")
             return self.user_data_cache.get(str(user_id), {})
+
     def get_user_settings_sync(self, user_id: Union[int, str]) -> dict:
         """Get user settings from the database (synchronous version)."""
         try:
@@ -210,6 +220,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error getting settings for user {user_id}: {str(e)}")
             raise
+
     async def get_user_context(self, user_id: str) -> List[Dict[str, str]]:
         """
         Retrieve the context (list of message dictionaries) for a specific user.
@@ -275,6 +286,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error retrieving context for user {user_id}: {str(e)}")
             return []
+
     async def get_conversation_history(self, user_id: str) -> List[Dict[str, str]]:
         """
         Retrieve the conversation history for a user.
@@ -283,6 +295,7 @@ class UserDataManager:
         :return: List of conversation context message dictionaries
         """
         return await self.get_user_context(user_id)
+
     async def get_user_settings(self, user_id: str) -> Dict[str, Any]:
         """
         Retrieve user settings.
@@ -291,6 +304,7 @@ class UserDataManager:
         """
         user_data = await self.get_user_data(user_id)
         return user_data.get("settings", {})
+
     def update_user_settings(
         self, user_id: Union[int, str], new_settings: Dict[str, Any]
     ) -> None:
@@ -317,6 +331,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error updating settings for user {user_id}: {str(e)}")
             raise
+
     async def update_user_settings_async(
         self, user_id: Union[int, str], new_settings: Dict[str, Any]
     ) -> None:
@@ -351,6 +366,7 @@ class UserDataManager:
                 f"Error updating settings asynchronously for user {user_id}: {str(e)}"
             )
             raise
+
     def cleanup_inactive_users(self, days_threshold: int = 30) -> None:
         """
         Remove data for inactive users.
@@ -368,6 +384,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error during cleanup of inactive users: {str(e)}")
             raise
+
     def get_user_stats(self, user_id: Union[int, str]) -> dict:
         """Get user statistics from the database."""
         try:
@@ -397,6 +414,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error getting stats for user {user_id}: {str(e)}")
             raise
+
     def update_user_stats(self, user_id: Union[int, str], stats: dict) -> None:
         """Update user statistics in the database."""
         try:
@@ -414,6 +432,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error updating stats for user {user_id}: {str(e)}")
             raise
+
     def reset_conversation(self, user_id: Union[int, str]) -> None:
         """Reset the conversation history for a user."""
         try:
@@ -434,6 +453,7 @@ class UserDataManager:
                 f"Error resetting conversation history for user {user_id}: {str(e)}"
             )
             raise
+
     async def get_user_preference(
         self, user_id: Union[int, str], preference_key: str, default=None
     ):
@@ -479,6 +499,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error getting user preference: {e}")
             return default
+
     async def set_user_preference(
         self, user_id: Union[int, str], preference_key: str, value
     ):
@@ -533,6 +554,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error setting user preference: {e}")
             return False
+
     async def update_user_personal_info(
         self, user_id: Union[int, str], info_key: str, info_value: str
     ) -> bool:
@@ -566,6 +588,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error updating personal info for user {user_id}: {e}")
             return False
+
     async def get_user_personal_info(
         self, user_id: int, info_key: Optional[str] = None
     ) -> Any:
@@ -589,6 +612,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error retrieving personal info for user {user_id}: {e}")
             return None if info_key else {}
+
     async def extract_personal_info_from_message(
         self, user_id: int, message_text: str
     ) -> Dict[str, str]:
@@ -605,6 +629,7 @@ class UserDataManager:
                 r"(?:name's) ([A-Z][a-z]+)",
             ]
             import re
+
             for pattern in name_patterns:
                 match = re.search(pattern, message_text, re.IGNORECASE)
                 if match:
@@ -616,6 +641,7 @@ class UserDataManager:
         except Exception as e:
             self.logger.error(f"Error extracting personal info: {e}")
             return {}
+
     async def save_message_pair(
         self,
         user_id: Union[int, str],
@@ -677,6 +703,7 @@ class UserDataManager:
             )
         except Exception as e:
             self.logger.error(f"Error saving message pair for user {user_id}: {str(e)}")
+
     async def add_message_async(
         self, user_id: Union[int, str], message: Dict[str, Any]
     ) -> None:

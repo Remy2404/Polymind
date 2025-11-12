@@ -7,8 +7,11 @@ from src.services.gemini_api import GeminiAPI
 from src.services.openrouter_api import OpenRouterAPI
 from src.services.DeepSeek_R1_Distill_Llama_70B import DeepSeekLLM
 from .document_generator import DocumentGenerator
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
+
+
 class AIDocumentGenerator:
     def __init__(
         self,
@@ -27,6 +30,7 @@ class AIDocumentGenerator:
             )
         self.document_generator = DocumentGenerator()
         self.logger = logging.getLogger(__name__)
+
     async def generate_ai_document(
         self,
         prompt: str,
@@ -130,6 +134,7 @@ class AIDocumentGenerator:
             self.logger.error(f"Error generating AI document: {str(e)}")
             traceback.print_exc()
             raise
+
     def _process_empty_sections(self, content: str) -> str:
         lines = content.splitlines()
         result_lines = []
@@ -182,6 +187,7 @@ class AIDocumentGenerator:
                     result_lines.append("")
             i += 1
         return "\n".join(result_lines)
+
     def _get_document_prompt(self, document_type: str) -> str:
         document_prompts = {
             "article": "You are an expert content writer. Create a well-structured article with an introduction, body sections, and conclusion.",
@@ -193,6 +199,7 @@ class AIDocumentGenerator:
             "proposal": "You are a business consultant. Create a compelling proposal with overview, objectives, methods, and benefits.",
         }
         return document_prompts.get(document_type.lower(), document_prompts["article"])
+
     def _extract_title(self, content: str) -> Optional[str]:
         if not content:
             return None
@@ -207,6 +214,7 @@ class AIDocumentGenerator:
                 if cleaned_title:
                     return cleaned_title[:100]
         return None
+
     def _clean_markdown_formatting(self, content: str) -> str:
         lines = content.splitlines()
         cleaned_lines = []
@@ -296,6 +304,7 @@ class AIDocumentGenerator:
         result = re.sub(r"```(\w+)?\s+", r"```\1\n", result)
         result = re.sub(r"\s+```", r"\n```", result)
         return result
+
     def _ensure_section_spacing(self, content: str) -> str:
         lines = content.splitlines()
         result_lines = []

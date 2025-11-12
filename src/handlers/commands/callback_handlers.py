@@ -2,20 +2,25 @@
 Callback query handler for centralized callback routing.
 Routes callback queries to appropriate command handlers.
 """
+
 import sys
 import os
+
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import logging
+
+
 class CallbackHandlers:
     def __init__(self, document_commands, model_commands, export_commands):
         self.document_commands = document_commands
         self.model_commands = model_commands
         self.export_commands = export_commands
         self.logger = logging.getLogger(__name__)
+
     async def handle_callback_query(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -50,6 +55,7 @@ class CallbackHandlers:
         except Exception as e:
             self.logger.error(f"Error handling callback query: {str(e)}")
             await query.edit_message_text("❌ An error occurred. Please try again.")
+
     async def _handle_current_model_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:

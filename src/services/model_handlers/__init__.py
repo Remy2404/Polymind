@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 
 class ImageAttachment:
     """Represents an image attachment with base64 data."""
+
     def __init__(self, name: str, content_type: str, data: str):
         self.name = name
         self.content_type = content_type
@@ -12,7 +13,7 @@ class ImageAttachment:
 
 class ModelHandler(ABC):
     """Abstract base class for AI model handlers."""
-    
+
     @abstractmethod
     async def generate_response(
         self,
@@ -25,14 +26,17 @@ class ModelHandler(ABC):
     ) -> str:
         """Generate a text response using the AI model."""
         pass
+
     @abstractmethod
     def get_system_message(self) -> str:
         """Get the system message for the model."""
         pass
+
     @abstractmethod
     def get_model_indicator(self, model: str = None) -> str:
         """Get the model indicator emoji and name."""
         pass
+
     def format_quoted_message(self, prompt: str, quoted_message: Optional[str]) -> str:
         """Format the prompt to include the quoted message context."""
         if quoted_message:

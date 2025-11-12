@@ -3,9 +3,13 @@ import asyncio
 from typing import Dict, List, Any, Optional
 from .memory_manager import MemoryManager
 from .model_history_manager import ModelHistoryManager
+
 logger = logging.getLogger(__name__)
+
+
 class ConversationManager:
     """Enhanced conversation manager with group collaboration and intelligent memory"""
+
     def __init__(
         self, memory_manager: MemoryManager, model_history_manager: ModelHistoryManager
     ):
@@ -15,6 +19,7 @@ class ConversationManager:
         self.group_sessions = {}
         self.group_participants = {}
         self.collaborative_contexts = {}
+
     async def get_conversation_history(
         self,
         user_id: int,
@@ -51,6 +56,7 @@ class ConversationManager:
             user_id, max_messages=max_messages
         )
         return await self._enhance_history_with_context(user_id, history, group_id)
+
     async def save_message_pair(
         self,
         user_id: int,
@@ -92,6 +98,7 @@ class ConversationManager:
                 importance=importance,
                 related_user_message=user_message,
             )
+
     async def save_media_interaction(
         self,
         user_id: int,
@@ -168,6 +175,7 @@ class ConversationManager:
                 await self.memory_manager.add_assistant_message(
                     conversation_id, response, importance=importance
                 )
+
     async def start_group_session(
         self, group_id: str, initiator_user_id: int, session_topic: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -189,6 +197,7 @@ class ConversationManager:
         await self.memory_manager.load_memory(group_id, is_group=True)
         self.logger.info(f"Started group session {session_id} for group {group_id}")
         return session_data
+
     async def join_group_session(self, session_id: str, user_id: int) -> bool:
         """Add a user to an active group session."""
         if session_id not in self.group_sessions:
@@ -203,6 +212,7 @@ class ConversationManager:
         self.group_participants[group_id].add(user_id)
         self.logger.info(f"User {user_id} joined group session {session_id}")
         return True
+
     async def get_group_context(self, group_id: str, user_id: int) -> Dict[str, Any]:
         """Get comprehensive group context for a user."""
         context = {
@@ -232,6 +242,7 @@ class ConversationManager:
                 "topics", []
             )
         return context
+
     async def add_collaborative_note(
         self, group_id: str, user_id: int, note: str, note_type: str = "general"
     ) -> None:
@@ -259,6 +270,7 @@ class ConversationManager:
             group_id=group_id,
             message_type="collaborative_note",
         )
+
     async def get_intelligent_context(
         self, user_id: int, current_query: str, group_id: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -287,6 +299,7 @@ class ConversationManager:
                 group_id, current_query
             )
         return context
+
     async def add_quoted_message_context(
         self,
         user_id: int,
@@ -341,6 +354,7 @@ class ConversationManager:
                 importance=importance,
                 related_user_message=enhanced_user_message,
             )
+
     async def _get_group_conversation_history(
         self, group_id: str, user_id: int, max_messages: int, include_context: bool
     ) -> List[Dict[str, Any]]:
@@ -360,6 +374,7 @@ class ConversationManager:
             all_messages.sort(key=lambda x: x.get("timestamp", 0))
             return all_messages[-max_messages:]
         return recent_messages
+
     async def _enhance_history_with_context(
         self, user_id: int, history: List[Dict[str, Any]], group_id: Optional[str]
     ) -> List[Dict[str, Any]]:
@@ -379,6 +394,7 @@ class ConversationManager:
                 )
             enhanced_history.append(enhanced_message)
         return enhanced_history
+
     async def _calculate_message_importance(
         self, user_message: str, assistant_message: str
     ) -> float:
@@ -410,6 +426,7 @@ class ConversationManager:
             base_importance + importance_boost + length_factor + qa_pattern_boost, 1.0
         )
         return final_importance
+
     async def _save_group_message_pair(
         self,
         group_id: str,
@@ -448,6 +465,7 @@ class ConversationManager:
         await self._update_group_collaborative_context(
             group_id, user_id, "text", user_message, assistant_message
         )
+
     async def _update_group_collaborative_context(
         self,
         group_id: str,
@@ -496,6 +514,7 @@ class ConversationManager:
             if topic not in context["topics"]:
                 context["topics"].append(topic)
         context["topics"] = context["topics"][-10:]
+
     async def _assess_response_quality(self, response: str) -> float:
         """Assess the quality of an AI response for importance scoring."""
         if not response:
@@ -518,6 +537,7 @@ class ConversationManager:
             ),
         }
         return min(sum(quality_factors.values()) / len(quality_factors), 1.0)
+
     async def _generate_smart_suggestions(
         self, query: str, relevant_memory: List[Dict[str, Any]], group_id: Optional[str]
     ) -> List[str]:
@@ -545,6 +565,7 @@ class ConversationManager:
             if len(relevant_memory) > 2:
                 suggestions.append("Get conversation summary")
         return suggestions[:5]
+
     async def _generate_group_insights(
         self, group_id: str, current_query: str
     ) -> Dict[str, Any]:
@@ -577,6 +598,7 @@ class ConversationManager:
         except Exception as e:
             self.logger.error(f"Error generating group insights: {e}")
             return {"error": "Unable to generate insights"}
+
     async def reset_conversation(
         self, user_id: int, group_id: Optional[str] = None
     ) -> None:
@@ -591,6 +613,7 @@ class ConversationManager:
             await self.model_history_manager.clear_history(user_id)
             conversation_id = f"user_{user_id}"
             await self.memory_manager.clear_conversation(conversation_id)
+
     async def get_short_term_memory(
         self, user_id: int, limit: int = 5, group_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
@@ -604,6 +627,7 @@ class ConversationManager:
             return await self.memory_manager.get_short_term_memory(
                 conversation_id, limit
             )
+
     async def get_long_term_memory(
         self, user_id: int, query: str, limit: int = 3, group_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:

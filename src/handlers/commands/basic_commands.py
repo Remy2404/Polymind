@@ -1,16 +1,20 @@
 import sys
 import os
+
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import logging
+
+
 class BasicCommands:
     def __init__(self, user_data_manager, telegram_logger):
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
         self.logger = logging.getLogger(__name__)
+
     async def start_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -49,6 +53,7 @@ class BasicCommands:
             )
         await self.user_data_manager.initialize_user(user_id)
         self.logger.info(f"New user started the bot: {user_id}")
+
     async def help_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -77,6 +82,7 @@ class BasicCommands:
             self.telegram_logger.log_message(
                 update.effective_user.id, "Help command requested"
             )
+
     async def reset_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -94,7 +100,9 @@ class BasicCommands:
         # Show confirmation dialog
         keyboard = [
             [
-                InlineKeyboardButton("✅ Yes, Reset Everything", callback_data="confirm_reset"),
+                InlineKeyboardButton(
+                    "✅ Yes, Reset Everything", callback_data="confirm_reset"
+                ),
                 InlineKeyboardButton("❌ Cancel", callback_data="cancel_reset"),
             ]
         ]
@@ -111,9 +119,7 @@ class BasicCommands:
         )
 
         await update.effective_message.reply_text(
-            warning_message,
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
+            warning_message, reply_markup=reply_markup, parse_mode="Markdown"
         )
 
         # Set flag to await confirmation
@@ -133,20 +139,29 @@ class BasicCommands:
 
             # 2. Clear memory from MemoryManager and ConversationManager
             # Import conversation_manager if not already available
-            from src.services.memory_context.conversation_manager import ConversationManager
+            from src.services.memory_context.conversation_manager import (
+                ConversationManager,
+            )
             from src.services.memory_context.memory_manager import MemoryManager
-            from src.services.memory_context.model_history_manager import ModelHistoryManager
+            from src.services.memory_context.model_history_manager import (
+                ModelHistoryManager,
+            )
 
             # Initialize memory managers for cleanup
             memory_manager = MemoryManager(db=self.user_data_manager.db)
             model_history_manager = ModelHistoryManager(memory_manager)
-            conversation_manager = ConversationManager(memory_manager, model_history_manager)
+            conversation_manager = ConversationManager(
+                memory_manager, model_history_manager
+            )
 
             # Clear conversation memory
             await conversation_manager.reset_conversation(user_id)
 
             # 3. Clear any cached data
-            if hasattr(self.user_data_manager, 'user_data_cache') and user_id in self.user_data_manager.user_data_cache:
+            if (
+                hasattr(self.user_data_manager, "user_data_cache")
+                and user_id in self.user_data_manager.user_data_cache
+            ):
                 del self.user_data_manager.user_data_cache[user_id]
 
             success_message = "✅ Complete memory cleanup successful!"
@@ -179,7 +194,9 @@ class BasicCommands:
 
         elif callback_data == "cancel_reset":
             # User cancelled
-            await query.edit_message_text("❌ Memory reset cancelled. Your conversation history is safe.")
+            await query.edit_message_text(
+                "❌ Memory reset cancelled. Your conversation history is safe."
+            )
 
         # Clear the confirmation flag
         context.user_data["awaiting_reset_confirmation"] = False
