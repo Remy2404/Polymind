@@ -468,9 +468,6 @@ async def get_old_format_sessions(
     Get chat sessions from the old cache_key format memory system.
     This bridges the gap until all sessions are migrated to the new format.
     """
-    # Get cached mapping instead of rebuilding every time
-    session_mapping = await get_cached_session_mapping(current_user)
-
     services = get_services()
     persistence_manager = services["conversation_manager"].memory_manager.persistence_manager
 

@@ -194,7 +194,6 @@ class MessageHandlers:
             for i, msg in enumerate(conversation_context[-5:]):
                 role = msg.get("role", "unknown")
                 content = msg.get("content", "")
-                preview = content[:100] + ("..." if len(content) > 100 else "")
                 self.logger.info(f"   └─ Message {i + 1} [{role.upper()}]: {len(content)} chars")
                 if "name" in content.lower():
                     self.logger.info("   └─ ⭐ Contains name/identity information!")

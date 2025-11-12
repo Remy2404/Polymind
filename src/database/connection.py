@@ -3,7 +3,7 @@ import time
 import asyncio
 import logging
 from typing import Tuple, Optional
-from pymongo import MongoClient, WriteConcern, ReadPreference
+from pymongo import MongoClient
 from pymongo.database import Database
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from pymongo.collection import Collection

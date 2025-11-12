@@ -71,3 +71,8 @@ dependencies = [
     "telegram-init-data[fastapi]>=1.0.0",
     "pydantic-core>=2.27.1",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.0.0",
+]

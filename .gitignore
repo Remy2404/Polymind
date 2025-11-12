@@ -44,3 +44,7 @@ build-and-run.ps1
 test_*
 
 temp_zola/
+
+# Coverage files
+coverage.xml
+.coverage

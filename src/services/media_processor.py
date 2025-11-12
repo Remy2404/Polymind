@@ -7,10 +7,8 @@ for use with the Gemini multimodal API.
 
 import io
 import logging
-from typing import Union, Optional
+from typing import Union
 from PIL import Image
-
-from .types import MediaType, MediaInput
 
 
 class MediaProcessor:

@@ -6,7 +6,6 @@ from typing import Optional, List, Dict, Any, Union, Callable
 from google import genai
 from google.genai import types
 from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable
-from PIL import Image
 from src.services.rate_limiter import RateLimiter
 from src.services.mcp import MCPManager
 from src.services.model_handlers.model_configs import ModelConfigurations
@@ -1258,7 +1257,7 @@ Focus on providing the most helpful and accurate response possible using the ava
             # Simple implementation - just call the function
             # In a real implementation, this would include circuit breaker logic
             return await func(*args, **kwargs)
-        except Exception as e:
+        except Exception:
             # Track failures for circuit breaker logic
             if not hasattr(self, f"{api_name}_failures"):
                 setattr(self, f"{api_name}_failures", 0)

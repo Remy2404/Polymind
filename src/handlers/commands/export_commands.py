@@ -27,9 +27,6 @@ except ImportError:
 # Try to import python-docx as fallback
 try:
     from docx import Document as DocxDocument
-    from docx.shared import Inches, Pt
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.enum.table import WD_ALIGN_VERTICAL
     DOCX_AVAILABLE = True
 except ImportError:
     DOCX_AVAILABLE = False

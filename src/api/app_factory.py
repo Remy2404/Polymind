@@ -2,7 +2,6 @@ import os
 import time
 import logging
 import asyncio
-import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
@@ -36,7 +35,6 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
     """
     logger.info("Starting application with enhanced monitoring...")
     app.state.start_time = time.time()
-    shutdown_complete = False
     
     try:
         # Initialize MCP for webapp (like Telegram bot)
@@ -110,7 +108,6 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
             except Exception as e:
                 logger.warning(f"Error closing MongoDB connection: {e}")
             
-            shutdown_complete = True
         except asyncio.CancelledError:
             # Suppress CancelledError during shutdown - this is normal
             logger.debug("Application shutdown cancelled (normal)")
