@@ -14,17 +14,26 @@ from src.services.types import MediaType, MediaInput, ToolCall, ProcessingResult
 from src.services.media_processor import MediaProcessor
 from src.utils.log.telegramlog import telegram_logger
 from dotenv import load_dotenv
+
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     logging.error("GEMINI_API_KEY not found in environment variables.")
     raise ValueError("GEMINI_API_KEY is required")
+
+
 class GeminiAPI:
     """
     Modern Gemini 2.5 Flash API client with multimodal and tool calling support
     Uses the latest Google Gen AI SDK for enhanced capabilities
     """
-    def __init__(self, rate_limiter: RateLimiter, mcp_config_path: str = "mcp.json", vision_model=None):
+
+    def __init__(
+        self,
+        rate_limiter: RateLimiter,
+        mcp_config_path: str = "mcp.json",
+        vision_model=None,
+    ):
         self.logger = logging.getLogger(__name__)
         self.rate_limiter = rate_limiter
         self.media_processor = MediaProcessor()
@@ -44,6 +53,7 @@ class GeminiAPI:
         self.logger.info(
             "Gemini 2.5 Flash API initialized with Google Gen AI SDK and MCP support"
         )
+
     async def initialize_mcp_tools(self) -> bool:
         """
         Initialize and load MCP tools from configured servers.
@@ -55,9 +65,11 @@ class GeminiAPI:
             # Check if singleton instance is already initialized
             if self.mcp_manager._initialized:
                 self.mcp_tools_loaded = True
-                self.logger.info("MCP tools already initialized (using shared instance)")
+                self.logger.info(
+                    "MCP tools already initialized (using shared instance)"
+                )
                 return True
-                
+
             self.logger.info("Initializing MCP tools for Gemini...")
             telegram_logger.log_message("Initializing MCP tools for Gemini...", 0)
             success = await self.mcp_manager.load_servers()
@@ -83,6 +95,7 @@ class GeminiAPI:
                 f"Error initializing MCP tools for Gemini: {str(e)}", 0
             )
             return False
+
     async def generate_response_with_mcp_tools(
         self,
         prompt: str,
@@ -106,7 +119,7 @@ class GeminiAPI:
         """
         # Use singleton state - no need to initialize on every request
         self.mcp_tools_loaded = self.mcp_manager._initialized
-        
+
         actual_model = model if model is not None else "gemini-2.5-flash"
         mcp_tools = (
             await self.mcp_manager.get_all_tools() if self.mcp_tools_loaded else []
@@ -144,6 +157,7 @@ class GeminiAPI:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+
     def _convert_mcp_tool_to_gemini(self, mcp_tool: Dict[str, Any]) -> Optional[Any]:
         """
         Convert MCP tool format to Gemini-compatible tool format.
@@ -154,6 +168,7 @@ class GeminiAPI:
         """
         try:
             from google.genai import types
+
             function = mcp_tool.get("function", {})
             if not function:
                 return None
@@ -168,6 +183,7 @@ class GeminiAPI:
         except Exception as e:
             self.logger.error(f"Failed to convert MCP tool to Gemini format: {e}")
             return None
+
     def _convert_mcp_parameters_to_gemini(
         self, mcp_parameters: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -178,53 +194,64 @@ class GeminiAPI:
         Returns:
             Parameters in Gemini format
         """
+
         def sanitize_schema(schema: Any) -> Any:
-    
+
             if not isinstance(schema, dict):
                 return schema
-            
+
             sanitized = {}
             for key, value in schema.items():
                 # Skip unsupported fields - Gemini doesn't understand these
-                if key in ['const', 'contentMediaType', 'contentEncoding', 
-                          'exclusiveMaximum', 'exclusiveMinimum', 'additionalProperties']:
+                if key in [
+                    "const",
+                    "contentMediaType",
+                    "contentEncoding",
+                    "exclusiveMaximum",
+                    "exclusiveMinimum",
+                    "additionalProperties",
+                ]:
                     continue
-                
+
                 # Handle anyOf - Gemini requires a single type, not unions
                 # We select the first option that doesn't use 'const'
-                if key == 'anyOf' and isinstance(value, list):
+                if key == "anyOf" and isinstance(value, list):
                     # Try to extract a simple type from anyOf
                     for option in value:
                         if isinstance(option, dict):
                             # Skip const-only definitions (Gemini doesn't support const)
                             # Example: {"const": "dynamic", "type": "string"}
-                            if 'const' in option:
+                            if "const" in option:
                                 # Skip this option entirely - const not supported
                                 continue
                             # Use first valid option without const
-                            if 'type' in option:
-                                sanitized['type'] = option['type']
+                            if "type" in option:
+                                sanitized["type"] = option["type"]
                                 # Preserve constraints from the selected option (but not exclusive bounds)
-                                if 'minimum' in option:
-                                    sanitized['minimum'] = option['minimum']
-                                if 'maximum' in option:
-                                    sanitized['maximum'] = option['maximum']
-                                if 'description' in option:
-                                    sanitized['description'] = option['description']
+                                if "minimum" in option:
+                                    sanitized["minimum"] = option["minimum"]
+                                if "maximum" in option:
+                                    sanitized["maximum"] = option["maximum"]
+                                if "description" in option:
+                                    sanitized["description"] = option["description"]
                                 break
                     continue
-                
+
                 # Recursively sanitize nested objects
                 if isinstance(value, dict):
                     sanitized[key] = sanitize_schema(value)
                 elif isinstance(value, list):
-                    sanitized[key] = [sanitize_schema(item) if isinstance(item, dict) else item for item in value]
+                    sanitized[key] = [
+                        sanitize_schema(item) if isinstance(item, dict) else item
+                        for item in value
+                    ]
                 else:
                     sanitized[key] = value
-            
+
             return sanitized
-        
+
         return sanitize_schema(mcp_parameters)
+
     async def _generate_with_tools(
         self,
         prompt: str,
@@ -269,7 +296,7 @@ class GeminiAPI:
             ):
                 return None
             candidate = response.candidates[0]
-            
+
             # Check if the response contains function calls
             has_function_calls = False
             if (
@@ -322,19 +349,24 @@ class GeminiAPI:
                                 self.logger.warning("No final response after tool call")
                                 return None
                         else:
-                            self.logger.warning(f"Tool execution failed for {function_call.name}")
+                            self.logger.warning(
+                                f"Tool execution failed for {function_call.name}"
+                            )
                             return None
-            
+
             # If no function calls, extract text from the current response
             if not has_function_calls:
                 return self._extract_response_text(candidate)
-            
+
             # If we get here, something went wrong with tool call processing
-            self.logger.warning("Tool call processing completed but no response generated")
+            self.logger.warning(
+                "Tool call processing completed but no response generated"
+            )
             return None
         except Exception as e:
             self.logger.error(f"Error in _generate_with_tools: {e}")
             return None
+
     async def _execute_mcp_tool(self, function_call: Any) -> Optional[str]:
         """
         Execute an MCP tool based on Gemini's function call with robust error handling.
@@ -346,17 +378,17 @@ class GeminiAPI:
         try:
             if not hasattr(function_call, "name") or not hasattr(function_call, "args"):
                 return "Error: Invalid function call structure"
-            
+
             tool_name = function_call.name
             tool_args = (
                 dict(function_call.args) if hasattr(function_call, "args") else {}
             )
-            
+
             self.logger.info(f"Executing MCP tool: {tool_name} with args: {tool_args}")
-            
+
             # Execute tool with new structured response handling
             result = await self.mcp_manager.execute_tool(tool_name, tool_args)
-            
+
             if result.get("success"):
                 # Success case - extract the actual tool result
                 tool_result = result.get("result")
@@ -366,17 +398,21 @@ class GeminiAPI:
                         # MCP result format - extract text content
                         text_results = []
                         for item in tool_result:
-                            if hasattr(item, 'text'):
+                            if hasattr(item, "text"):
                                 text_results.append(item.text)
-                            elif hasattr(item, 'content'):
+                            elif hasattr(item, "content"):
                                 # Handle nested content
                                 if isinstance(item.content, list):
                                     for content_item in item.content:
-                                        if hasattr(content_item, 'text'):
+                                        if hasattr(content_item, "text"):
                                             text_results.append(content_item.text)
-                                elif hasattr(item.content, 'text'):
+                                elif hasattr(item.content, "text"):
                                     text_results.append(item.content.text)
-                        return "\n".join(text_results) if text_results else str(tool_result)
+                        return (
+                            "\n".join(text_results)
+                            if text_results
+                            else str(tool_result)
+                        )
                     else:
                         return str(tool_result)
                 else:
@@ -386,20 +422,23 @@ class GeminiAPI:
                 error_type = result.get("error_type", "UNKNOWN_ERROR")
                 error_message = result.get("error_message", "Unknown error")
                 execution_time = result.get("execution_time", 0)
-                
-                error_response = f"Tool execution failed: {error_type} - {error_message}"
+
+                error_response = (
+                    f"Tool execution failed: {error_type} - {error_message}"
+                )
                 if execution_time > 0:
                     error_response += f" (took {execution_time:.2f}s)"
-                
+
                 # Log the error for debugging
                 self.logger.warning(f"MCP tool {tool_name} failed: {error_response}")
-                
+
                 return error_response
-                
+
         except Exception as e:
             error_msg = f"Error executing MCP tool {getattr(function_call, 'name', 'unknown')}: {str(e)}"
             self.logger.error(error_msg)
             return error_msg
+
     def _extract_response_text(self, candidate: Any) -> Optional[str]:
         """
         Extract text response from Gemini candidate.
@@ -424,6 +463,7 @@ class GeminiAPI:
         except Exception as e:
             self.logger.error(f"Error extracting response text: {e}")
             return None
+
     async def get_available_mcp_tools(self) -> List[Dict[str, Any]]:
         """
         Get all available MCP tools in MCP format.
@@ -432,11 +472,12 @@ class GeminiAPI:
         """
         # Use singleton state - no need to initialize on every request
         self.mcp_tools_loaded = self.mcp_manager._initialized
-        
+
         if self.mcp_tools_loaded:
             return await self.mcp_manager.get_all_tools()
         else:
             return []
+
     def get_mcp_server_info(self) -> Dict[str, Any]:
         """
         Get information about connected MCP servers.
@@ -447,6 +488,7 @@ class GeminiAPI:
             return self.mcp_manager.get_server_info()
         else:
             return {}
+
     def _build_system_message(
         self,
         model_id: str,
@@ -513,6 +555,7 @@ You have access to the following tools: {', '.join(tool_names)}
 - Do not mention tool internal details in your final response
 Focus on providing the most helpful and accurate response possible using the available tools."""
         return base_message + context_hint + tool_instructions
+
     def _categorize_tools(self, tools: List[Any]) -> Dict[str, List[str]]:
         """
         Categorize tools by their functionality for better organization.
@@ -629,6 +672,7 @@ Focus on providing the most helpful and accurate response possible using the ava
                 else:
                     categories["Other"].append(tool.function_declarations[0].name)
         return {k: v for k, v in categories.items() if v}
+
     async def process_multimodal_input(
         self,
         text_prompt: str,
@@ -654,14 +698,14 @@ Focus on providing the most helpful and accurate response possible using the ava
         """
         try:
             await self.rate_limiter.acquire()
-            
+
             # Validate file limit - maximum 5 files per request
             if media_inputs and len(media_inputs) > 5:
                 return ProcessingResult(
-                    success=False, 
-                    error="Maximum 5 files allowed per request. Please upload fewer files or split into multiple requests."
+                    success=False,
+                    error="Maximum 5 files allowed per request. Please upload fewer files or split into multiple requests.",
                 )
-            
+
             content_parts = []
             if media_inputs:
                 for media in media_inputs:
@@ -725,6 +769,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Multimodal processing failed: {e}")
             return ProcessingResult(success=False, error=f"Processing failed: {str(e)}")
+
     async def _process_media_input(self, media: MediaInput) -> Optional[List[Any]]:
         """Process individual media input based on its type"""
         try:
@@ -747,10 +792,12 @@ Focus on providing the most helpful and accurate response possible using the ava
             return [
                 f"[Error processing {media.type.value}: {media.filename or 'unknown'}]"
             ]
+
     async def _process_image_input(self, media: MediaInput) -> Optional[List[Any]]:
         """Process image input for Gemini using new SDK"""
         try:
             from google.genai import types
+
             if not self.media_processor.validate_image(media.data):
                 return [f"[Invalid image file: {media.filename or 'unknown'}]"]
             optimized_image = self.media_processor.optimize_image(media.data)
@@ -761,10 +808,12 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Image processing failed: {e}")
             return [f"[Image processing failed: {media.filename or 'unknown'}]"]
+
     async def _process_document_input(self, media: MediaInput) -> Optional[List[Any]]:
         """Process document input for Gemini using new SDK"""
         try:
             from google.genai import types
+
             if not media.filename:
                 return ["[Document file uploaded without filename]"]
             if not self.media_processor.validate_document(media.data, media.filename):
@@ -796,6 +845,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Document processing failed: {e}")
             return [f"[Document processing failed: {media.filename or 'unknown'}]"]
+
     async def _upload_file_to_gemini_new_sdk(
         self, file_bytes: bytes, mime_type: str, filename: str
     ) -> Any:
@@ -812,18 +862,24 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"New SDK file upload failed: {e}")
             raise
+
     def _build_conversation_context(
         self, context: Optional[List[Dict]], content_parts: List[Any]
     ) -> List[Any]:
         """Build conversation context using new SDK patterns"""
         from google.genai import types
+
         contents = []
         if context:
-            self.logger.info(f"🔧 Building conversation context with {len(context)} messages")
+            self.logger.info(
+                f"🔧 Building conversation context with {len(context)} messages"
+            )
             for i, msg in enumerate(context[-10:]):
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
-                self.logger.debug(f"Context message {i}: role={role}, content_length={len(content)}")
+                self.logger.debug(
+                    f"Context message {i}: role={role}, content_length={len(content)}"
+                )
                 if content:
                     if role == "user":
                         contents.append(
@@ -847,9 +903,12 @@ Focus on providing the most helpful and accurate response possible using the ava
                 else:
                     parts.append(part)
             contents.append(types.Content(role="user", parts=parts))
-        
-        self.logger.info(f"🔧 Final conversation context has {len(contents)} total messages")
+
+        self.logger.info(
+            f"🔧 Final conversation context has {len(contents)} total messages"
+        )
         return contents if contents else content_parts
+
     def get_system_message(self) -> str:
         """
         Return the system message for Gemini models.
@@ -862,13 +921,14 @@ Focus on providing the most helpful and accurate response possible using the ava
             "in the same chat context for comprehensive analysis. Provide helpful, accurate, "
             "and detailed responses based on all provided content."
         )
+
     async def _generate_with_retry(
         self, contents: List[Any], model_name: str, config: Any, max_retries: int = 3
     ) -> Any:
         """Generate content with retry logic using new SDK"""
         last_error = None
         service_unavailable_count = 0
-        
+
         for attempt in range(max_retries):
             try:
                 response = await asyncio.to_thread(
@@ -890,7 +950,9 @@ Focus on providing the most helpful and accurate response possible using the ava
                 last_error = e
                 service_unavailable_count += 1
                 if attempt < max_retries - 1:
-                    wait_time = min(60, 2 ** (attempt + 1))  # Exponential backoff with max 60s
+                    wait_time = min(
+                        60, 2 ** (attempt + 1)
+                    )  # Exponential backoff with max 60s
                     self.logger.warning(
                         f"Service unavailable (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
                     )
@@ -904,14 +966,19 @@ Focus on providing the most helpful and accurate response possible using the ava
                     await asyncio.sleep(1)
                     continue
                 break
-        
+
         # Provide specific error message based on the type of error
         if service_unavailable_count >= max_retries:
-            self.logger.error("Google Gemini service is currently overloaded after all retry attempts")
-            raise Exception("Gemini API is currently overloaded. Please try a different model or try again later.")
-        
+            self.logger.error(
+                "Google Gemini service is currently overloaded after all retry attempts"
+            )
+            raise Exception(
+                "Gemini API is currently overloaded. Please try a different model or try again later."
+            )
+
         self.logger.error(f"All retry attempts failed. Last error: {last_error}")
         raise last_error or Exception("All retry attempts failed")
+
     async def generate_content_with_tools(
         self,
         prompt: str,
@@ -938,6 +1005,7 @@ Focus on providing the most helpful and accurate response possible using the ava
             tools=tools,
             auto_function_calling=auto_execute,
         )
+
     async def stream_content(
         self,
         prompt: str,
@@ -947,6 +1015,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         """Stream content generation using new SDK"""
         try:
             from google.genai import types
+
             await self.rate_limiter.acquire()
             content_parts = []
             if media_inputs:
@@ -967,6 +1036,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Streaming failed: {e}")
             yield f"Error: {str(e)}"
+
     async def create_chat_session(
         self,
         model_name: str = "gemini-2.5-flash",
@@ -982,6 +1052,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Failed to create chat session: {e}")
             raise
+
     async def generate_content(
         self, prompt: str, context: Optional[List[Dict]] = None
     ) -> Dict[str, Any]:
@@ -1003,6 +1074,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Error in generate_content: {e}")
             return {"status": "error", "content": f"Error: {str(e)}", "error": str(e)}
+
     async def generate_response(
         self,
         prompt: str,
@@ -1016,7 +1088,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         attachments: Optional[List] = None,  # New parameter for image attachments
     ) -> Optional[str]:
         """Legacy method for backward compatibility with temperature and max_tokens support
-        
+
         Args:
             prompt: The user prompt
             context: Conversation context
@@ -1036,13 +1108,13 @@ Focus on providing the most helpful and accurate response possible using the ava
             top_k=self.generation_config.top_k,
             max_output_tokens=max_tokens,
         )
-        
+
         content_parts = [prompt]
-        
+
         # Add quoted message context if provided
         if quoted_message:
             content_parts.insert(0, f"Replying to: {quoted_message}")
-        
+
         # Handle context
         if context:
             context_parts = []
@@ -1054,7 +1126,7 @@ Focus on providing the most helpful and accurate response possible using the ava
             if context_parts:
                 context_text = "\n".join(context_parts)
                 content_parts.insert(0, f"Context:\n{context_text}")
-        
+
         # Convert content parts to Gemini format
         contents = []
         for part in content_parts:
@@ -1062,48 +1134,60 @@ Focus on providing the most helpful and accurate response possible using the ava
                 contents.append(types.Part.from_text(text=part))
             else:
                 contents.append(part)
-        
+
         # Handle image attachments
         if attachments:
             self.logger.info(f"Processing {len(attachments)} image attachments")
             for i, attachment in enumerate(attachments):
-                if attachment.content_type.startswith('image/'):
+                if attachment.content_type.startswith("image/"):
                     try:
                         # Decode base64 image data
                         import base64
+
                         image_bytes = base64.b64decode(attachment.data)
-                        
+
                         # Create image part for Gemini
                         image_part = types.Part.from_bytes(
-                            data=image_bytes, 
-                            mime_type=attachment.content_type
+                            data=image_bytes, mime_type=attachment.content_type
                         )
                         contents.append(image_part)
-                        
-                        self.logger.info(f"Successfully processed image attachment {i+1}: {attachment.name} ({attachment.content_type})")
-                        
+
+                        self.logger.info(
+                            f"Successfully processed image attachment {i+1}: {attachment.name} ({attachment.content_type})"
+                        )
+
                         # Add descriptive text about the image
-                        contents.append(types.Part.from_text(
-                            text=f"[Image attached: {attachment.name}]"
-                        ))
+                        contents.append(
+                            types.Part.from_text(
+                                text=f"[Image attached: {attachment.name}]"
+                            )
+                        )
                     except Exception as e:
-                        self.logger.error(f"Failed to process image attachment {attachment.name}: {e}")
-                        contents.append(types.Part.from_text(
-                            text=f"[Failed to process image: {attachment.name}]"
-                        ))
+                        self.logger.error(
+                            f"Failed to process image attachment {attachment.name}: {e}"
+                        )
+                        contents.append(
+                            types.Part.from_text(
+                                text=f"[Failed to process image: {attachment.name}]"
+                            )
+                        )
                 else:
-                    self.logger.warning(f"Skipping non-image attachment: {attachment.name} ({attachment.content_type})")
-        
+                    self.logger.warning(
+                        f"Skipping non-image attachment: {attachment.name} ({attachment.content_type})"
+                    )
+
         # If we have both text and images, make sure the text prompt comes after images for better context
         if attachments and len(contents) > 1:
             # Rearrange: put images first, then the text prompt
-            text_parts = [part for part in contents if hasattr(part, 'text')]
-            image_parts = [part for part in contents if not hasattr(part, 'text')]
-            
+            text_parts = [part for part in contents if hasattr(part, "text")]
+            image_parts = [part for part in contents if not hasattr(part, "text")]
+
             # Rebuild contents with images first, then text
             contents = image_parts + text_parts
-            self.logger.info(f"Reordered content: {len(image_parts)} image parts, {len(text_parts)} text parts")
-        
+            self.logger.info(
+                f"Reordered content: {len(image_parts)} image parts, {len(text_parts)} text parts"
+            )
+
         contents = [types.Content(role="user", parts=contents)]
         try:
             response = await self._generate_with_retry(
@@ -1132,35 +1216,43 @@ Focus on providing the most helpful and accurate response possible using the ava
                 return "Error: Rate limit exceeded. Please wait a moment and try again."
             else:
                 return f"Error: Failed to generate response. {str(e)}"
+
     async def close(self):
         """Clean up resources and close MCP connections."""
         self.logger.info("Gemini API client closed")
         if self.mcp_tools_loaded:
             await self.mcp_manager.disconnect_all()
+
     def get_model_indicator(self, model: str = None) -> str:
         """Get the model indicator emoji and name for Gemini models."""
         if not model:
             return "✨ Gemini"
-            
+
         # Get model configuration for display name
         from src.services.model_handlers.model_configs import ModelConfigurations
+
         model_config = ModelConfigurations.get_all_models().get(model)
         if model_config:
             return f"✨ {model_config.display_name}"
         else:
             return f"✨ {model}"
 
-    async def analyze_image(self, image_data: bytes, prompt: str, context: Optional[List[Dict]] = None) -> Optional[str]:
+    async def analyze_image(
+        self, image_data: bytes, prompt: str, context: Optional[List[Dict]] = None
+    ) -> Optional[str]:
         """Analyze an image with a text prompt for backward compatibility."""
         try:
             from src.services.media.image_processor import ImageProcessor
+
             image_processor = ImageProcessor()
-            return await image_processor.analyze_image(image_data, prompt, context)
+            return await image_processor.analyze_image(image_data, prompt)
         except Exception as e:
             self.logger.error(f"Image analysis failed: {e}")
             return f"Error analyzing image: {str(e)}"
 
-    async def call_with_circuit_breaker(self, api_name: str, func: Callable, *args, **kwargs):
+    async def call_with_circuit_breaker(
+        self, api_name: str, func: Callable, *args, **kwargs
+    ):
         """Call a function with circuit breaker pattern for backward compatibility."""
         try:
             # Simple implementation - just call the function

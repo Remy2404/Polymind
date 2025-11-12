@@ -1,0 +1,59 @@
+name: Code Quality
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+
+    - name: Install dependencies
+      run: |
+        uv sync --dev
+
+    - name: Check for security vulnerabilities
+      run: |
+        uv run safety check --full-report
+
+    - name: Check for outdated dependencies
+      run: |
+        uv run pip list --outdated --format=json | jq '.[] | select(.latest_version != .version) | "\(.name): \(.version) -> \(.latest_version)"' || true
+
+    - name: Run type checking with mypy
+      run: |
+        uv run mypy src/ --ignore-missing-imports --no-strict-optional || true
+
+    - name: Check for large files
+      run: |
+        find . -type f -size +50M -not -path './.git/*' -not -path './__pycache__/*' | head -10 || true
+
+    - name: Check for secrets in code
+      run: |
+        uv run detect-secrets scan --all-files --exclude-files .git/ | jq '.results' || true
+
+    - name: Generate test coverage badge
+      run: |
+        uv run pytest tests/ --cov=src --cov-report=xml
+        uv run coverage-badge -o coverage.svg -f
+
+    - name: Upload coverage badge
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-badge
+        path: coverage.svg
