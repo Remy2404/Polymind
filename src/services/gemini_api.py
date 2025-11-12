@@ -3,8 +3,6 @@ import asyncio
 import io
 import os
 from typing import Optional, List, Dict, Any, Union, Callable
-from dataclasses import dataclass
-from enum import Enum
 from google import genai
 from google.genai import types
 from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable
@@ -12,6 +10,8 @@ from PIL import Image
 from src.services.rate_limiter import RateLimiter
 from src.services.mcp import MCPManager
 from src.services.model_handlers.model_configs import ModelConfigurations
+from src.services.types import MediaType, MediaInput, ToolCall, ProcessingResult
+from src.services.media_processor import MediaProcessor
 from src.utils.log.telegramlog import telegram_logger
 from dotenv import load_dotenv
 load_dotenv()
@@ -19,174 +19,12 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     logging.error("GEMINI_API_KEY not found in environment variables.")
     raise ValueError("GEMINI_API_KEY is required")
-class MediaType(Enum):
-    """Supported media types for multimodal processing"""
-    IMAGE = "image"
-    DOCUMENT = "document"
-    AUDIO = "audio"
-    VIDEO = "video"
-    TEXT = "text"
-@dataclass
-class MediaInput:
-    """Represents a media input for processing"""
-    type: MediaType
-    data: Union[bytes, str, io.BytesIO]
-    mime_type: str
-    filename: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
-@dataclass
-class ToolCall:
-    """Represents a tool/function call from the model"""
-    name: str
-    args: Dict[str, Any]
-    id: Optional[str] = None
-@dataclass
-class ProcessingResult:
-    """Result of multimodal processing"""
-    success: bool
-    content: Optional[str] = None
-    error: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
-    tool_calls: Optional[List[ToolCall]] = None
-    function_calls: Optional[List[ToolCall]] = None
-class MediaProcessor:
-    """Handles processing of different media types for Gemini"""
-    MAX_IMAGE_SIZE = 4096
-    MAX_FILE_SIZE = 20 * 1024 * 1024
-    SUPPORTED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP", "GIF"}
-    IMAGE_QUALITY = 85
-    DOCUMENT_MIME_TYPES = {
-        "pdf": "application/pdf",
-        "doc": "application/msword",
-        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "ppt": "application/vnd.ms-powerpoint",
-        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "xls": "application/vnd.ms-excel",
-        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "txt": "text/plain",
-        "csv": "text/csv",
-        "md": "text/markdown",
-        "html": "text/html",
-        "json": "application/json",
-        "xml": "text/xml",
-        "py": "text/plain",
-        "js": "text/plain",
-        "ts": "text/plain",
-        "java": "text/plain",
-        "cpp": "text/plain",
-        "c": "text/plain",
-        "cs": "text/plain",
-        "php": "text/plain",
-        "rb": "text/plain",
-        "go": "text/plain",
-        "rs": "text/plain",
-        "sql": "text/plain",
-        "sh": "text/plain",
-        "yaml": "text/plain",
-        "yml": "text/plain",
-    }
-    @staticmethod
-    def validate_image(image_data: Union[bytes, io.BytesIO]) -> bool:
-        """Validate image format and size"""
-        try:
-            if isinstance(image_data, io.BytesIO):
-                image_data.seek(0)
-                img_bytes = image_data.getvalue()
-            else:
-                img_bytes = image_data
-            if len(img_bytes) > MediaProcessor.MAX_FILE_SIZE:
-                return False
-            with Image.open(io.BytesIO(img_bytes)) as img:
-                if img.format not in MediaProcessor.SUPPORTED_IMAGE_FORMATS:
-                    return False
-                if img.size[0] * img.size[1] > 25000000:
-                    return False
-                return True
-        except Exception:
-            return False
-    @staticmethod
-    def optimize_image(image_data: Union[bytes, io.BytesIO]) -> io.BytesIO:
-        """Optimize image for Gemini processing"""
-        try:
-            if isinstance(image_data, io.BytesIO):
-                image_data.seek(0)
-                img_bytes = image_data.getvalue()
-            else:
-                img_bytes = image_data
-            with Image.open(io.BytesIO(img_bytes)) as img:
-                if img.mode in ("RGBA", "LA", "P"):
-                    if img.mode == "P" and "transparency" in img.info:
-                        img = img.convert("RGBA")
-                    if img.mode in ("RGBA", "LA"):
-                        background = Image.new("RGB", img.size, (255, 255, 255))
-                        if img.mode == "RGBA":
-                            background.paste(img, mask=img.split()[-1])
-                        else:
-                            background.paste(img, mask=img.split()[1])
-                        img = background
-                    else:
-                        img = img.convert("RGB")
-                if max(img.size) > MediaProcessor.MAX_IMAGE_SIZE:
-                    ratio = MediaProcessor.MAX_IMAGE_SIZE / max(img.size)
-                    new_size = tuple(int(dim * ratio) for dim in img.size)
-                    img = img.resize(new_size, Image.Resampling.LANCZOS)
-                output = io.BytesIO()
-                img.save(
-                    output,
-                    format="JPEG",
-                    quality=MediaProcessor.IMAGE_QUALITY,
-                    optimize=True,
-                )
-                output.seek(0)
-                return output
-        except Exception as e:
-            logging.error(f"Image optimization failed: {e}")
-            raise ValueError(f"Image processing failed: {e}")
-    @staticmethod
-    def get_image_mime_type(image_data: Union[bytes, io.BytesIO]) -> str:
-        """Get MIME type for image"""
-        try:
-            if isinstance(image_data, io.BytesIO):
-                image_data.seek(0)
-                img_bytes = image_data.getvalue()
-            else:
-                img_bytes = image_data
-            with Image.open(io.BytesIO(img_bytes)) as img:
-                format_map = {
-                    "JPEG": "image/jpeg",
-                    "PNG": "image/png",
-                    "WEBP": "image/webp",
-                    "GIF": "image/gif",
-                }
-                return format_map.get(img.format, "image/jpeg")
-        except Exception:
-            return "image/jpeg"
-    @staticmethod
-    def get_document_mime_type(filename: str) -> str:
-        """Get MIME type from filename extension"""
-        if not filename or "." not in filename:
-            return "application/octet-stream"
-        ext = filename.split(".")[-1].lower()
-        return MediaProcessor.DOCUMENT_MIME_TYPES.get(ext, "application/octet-stream")
-    @staticmethod
-    def validate_document(file_data: Union[bytes, io.BytesIO], filename: str) -> bool:
-        """Validate document for processing"""
-        try:
-            if isinstance(file_data, io.BytesIO):
-                size = len(file_data.getvalue())
-            else:
-                size = len(file_data)
-            if size > 50 * 1024 * 1024:
-                return False
-            return True
-        except Exception:
-            return False
 class GeminiAPI:
     """
     Modern Gemini 2.5 Flash API client with multimodal and tool calling support
     Uses the latest Google Gen AI SDK for enhanced capabilities
     """
-    def __init__(self, rate_limiter: RateLimiter, mcp_config_path: str = "mcp.json"):
+    def __init__(self, rate_limiter: RateLimiter, mcp_config_path: str = "mcp.json", vision_model=None):
         self.logger = logging.getLogger(__name__)
         self.rate_limiter = rate_limiter
         self.media_processor = MediaProcessor()
@@ -194,6 +32,8 @@ class GeminiAPI:
         # Use singleton state - MCP is initialized once at app startup
         self.mcp_tools_loaded = self.mcp_manager._initialized
         self._tool_unsupported_models = set()
+        # Store vision_model for backward compatibility (not used in new SDK)
+        self.vision_model = vision_model
         self.client = genai.Client(api_key=GEMINI_API_KEY)
         self.generation_config = types.GenerateContentConfig(
             temperature=0.7,
@@ -1309,89 +1149,27 @@ Focus on providing the most helpful and accurate response possible using the ava
             return f"✨ {model_config.display_name}"
         else:
             return f"✨ {model}"
-def create_image_input(
-    image_data: Union[bytes, io.BytesIO], filename: Optional[str] = None
-) -> MediaInput:
-    """
-    Create a MediaInput object for image data.
-    Args:
-        image_data: Image data as bytes or BytesIO
-        filename: Optional filename for the image
-    Returns:
-        MediaInput object for the image
-    """
-    if isinstance(image_data, io.BytesIO):
-        image_data.seek(0)
-        data = image_data.getvalue()
-    else:
-        data = image_data
-    mime_type = "image/jpeg"
-    if filename:
-        if filename.lower().endswith((".png", ".PNG")):
-            mime_type = "image/png"
-        elif filename.lower().endswith((".webp", ".WEBP")):
-            mime_type = "image/webp"
-        elif filename.lower().endswith((".gif", ".GIF")):
-            mime_type = "image/gif"
-    return MediaInput(
-        type=MediaType.IMAGE,
-        data=data,
-        mime_type=mime_type,
-        filename=filename,
-    )
-def create_document_input(
-    document_data: Union[bytes, io.BytesIO], filename: str
-) -> MediaInput:
-    """
-    Create a MediaInput object for document data.
-    Args:
-        document_data: Document data as bytes or BytesIO
-        filename: Filename of the document (used to determine MIME type)
-    Returns:
-        MediaInput object for the document
-    """
-    if isinstance(document_data, io.BytesIO):
-        document_data.seek(0)
-        data = document_data.getvalue()
-    else:
-        data = document_data
-    mime_type = "application/octet-stream"
-    if filename:
-        ext = filename.lower().split(".")[-1]
-        mime_mapping = {
-            "pdf": "application/pdf",
-            "doc": "application/msword",
-            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "ppt": "application/vnd.ms-powerpoint",
-            "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "xls": "application/vnd.ms-excel",
-            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "txt": "text/plain",
-            "csv": "text/csv",
-            "md": "text/markdown",
-            "html": "text/html",
-            "json": "application/json",
-            "xml": "text/xml",
-            "py": "text/plain",
-            "js": "text/plain",
-            "ts": "text/plain",
-            "java": "text/plain",
-            "cpp": "text/plain",
-            "c": "text/plain",
-            "cs": "text/plain",
-            "php": "text/plain",
-            "rb": "text/plain",
-            "go": "text/plain",
-            "rs": "text/plain",
-            "sql": "text/plain",
-            "sh": "text/plain",
-            "yaml": "text/plain",
-            "yml": "text/plain",
-        }
-        mime_type = mime_mapping.get(ext, mime_type)
-    return MediaInput(
-        type=MediaType.DOCUMENT,
-        data=data,
-        mime_type=mime_type,
-        filename=filename,
-    )
+
+    async def analyze_image(self, image_data: bytes, prompt: str, context: Optional[List[Dict]] = None) -> Optional[str]:
+        """Analyze an image with a text prompt for backward compatibility."""
+        try:
+            from src.services.media.image_processor import ImageProcessor
+            image_processor = ImageProcessor()
+            return await image_processor.analyze_image(image_data, prompt, context)
+        except Exception as e:
+            self.logger.error(f"Image analysis failed: {e}")
+            return f"Error analyzing image: {str(e)}"
+
+    async def call_with_circuit_breaker(self, api_name: str, func: Callable, *args, **kwargs):
+        """Call a function with circuit breaker pattern for backward compatibility."""
+        try:
+            # Simple implementation - just call the function
+            # In a real implementation, this would include circuit breaker logic
+            return await func(*args, **kwargs)
+        except Exception as e:
+            # Track failures for circuit breaker logic
+            if not hasattr(self, f"{api_name}_failures"):
+                setattr(self, f"{api_name}_failures", 0)
+            current_failures = getattr(self, f"{api_name}_failures")
+            setattr(self, f"{api_name}_failures", current_failures + 1)
+            raise
