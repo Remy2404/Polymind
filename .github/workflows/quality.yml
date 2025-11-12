@@ -53,7 +53,7 @@ jobs:
         uv run coverage-badge -o coverage.svg -f
 
     - name: Upload coverage badge
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: coverage-badge
         path: coverage.svg

@@ -95,7 +95,7 @@ jobs:
         uv run bandit -r src/ -f json -o bandit-report.json || true
 
     - name: Upload Bandit report
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: bandit-report
         path: bandit-report.json
