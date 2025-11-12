@@ -458,6 +458,8 @@ class GeminiAPI:
                                     ],
                                 )
                             )
+                            # Small delay before final generation to avoid overwhelming the API
+                            await asyncio.sleep(1.0)
                             final_config = types.GenerateContentConfig(
                                 temperature=temperature,
                                 top_p=self.generation_config.top_p,
@@ -1048,7 +1050,7 @@ Focus on providing the most helpful and accurate response possible using the ava
                 last_error = e
                 service_unavailable_count += 1
                 if attempt < max_retries - 1:
-                    wait_time = 2 + attempt * 2  # Longer wait for 503 errors
+                    wait_time = min(60, 2 ** (attempt + 1))  # Exponential backoff with max 60s
                     self.logger.warning(
                         f"Service unavailable (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
                     )

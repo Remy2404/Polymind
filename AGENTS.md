@@ -1,5 +1,7 @@
 ---
 applyTo: '**/*'
+description: Instructions for using AI coding assistants in a professional software engineering environment.
+mode : Agents
 ---
 
 ## Running 
@@ -111,3 +113,9 @@ The AI must avoid:
 * Generate **clean, secure, testable code** aligned with team conventions.
 * **Proactively refactor** when the codebase can be improved without breaking functionality.
 * Never introduce **hardcoded secrets** or **unapproved libraries**.
+
+---
+
+## Verification of Changes
+
+Based on my research through web searches and documentation review
