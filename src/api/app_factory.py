@@ -21,6 +21,7 @@ from src.api.middleware.rate_limiting import RateLimitMiddleware
 from src.bot.telegram_bot import TelegramBot
 from starlette.middleware.cors import CORSMiddleware
 from src.services.mcp_bot_integration import initialize_mcp_for_bot
+from src.database.connection import close_database_connection
 logger = logging.getLogger(__name__)
 def get_telegram_bot_dependency(bot):
     """Creates a dependency that provides access to the TelegramBot instance."""
@@ -100,6 +101,14 @@ async def lifespan_context(app: FastAPI, bot: TelegramBot):
                 logger.debug("Shutdown interrupted by cancellation (normal during container shutdown)")
             except Exception as e:
                 logger.warning(f"Error during shutdown: {e}")
+            
+            # Close MongoDB connection to prevent background thread errors
+            try:
+                if hasattr(bot, 'client') and bot.client is not None:
+                    close_database_connection(bot.client)
+                    logger.info("MongoDB connection closed successfully")
+            except Exception as e:
+                logger.warning(f"Error closing MongoDB connection: {e}")
             
             shutdown_complete = True
         except asyncio.CancelledError:
