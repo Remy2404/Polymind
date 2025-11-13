@@ -5,6 +5,7 @@ import os
 from typing import Optional, List, Dict, Any, Union, Callable
 from google import genai
 from google.genai import types
+from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable
 from src.services.rate_limiter import RateLimiter
 from src.services.mcp import MCPManager
 from src.services.model_handlers.model_configs import ModelConfigurations
@@ -48,14 +49,6 @@ class GeminiAPI:
             top_k=40,
             max_output_tokens=32768,
         )
-
-        # Circuit breaker for API failures
-        self._circuit_breaker_failures = 0
-        self._circuit_breaker_last_failure = 0
-        self._circuit_breaker_state = "closed"  # closed, open, half-open
-        self._circuit_breaker_threshold = 5  # failures before opening
-        self._circuit_breaker_timeout = 300  # 5 minutes before trying again
-
         self.logger.info(
             "Gemini 2.5 Flash API initialized with Google Gen AI SDK and MCP support"
         )
@@ -928,43 +921,11 @@ Focus on providing the most helpful and accurate response possible using the ava
         )
 
     async def _generate_with_retry(
-        self, contents: List[Any], model_name: str, config: Any, max_retries: int = 5
+        self, contents: List[Any], model_name: str, config: Any, max_retries: int = 3
     ) -> Any:
-        """
-        Generate content with improved retry logic using exponential backoff with jitter.
-        Based on Google Cloud best practices for API error handling.
-
-        Args:
-            contents: Content to send to the model
-            model_name: Name of the model to use
-            config: Generation configuration
-            max_retries: Maximum number of retry attempts (default: 5)
-
-        Returns:
-            API response or raises exception after all retries exhausted
-        """
-        import random
-        import time as time_module
-
-        # Circuit breaker check
-        current_time = time_module.time()
-        if self._circuit_breaker_state == "open":
-            if current_time - self._circuit_breaker_last_failure < self._circuit_breaker_timeout:
-                raise Exception(
-                    "Circuit breaker is OPEN - Gemini API has been failing consistently. "
-                    "Please try again later or use a different model."
-                )
-            else:
-                # Transition to half-open
-                self._circuit_breaker_state = "half-open"
-                self.logger.info("Circuit breaker transitioning to HALF-OPEN state")
-
+        """Generate content with retry logic using new SDK"""
         last_error = None
-        consecutive_503_errors = 0
-        consecutive_429_errors = 0
-
-        # Error codes that should trigger retries
-        RETRYABLE_ERROR_CODES = {429, 500, 502, 503, 504}
+        service_unavailable_count = 0
 
         for attempt in range(max_retries):
             try:
@@ -974,123 +935,47 @@ Focus on providing the most helpful and accurate response possible using the ava
                     contents=contents,
                     config=config,
                 )
-
-                # Success - reset circuit breaker
-                self._circuit_breaker_failures = 0
-                if self._circuit_breaker_state == "half-open":
-                    self._circuit_breaker_state = "closed"
-                    self.logger.info("Circuit breaker reset to CLOSED state after successful request")
-
                 return response
-
+            except ResourceExhausted as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    self.logger.warning(f"Rate limited, waiting {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                break
+            except ServiceUnavailable as e:
+                last_error = e
+                service_unavailable_count += 1
+                if attempt < max_retries - 1:
+                    wait_time = min(
+                        60, 2 ** (attempt + 1)
+                    )  # Exponential backoff with max 60s
+                    self.logger.warning(
+                        f"Service unavailable (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
+                    )
+                    await asyncio.sleep(wait_time)
+                    continue
+                break
             except Exception as e:
                 last_error = e
+                self.logger.error(f"Generation attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                    continue
+                break
 
-                # Circuit breaker: record failure
-                self._circuit_breaker_failures += 1
-                self._circuit_breaker_last_failure = current_time
-
-                # Check if we should open the circuit breaker
-                if (self._circuit_breaker_state == "half-open" or
-                    self._circuit_breaker_failures >= self._circuit_breaker_threshold):
-                    self._circuit_breaker_state = "open"
-                    self.logger.warning(
-                        f"Circuit breaker OPENED after {self._circuit_breaker_failures} failures"
-                    )
-
-                # Extract error code and message for better handling
-                error_code = None
-                error_message = str(e).lower()
-
-                # Try to extract HTTP status code from the error
-                if hasattr(e, 'code'):
-                    error_code = e.code
-                elif '429' in error_message:
-                    error_code = 429
-                elif '503' in error_message:
-                    error_code = 503
-                elif '502' in error_message:
-                    error_code = 502
-                elif '500' in error_message:
-                    error_code = 500
-                elif '504' in error_message:
-                    error_code = 504
-
-                # Categorize errors and apply appropriate retry logic
-                if error_code == 503:
-                    consecutive_503_errors += 1
-                    error_type = "service_overload"
-                    base_delay = 2.0  # Start with 2 seconds for 503
-                elif error_code == 429:
-                    consecutive_429_errors += 1
-                    error_type = "rate_limit"
-                    base_delay = 1.0  # Start with 1 second for 429
-                elif error_code in RETRYABLE_ERROR_CODES:
-                    error_type = "server_error"
-                    base_delay = 1.0
-                else:
-                    # Non-retryable error - don't retry
-                    self.logger.error(f"Non-retryable error (code {error_code}): {e}")
-                    raise e
-
-                # Don't retry on the last attempt
-                if attempt == max_retries - 1:
-                    break
-
-                # Calculate exponential backoff with jitter
-                # Formula: base_delay * (2 ^ attempt) + random_jitter
-                exponential_delay = base_delay * (2 ** attempt)
-
-                # Add jitter to prevent thundering herd: ±25% of the delay
-                jitter_range = exponential_delay * 0.25
-                jitter = random.uniform(-jitter_range, jitter_range)
-                total_delay = exponential_delay + jitter
-
-                # Cap maximum delay at 60 seconds
-                total_delay = min(total_delay, 60.0)
-                # Ensure minimum delay of 0.5 seconds
-                total_delay = max(total_delay, 0.5)
-
-                # Special handling for consecutive errors
-                if consecutive_503_errors >= 3:
-                    # If we've had 3+ consecutive 503 errors, increase base delay
-                    total_delay *= 1.5
-                    self.logger.warning(
-                        f"Multiple consecutive 503 errors ({consecutive_503_errors}), "
-                        f"increasing delay to {total_delay:.2f}s"
-                    )
-                elif consecutive_429_errors >= 2:
-                    # For rate limits, use longer delays
-                    total_delay *= 2.0
-                    self.logger.warning(
-                        f"Multiple consecutive 429 errors ({consecutive_429_errors}), "
-                        f"increasing delay to {total_delay:.2f}s"
-                    )
-
-                self.logger.warning(
-                    f"{error_type.upper()} error (attempt {attempt + 1}/{max_retries}): "
-                    f"{error_code} - {str(e)[:100]}... Retrying in {total_delay:.2f}s"
-                )
-
-                await asyncio.sleep(total_delay)
-
-        # All retries exhausted
-        if consecutive_503_errors >= max_retries:
-            error_msg = (
-                "Gemini API is currently experiencing high load and returned 503 errors "
-                "on all retry attempts. This is normal during peak usage times. "
-                "Please try again in a few minutes, or consider using a different model."
+        # Provide specific error message based on the type of error
+        if service_unavailable_count >= max_retries:
+            self.logger.error(
+                "Google Gemini service is currently overloaded after all retry attempts"
             )
-        elif consecutive_429_errors >= max_retries:
-            error_msg = (
-                "Rate limit exceeded on all retry attempts. Please reduce request frequency "
-                "or upgrade your API quota if needed."
+            raise Exception(
+                "Gemini API is currently overloaded. Please try a different model or try again later."
             )
-        else:
-            error_msg = f"All {max_retries} retry attempts failed. Last error: {last_error}"
 
-        self.logger.error(f"Retry logic exhausted: {error_msg}")
-        raise Exception(error_msg)
+        self.logger.error(f"All retry attempts failed. Last error: {last_error}")
+        raise last_error or Exception("All retry attempts failed")
 
     async def generate_content_with_tools(
         self,
@@ -1323,17 +1208,12 @@ Focus on providing the most helpful and accurate response possible using the ava
         except Exception as e:
             self.logger.error(f"Error in generate_response: {e}")
             # Return descriptive error message instead of None
-            error_str = str(e).lower()
-            if "overloaded" in error_str or "503" in error_str:
-                return "⚠️ Gemini API is currently experiencing high load. Please try again in a moment, or consider using a different model like GPT-4 or Claude."
-            elif "rate" in error_str or "429" in error_str:
-                return "⚠️ Rate limit exceeded. Please wait a moment before making another request."
-            elif "quota" in error_str:
-                return "⚠️ API quota exceeded. Please check your usage limits or upgrade your plan."
-            elif "invalid" in error_str or "bad request" in error_str:
-                return "⚠️ Invalid request. Please check your input and try again."
+            if "overloaded" in str(e).lower() or "503" in str(e):
+                return "Error: Gemini API is currently overloaded. Please try a different model or try again later."
+            elif "rate" in str(e).lower() or "429" in str(e):
+                return "Error: Rate limit exceeded. Please wait a moment and try again."
             else:
-                return f"⚠️ Failed to generate response: {str(e)}"
+                return f"Error: Failed to generate response. {str(e)}"
 
     async def close(self):
         """Clean up resources and close MCP connections."""
@@ -1368,27 +1248,18 @@ Focus on providing the most helpful and accurate response possible using the ava
             self.logger.error(f"Image analysis failed: {e}")
             return f"Error analyzing image: {str(e)}"
 
-    def get_circuit_breaker_status(self) -> Dict[str, Any]:
-        """
-        Get the current status of the circuit breaker for monitoring purposes.
-
-        Returns:
-            Dictionary with circuit breaker status information
-        """
-        import time as time_module
-
-        current_time = time_module.time()
-        time_since_last_failure = current_time - self._circuit_breaker_last_failure
-
-        return {
-            "state": self._circuit_breaker_state,
-            "failures": self._circuit_breaker_failures,
-            "threshold": self._circuit_breaker_threshold,
-            "timeout_seconds": self._circuit_breaker_timeout,
-            "time_since_last_failure": time_since_last_failure,
-            "is_open": self._circuit_breaker_state == "open",
-            "will_attempt_reset": (
-                self._circuit_breaker_state == "open" and
-                time_since_last_failure >= self._circuit_breaker_timeout
-            )
-        }
+    async def call_with_circuit_breaker(
+        self, api_name: str, func: Callable, *args, **kwargs
+    ):
+        """Call a function with circuit breaker pattern for backward compatibility."""
+        try:
+            # Simple implementation - just call the function
+            # In a real implementation, this would include circuit breaker logic
+            return await func(*args, **kwargs)
+        except Exception:
+            # Track failures for circuit breaker logic
+            if not hasattr(self, f"{api_name}_failures"):
+                setattr(self, f"{api_name}_failures", 0)
+            current_failures = getattr(self, f"{api_name}_failures")
+            setattr(self, f"{api_name}_failures", current_failures + 1)
+            raise
