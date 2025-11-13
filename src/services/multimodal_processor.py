@@ -13,9 +13,8 @@ from src.services.gemini_api import (
     MediaInput,
     MediaType,
     ProcessingResult,
-    create_image_input,
-    create_document_input,
 )
+from src.services.gemini_utils import create_image_input, create_document_input
 
 
 class TelegramMultimodalProcessor:

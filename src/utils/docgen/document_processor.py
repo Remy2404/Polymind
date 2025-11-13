@@ -10,8 +10,8 @@ from typing import Optional, List, Dict, Any, Union
 from src.services.gemini_api import (
     GeminiAPI,
     ProcessingResult,
-    create_document_input,
 )
+from src.services.gemini_utils import create_document_input
 
 
 class DocumentProcessor:

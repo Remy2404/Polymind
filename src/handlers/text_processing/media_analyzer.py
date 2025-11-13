@@ -5,7 +5,8 @@ Media analyzer module for processing different types of media in Telegram messag
 import os
 import logging
 from typing import List, Dict
-from src.services.gemini_api import GeminiAPI, create_image_input, create_document_input
+from src.services.gemini_api import GeminiAPI
+from src.services.gemini_utils import create_image_input, create_document_input
 from src.services.model_handlers.model_configs import ModelConfigurations, Provider
 
 
