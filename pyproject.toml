@@ -56,7 +56,7 @@ dependencies = [
     "telegramify-markdown[mermaid]==0.1.17",
     "tenacity==9.0.0",
     "tifffile==2025.2.18",
-    "together==1.4.1",
+    "together==1.5.30",
     "tokenizers==0.21.0",
     "tqdm==4.67.1",
     "uvicorn==0.24.0.post1",
