@@ -21,7 +21,7 @@ dependencies = [
     "idna==3.3",
     "huggingface-hub==0.30.2",
     "langcodes==3.5.0",
-    "lxml==5.3.0",
+    "lxml==6.0.2",
     "mangum==0.14.0",
     "markdown==3.7",
     "networkx==3.4.2",
