@@ -9,7 +9,7 @@ dependencies = [
     "aiodns==3.0.0",
     "aiofiles==23.2.1",
     "aiohttp==3.11.8",
-    "beautifulsoup4==4.12.3",
+    "beautifulsoup4==4.14.2",
     "cachetools==5.3.3",
     "click==8.1.7",
     "cssselect2==0.8.0",
