@@ -46,10 +46,14 @@ Focus on providing the most helpful and accurate response possible using the ava
         Returns:
             Base system message string
         """
+        # Always use the unified instruction from configuration
         model_config = ModelConfigurations.get_all_models().get(model_id)
         if model_config and model_config.system_message:
             return model_config.system_message
-        return SystemMessageBuilder.DEFAULT_BASE_MESSAGE
+        
+        # Fallback to the unified constant if config lookup fails
+        from src.services.model_handlers.system_instructions import UNIFIED_SYSTEM_INSTRUCTION
+        return UNIFIED_SYSTEM_INSTRUCTION
 
     @staticmethod
     def get_context_hint(context: Optional[List[Dict]] = None) -> str:

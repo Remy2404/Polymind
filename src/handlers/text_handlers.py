@@ -58,8 +58,6 @@ class TextHandler:
             self.deepseek_api
         )
 
-        self._group_chat_integration = None
-
     async def handle_text_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:

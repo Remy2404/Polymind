@@ -5,7 +5,6 @@ import time
 import uuid
 import re
 from dataclasses import dataclass, field
-from sklearn.feature_extraction.text import TfidfVectorizer
 from .user_profile_manager import UserProfileManager
 from .persistence_manager import PersistenceManager
 from .semantic_search_manager import SemanticSearchManager
@@ -112,7 +111,6 @@ class MemoryManager:
         self.conversation_summaries = {}
         self.group_summaries = {}
         self.lock = asyncio.Lock()
-        self.vectorizer = TfidfVectorizer(max_features=1000, stop_words="english")
         self.importance_factors = {
             "recency": 0.3,
             "relevance": 0.4,
@@ -120,59 +118,13 @@ class MemoryManager:
             "media": 0.1,
         }
         # Context management settings
-        self.short_term_limit = 12
-        self.context_recent_limit = 18
-        self.max_highlights = 4
-        self.summary_min_messages = 18
-        self.highlight_importance_threshold = 0.7
-        self._priority_keywords = {
-            "remember",
-            "remind",
-            "todo",
-            "task",
-            "deadline",
-            "project",
-            "milestone",
-            "note",
-            "follow up",
-            "follow-up",
-            "summary",
-            "plan",
-            "action",
-            "decision",
-        }
-        self._keyword_stopwords = {
-            "the",
-            "and",
-            "that",
-            "with",
-            "from",
-            "this",
-            "have",
-            "about",
-            "your",
-            "will",
-            "been",
-            "there",
-            "their",
-            "into",
-            "would",
-            "should",
-            "could",
-            "might",
-            "where",
-            "when",
-            "what",
-            "how",
-            "also",
-            "these",
-            "those",
-            "every",
-            "because",
-        }
+        # Context management settings (Simplified)
+        self.short_term_limit = 15 # Increased for better immediate context
+        self.summary_min_messages = 20
+        
         if self.db is not None:
             self.persistence_manager.ensure_indexes()
-        logger.info("Enhanced MemoryManager initialized with modular components")
+        logger.info("Lightweight MemoryManager initialized")
 
     async def add_user_message(
         self,
@@ -185,7 +137,7 @@ class MemoryManager:
         group_id: Optional[str] = None,
         **metadata,
     ) -> None:
-        """Add a user message with enhanced metadata and group support"""
+        """Add a user message with optimized storage."""
         message = {
             "role": "user",
             "content": content,
@@ -200,30 +152,26 @@ class MemoryManager:
         cache_key = group_id if is_group and group_id else conversation_id
         self._ensure_message_id(cache_key, message, "user")
         async with self.lock:
+            target_cache = self.group_memory_cache if is_group else self.memory_cache
+            if cache_key not in target_cache:
+                target_cache[cache_key] = []
+            
+            target_cache[cache_key].append(message)
+            
+            # Additional group ops if needed
             if is_group and group_id:
-                if group_id not in self.group_memory_cache:
-                    self.group_memory_cache[group_id] = []
-                self.group_memory_cache[group_id].append(message)
                 await self.group_operations.update_group_context(group_id, message)
-                await self.semantic_search_manager.store_group_message_vector(
-                    group_id, content, len(self.group_memory_cache[group_id]) - 1
-                )
-            else:
-                if conversation_id not in self.memory_cache:
-                    self.memory_cache[conversation_id] = []
-                self.memory_cache[conversation_id].append(message)
-                await self.semantic_search_manager.store_message_vector(
-                    conversation_id,
-                    content,
-                    len(self.memory_cache[conversation_id]) - 1,
-                )
-            persist_key = conversation_id if not is_group else group_id
-            if persist_key is not None:
-                await self.persistence_manager.persist_memory(
+
+            # Optimisation: Removed vector storage call
+
+            # Persist
+            persist_key = group_id if is_group else conversation_id
+            if persist_key:
+                 await self.persistence_manager.persist_memory(
                     persist_key,
                     self._get_memory_data(persist_key, is_group),
                     is_group,
-                )
+                 )
 
     async def add_assistant_message(
         self,
@@ -235,7 +183,7 @@ class MemoryManager:
         group_id: Optional[str] = None,
         **metadata,
     ) -> None:
-        """Add an assistant message with enhanced metadata and group support"""
+        """Add an assistant message with optimized storage."""
         message = {
             "role": "assistant",
             "content": content,
@@ -249,38 +197,27 @@ class MemoryManager:
         cache_key = group_id if is_group and group_id else conversation_id
         self._ensure_message_id(cache_key, message, "assistant")
         async with self.lock:
+            target_cache = self.group_memory_cache if is_group else self.memory_cache
+            if cache_key not in target_cache:
+                target_cache[cache_key] = []
+            
+            target_cache[cache_key].append(message)
+
             if is_group and group_id:
-                if group_id not in self.group_memory_cache:
-                    self.group_memory_cache[group_id] = []
-                self.group_memory_cache[group_id].append(message)
-                await self.group_operations.update_group_context(group_id, message)
-                await self.group_operations.update_shared_knowledge(group_id, content)
-                await self.semantic_search_manager.store_group_message_vector(
-                    group_id, content, len(self.group_memory_cache[group_id]) - 1
-                )
-            else:
-                if conversation_id not in self.memory_cache:
-                    self.memory_cache[conversation_id] = []
-                self.memory_cache[conversation_id].append(message)
-                await self.semantic_search_manager.store_message_vector(
-                    conversation_id,
-                    content,
-                    len(self.memory_cache[conversation_id]) - 1,
-                )
-            cache_key = group_id if is_group else conversation_id
-            if (
-                len(
-                    self.group_memory_cache.get(group_id, [])
-                    if is_group
-                    else self.memory_cache.get(conversation_id, [])
-                )
-                % 20
-                == 0
-            ):
-                if cache_key is not None:
+                 await self.group_operations.update_group_context(group_id, message)
+                 await self.group_operations.update_shared_knowledge(group_id, content)
+            
+            # Optimisation: Removed vector storage call
+
+            # Auto-summary trigger
+            msgs_count = len(target_cache.get(cache_key, []))
+            if msgs_count % 20 == 0:
+                 if cache_key:
                     await self._generate_conversation_summary(cache_key, is_group)
-            persist_key = conversation_id if not is_group else group_id
-            if persist_key is not None:
+
+            # Persist
+            persist_key = group_id if is_group else conversation_id
+            if persist_key:
                 await self.persistence_manager.persist_memory(
                     persist_key,
                     self._get_memory_data(persist_key, is_group),
@@ -292,211 +229,133 @@ class MemoryManager:
         conversation_id: str,
         query: str,
         limit: int = 5,
+        min_relevance: float = 0.6,
         is_group: bool = False,
-        group_id: Optional[str] = None,
-        include_group_knowledge: bool = True,
     ) -> List[Dict[str, Any]]:
-        """Get relevant messages using semantic search with group support"""
-        try:
-            cache_key = group_id if is_group else conversation_id
-            if cache_key is None:
-                return []
-            message_cache = (
-                self.group_memory_cache.get(group_id, [])
-                if is_group
-                else self.memory_cache.get(conversation_id, [])
-            )
-            if not message_cache:
-                return []
-            relevant_messages = await self.semantic_search_manager.semantic_search(
-                cache_key, query, is_group
-            )
-            if is_group and include_group_knowledge and group_id:
-                shared_knowledge = await self.group_operations.get_shared_knowledge(
-                    group_id, query
-                )
-                relevant_messages.extend(shared_knowledge)
-            scored_messages = []
-            for msg_idx, similarity in relevant_messages[: limit * 2]:
-                if msg_idx < len(message_cache):
-                    message = message_cache[msg_idx]
-                    combined_score = (
-                        self.semantic_search_manager.calculate_message_importance(
-                            message, similarity, self.importance_factors
-                        )
-                    )
-                    scored_messages.append((message, combined_score))
-            scored_messages.sort(key=lambda x: x[1], reverse=True)
-            return [msg for msg, score in scored_messages[:limit]]
-        except Exception as e:
-            logger.error(f"Error in semantic search: {e}")
-            return await self.get_short_term_memory(
-                conversation_id, limit, is_group, group_id
-            )
+        """Retrieve relevant memory using simple keyword matching (replacing semantic search)."""
+        cache_key = conversation_id
+        await self.load_memory(cache_key, is_group)
+        
+        target_cache = self.group_memory_cache if is_group else self.memory_cache
+        messages = target_cache.get(cache_key, [])
+        
+        if not messages:
+            return []
+
+        # Simple keyword matching
+        query_words = set(query.lower().split())
+        match_scores = []
+        
+        for msg in messages:
+            content = msg.get("content", "").lower()
+            if not content: continue
+            
+            score = 0
+            for word in query_words:
+                if word in content:
+                    score += 1
+            
+            if score > 0:
+                match_scores.append((msg, score))
+        
+        # Sort by score desc, then timestamp desc
+        match_scores.sort(key=lambda x: (x[1], x[0].get("timestamp", 0)), reverse=True)
+        
+        return [item[0] for item in match_scores[:limit]]
 
     async def get_short_term_memory(
-        self,
-        conversation_id: str,
-        limit: int = 5,
-        is_group: bool = False,
-        group_id: Optional[str] = None,
+        self, conversation_id: str, limit: int = 10, is_group: bool = False
     ) -> List[Dict[str, Any]]:
-        """Get recent messages with group support and auto-loading from storage"""
-        cache_key = group_id if is_group else conversation_id
-        if cache_key is None:
-            return []
-        message_cache = (
-            self.group_memory_cache.get(group_id, [])
-            if is_group
-            else self.memory_cache.get(conversation_id, [])
-        )
-        if not message_cache:
-            await self.load_memory(cache_key, is_group)
-            message_cache = (
-                self.group_memory_cache.get(group_id, [])
-                if is_group
-                else self.memory_cache.get(conversation_id, [])
-            )
-        if not message_cache:
-            return []
-        return message_cache[-limit:]
+        """Get most recent messages."""
+        await self.load_memory(conversation_id, is_group)
+        target_cache = self.group_memory_cache if is_group else self.memory_cache
+        messages = target_cache.get(conversation_id, [])
+        return messages[-limit:] if messages else []
 
     async def get_conversation_summary(
-        self,
-        conversation_id: str,
-        is_group: bool = False,
-        group_id: Optional[str] = None,
+        self, conversation_id: str, is_group: bool = False
     ) -> Optional[str]:
-        """Get or generate conversation summary with group support"""
-        cache_key = group_id if is_group else conversation_id
-        if cache_key is None:
-            return None
-        summary_cache = (
-            self.group_summaries if is_group else self.conversation_summaries
-        )
-        if cache_key in summary_cache:
-            return summary_cache[cache_key]
-        return await self._generate_conversation_summary(cache_key, is_group)
+        """Get the current conversation summary."""
+        await self.load_memory(conversation_id, is_group)
+        summary_cache = self.group_summaries if is_group else self.conversation_summaries
+        return summary_cache.get(conversation_id)
 
-    async def clear_conversation(
-        self,
-        conversation_id: str,
-        is_group: bool = False,
-        group_id: Optional[str] = None,
-    ) -> None:
-        """Clear conversation memory with group support"""
+    def clear_conversation(self, conversation_id: str, is_group: bool = False):
+        """Clear conversation from memory."""
+        target_cache = self.group_memory_cache if is_group else self.memory_cache
+        target_cache.pop(conversation_id, None)
+        
+        summary_cache = self.group_summaries if is_group else self.conversation_summaries
+        summary_cache.pop(conversation_id, None)
+        
+        if is_group:
+            self.group_operations.clear_group_data(conversation_id)
+
+    async def load_memory(self, cache_key: str, is_group: bool = False) -> None:
+        """Load memory into cache if not present"""
+        target_cache = self.group_memory_cache if is_group else self.memory_cache
+        if cache_key in target_cache:
+            return
+
         async with self.lock:
-            if is_group:
-                if group_id is not None:
-                    self.group_memory_cache.pop(group_id, None)
-                    self.group_summaries.pop(group_id, None)
-                    self.group_operations.clear_group_data(group_id)
+            # Double check pattern
+            if cache_key in target_cache:
+                return
+            
+            memory_data = await self.persistence_manager.load_memory(cache_key, is_group)
+            if memory_data:
+                self._populate_cache_from_data(cache_key, memory_data, is_group)
             else:
-                self.memory_cache.pop(conversation_id, None)
-                self.conversation_summaries.pop(conversation_id, None)
+                 # Initialize empty
+                 target_cache[cache_key] = []
 
-    async def get_group_participants(self, group_id: str) -> List[str]:
-        """Get list of participants in a group conversation"""
-        return await self.group_operations.get_group_participants(
-            group_id, self.group_memory_cache
-        )
-
-    async def get_group_activity_summary(
-        self, group_id: str, days: int = 7
-    ) -> Dict[str, Any]:
-        """Get group activity summary for specified days"""
-        summary = await self.group_operations.get_group_activity_summary(
-            group_id, self.group_memory_cache, days
-        )
-        if summary:
-            summary["summary"] = await self.get_conversation_summary("", True, group_id)
-        return summary
-
-    async def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]):
-        """Save user profile information"""
-        return await self.user_profile_manager.save_user_profile(user_id, profile_data)
-
-    async def get_user_profile(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Retrieve user profile information"""
-        return await self.user_profile_manager.get_user_profile(user_id)
-
-    async def update_user_profile_field(self, user_id: int, field: str, value: Any):
-        """Update a specific field in user profile"""
-        return await self.user_profile_manager.update_user_profile_field(
-            user_id, field, value
-        )
-
-    async def extract_and_save_user_info(self, user_id: int, message_content: str):
-        """Extract and save user information from message content"""
-        return await self.user_profile_manager.extract_and_save_user_info(
-            user_id, message_content
-        )
-
-    async def load_memory(self, cache_key: str, is_group: bool = False):
-        """Load memory from storage"""
-        memory_data = await self.persistence_manager.load_memory(cache_key, is_group)
-        if memory_data:
-            self._populate_cache_from_data(cache_key, memory_data, is_group)
-
-    async def get_all_conversation_history(
+    async def build_context_bundle(
         self,
-        conversation_id: str,
+        cache_key: str,
+        limit: int = 15,
+        include_summary: bool = True,
+        include_highlights: bool = False, # Force False as heuristics removed
         is_group: bool = False,
-        group_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Get all conversation history for a user/group"""
-        try:
-            cache_key = group_id if is_group else conversation_id
-            if cache_key is None:
-                return []
-            await self.load_memory(cache_key, is_group)
-            messages = (
-                self.group_memory_cache.get(cache_key, [])
-                if is_group
-                else self.memory_cache.get(cache_key, [])
-            )
-            return messages
-        except Exception as e:
-            logger.error(f"Error retrieving conversation history: {e}")
-            return []
-
-    async def export_conversation_data(
-        self,
-        conversation_id: str,
-        is_group: bool = False,
-        group_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Export complete conversation data including summary"""
-        try:
-            cache_key = group_id if is_group else conversation_id
-            if cache_key is None:
-                return {}
-            await self.load_memory(cache_key, is_group)
-            messages = await self.get_all_conversation_history(
-                conversation_id, is_group, group_id
-            )
-            summary = (
-                self.group_summaries.get(cache_key)
-                if is_group
-                else self.conversation_summaries.get(cache_key)
-            )
-            export_data = {
-                "conversation_id": conversation_id,
-                "is_group": is_group,
-                "group_id": group_id,
-                "messages": messages,
-                "summary": summary,
-                "total_messages": len(messages),
-                "exported_at": time.time(),
-            }
-            if is_group and cache_key:
-                export_data["shared_knowledge"] = (
-                    self.group_operations.get_shared_knowledge_for_group(cache_key)
+        """Build a simplified context bundle: recent messages + summary."""
+        key = cache_key
+        if is_group and cache_key is None:
+            key = "group"
+        
+        await self.load_memory(key, is_group)
+        
+        message_cache = (
+            self.group_memory_cache.get(key, [])
+            if is_group
+            else self.memory_cache.get(key, [])
+        )
+        
+        if not message_cache:
+            return {"recent": [], "highlights": [], "summary": None}
+
+        # Just get the recent messages
+        recent_limit = max(limit, self.short_term_limit)
+        recent_slice = message_cache[-recent_limit:]
+        
+        recent_messages = []
+        for msg in recent_slice:
+            if msg.get("content"):
+                cloned = self._clone_message_for_context(
+                    msg,
+                    {"context_type": "recent", "message_id": msg.get("message_id")}
                 )
-            return export_data
-        except Exception as e:
-            logger.error(f"Error exporting conversation data: {e}")
-            return {}
+                recent_messages.append(cloned)
+
+        summary: Optional[str] = None
+        if include_summary:
+            summary_cache = (
+                self.group_summaries if is_group else self.conversation_summaries
+            )
+            summary = summary_cache.get(key)
+            if not summary and len(message_cache) >= self.summary_min_messages:
+                 summary = await self._generate_conversation_summary(key, is_group)
+
+        return {"recent": recent_messages, "highlights": [], "summary": summary}
 
     def _generate_message_id(self, cache_key: Optional[str], role: str) -> str:
         """Generate a stable unique message identifier"""
@@ -512,139 +371,12 @@ class MemoryManager:
         return message["message_id"]
 
     def _clone_message_for_context(
-        self, message: Dict[str, Any], extra_metadata: Optional[Dict[str, Any]] = None
+        self, message: Dict[str, Any], overrides: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Create a shallow copy of a message with merged metadata for context usage"""
-        cloned = dict(message)
-        metadata = dict(message.get("metadata", {}))
-        if extra_metadata:
-            metadata.update(extra_metadata)
-        cloned["metadata"] = metadata
-        return cloned
-
-    def _contains_priority_keyword(self, content: str) -> bool:
-        """Check if content contains high-priority keywords"""
-        lowered = content.lower()
-        if any(keyword in lowered for keyword in self._priority_keywords):
-            return True
-        # Simple keyword extraction for verbs/nouns >= 4 chars
-        tokens = re.findall(r"[a-zA-Z]{4,}", lowered)
-        for token in tokens:
-            if token in self._keyword_stopwords:
-                continue
-            if token.endswith("ing") or token.endswith("ed"):
-                return True
-        return False
-
-    def _select_highlights(
-        self,
-        cache_key: Optional[str],
-        message_cache: List[Dict[str, Any]],
-        is_group: bool,
-    ) -> List[Dict[str, Any]]:
-        """Select high-importance messages to surface as highlights"""
-        if not message_cache:
-            return []
-        candidates: List[Dict[str, Any]] = []
-        total_messages = len(message_cache)
-        for idx, raw_message in enumerate(message_cache):
-            content = raw_message.get("content", "").strip()
-            if not content:
-                continue
-            importance = float(raw_message.get("importance", 0.5))
-            keyword_bonus = 0.1 if self._contains_priority_keyword(content) else 0.0
-            role_bonus = 0.05 if raw_message.get("role") == "user" else 0.0
-            recency_penalty = (
-                0.05 if idx >= max(0, total_messages - self.short_term_limit) else 0.0
-            )
-            score = importance + keyword_bonus + role_bonus - recency_penalty
-            if score >= self.highlight_importance_threshold or keyword_bonus > 0:
-                message_id = self._ensure_message_id(
-                    cache_key, raw_message, raw_message.get("role", "assistant")
-                )
-                cloned = self._clone_message_for_context(
-                    raw_message,
-                    {
-                        "context_type": "highlight",
-                        "highlight_score": round(score, 3),
-                        "message_id": message_id,
-                        "original_index": idx,
-                    },
-                )
-                candidates.append(cloned)
-        if not candidates:
-            return []
-        # Sort by score and timestamp to keep most relevant highlights
-        candidates.sort(
-            key=lambda msg: (
-                msg["metadata"].get("highlight_score", 0.0),
-                msg.get("timestamp", 0.0),
-            ),
-            reverse=True,
-        )
-        selected = []
-        seen_ids = set()
-        for message in candidates:
-            msg_id = message["metadata"].get("message_id")
-            if msg_id in seen_ids:
-                continue
-            seen_ids.add(msg_id)
-            selected.append(message)
-            if len(selected) >= self.max_highlights:
-                break
-        selected.sort(key=lambda msg: msg.get("timestamp", 0.0))
-        return selected
-
-    async def build_context_bundle(
-        self,
-        cache_key: str,
-        limit: int = 12,
-        include_summary: bool = True,
-        include_highlights: bool = True,
-        is_group: bool = False,
-    ) -> Dict[str, Any]:
-        """Build a context bundle combining summary, highlights, and recent messages"""
-        key = cache_key
-        if is_group and cache_key is None:
-            key = "group"
-        await self.load_memory(key, is_group)
-        message_cache = (
-            self.group_memory_cache.get(key, [])
-            if is_group
-            else self.memory_cache.get(key, [])
-        )
-        if not message_cache:
-            return {"recent": [], "highlights": [], "summary": None}
-        for raw_message in message_cache:
-            self._ensure_message_id(
-                key, raw_message, raw_message.get("role", "assistant")
-            )
-        recent_limit = max(limit, self.short_term_limit)
-        recent_slice = message_cache[-recent_limit:]
-        recent_messages = [
-            self._clone_message_for_context(
-                msg,
-                {
-                    "context_type": "recent",
-                    "message_id": msg.get("message_id"),
-                },
-            )
-            for msg in recent_slice
-            if msg.get("content")
-        ]
-        highlights: List[Dict[str, Any]] = []
-        if include_highlights:
-            highlights = self._select_highlights(key, message_cache, is_group)
-        summary: Optional[str] = None
-        if include_summary:
-            if len(message_cache) >= self.summary_min_messages:
-                summary = await self._generate_conversation_summary(key, is_group)
-            else:
-                summary_cache = (
-                    self.group_summaries if is_group else self.conversation_summaries
-                )
-                summary = summary_cache.get(key)
-        return {"recent": recent_messages, "highlights": highlights, "summary": summary}
+        """Clone a message and apply overrides for context building"""
+        msg_copy = message.copy()
+        msg_copy.update(overrides)
+        return msg_copy
 
     def _get_memory_data(self, cache_key: str, is_group: bool) -> Dict[str, Any]:
         """Get memory data for persistence"""

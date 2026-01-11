@@ -57,37 +57,24 @@ class ConversationLogic:
         preferred_model,
         rag_integration=None
     ):
-        """Handle regular text conversation with AI."""
-        # This mirrors the original _handle_text_conversation logic
+        """Handle regular text conversation with simplified logic and standard timeout."""
         message = update.message or update.edited_message
+        
+        # 1. Prepare Base Prompt
         enhanced_prompt = message_text
         if quoted_text:
             enhanced_prompt = self.prompt_formatter.add_context(
                 message_text, "quote", quoted_text
             )
 
-        # Get intelligent context
-        intelligent_context = await self.conversation_manager.get_intelligent_context(
-            user_id, message_text
-        )
+        # 2. Add Context (Simplified)
+        # We rely on the conversation manager for basic history usage
+        formatted_context = "" 
+        if history_context:
+            # Format minimal context if needed, but model handles history usually
+            pass
 
-        if intelligent_context and intelligent_context.get("relevant_memory"):
-            context_texts = []
-            for item in intelligent_context["relevant_memory"]:
-                if isinstance(item, dict):
-                    if "content" in item:
-                        context_texts.append(item["content"])
-                    elif "assistant_message" in item:
-                        context_texts.append(item["assistant_message"])
-                elif isinstance(item, str):
-                    context_texts.append(item)
-
-            if context_texts:
-                formatted_context = "\n".join(context_texts)
-                enhanced_prompt = self.prompt_formatter.add_context(
-                    enhanced_prompt, "context", formatted_context
-                )
-
+        # 3. Apply Guidelines
         enhanced_prompt_with_guidelines = await self.prompt_formatter.apply_response_guidelines(
             enhanced_prompt,
             ModelHandlerFactory.get_model_handler(
@@ -98,6 +85,57 @@ class ConversationLogic:
             ),
             context,
         )
+
+        try:
+            # 4. Generate Response with Standard Timeout
+            # We enforce a standard timeout for all requests to keep logic clean and predictable
+            ai_response = await asyncio.wait_for(
+                self.model_logic.generate_ai_response(
+                   enhanced_prompt_with_guidelines, 
+                   preferred_model, 
+                   user_id, 
+                   history_context # Use standard history
+                ),
+                timeout=60.0 # Standard 60s timeout
+            )
+
+            # 5. Send Response
+            await self._send_response(
+               update, context, ai_response, thinking_message, preferred_model, quoted_text is not None
+            )
+
+            # 6. Save Interaction
+            await self.conversation_manager.save_message_pair(
+               user_id, enhanced_prompt, ai_response, preferred_model
+            )
+
+        except asyncio.TimeoutError:
+            await self._handle_error(update, context, thinking_message, "Response timed out. Please try again.")
+        except Exception as e:
+            self.logger.error(f"Error in conversation logic: {e}", exc_info=True)
+            await self._handle_error(update, context, thinking_message, "An error occurred.")
+
+    async def _send_response(self, update, context, ai_response, thinking_message, model, has_quote):
+        """Helper to send the final response."""
+        try:
+            if thinking_message:
+                await thinking_message.delete()
+        except Exception:
+            pass
+            
+        model_indicator, _ = self.model_logic.get_model_indicator_and_config(model)
+        formatted_response = self.response_formatter.format_with_model_indicator(
+            ai_response, model_indicator, has_quote
+        )
+        await self.response_formatter.safe_send_message(update.message, formatted_response)
+
+    async def _handle_error(self, update, context, thinking_message, error_text):
+        try:
+            if thinking_message:
+                await thinking_message.delete()
+        except:
+            pass
+        await update.message.reply_text(error_text)
 
         # Timeout logic (simplified for brevity, original logic preserved in spirit)
         model_timeout = 60.0
