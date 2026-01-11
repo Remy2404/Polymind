@@ -116,20 +116,3 @@ class MediaUtilities:
         return file_extension.lower() in document_extensions
 
 
-class MessagePreprocessor:
-    """Process messages before sending to the AI"""
-
-    @staticmethod
-    def clean_message(message_text: str) -> str:
-        """Clean message text from special characters or problematic patterns"""
-        cleaned = " ".join(message_text.split())
-        cleaned = cleaned.replace("\0", "")
-        return cleaned
-
-    @staticmethod
-    def extract_command_args(message_text: str, command: str) -> str:
-        """Extract arguments after a command"""
-        if message_text.startswith(command):
-            args = message_text[len(command) :].strip()
-            return args
-        return ""

@@ -14,6 +14,52 @@ from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 import logging
 import io
+import time
+import asyncio
+from datetime import datetime, timedelta
+from cachetools import TTLCache
+from typing import Optional
+from PIL import Image
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ImageRequest:
+    prompt: str
+    width: int
+    height: int
+    steps: int
+    timestamp: float = field(default_factory=time.time)
+
+
+class ImageGenerationHandler:
+    def __init__(self):
+        self.request_cache = TTLCache(maxsize=100, ttl=3600)
+        self.request_limiter = {}
+        self.processing_queue = asyncio.Queue()
+        self.rate_limit_time = 30
+
+    def is_rate_limited(self, user_id: int) -> bool:
+        if user_id in self.request_limiter:
+            last_request = self.request_limiter[user_id]
+            if datetime.now() - last_request < timedelta(seconds=self.rate_limit_time):
+                return True
+        return False
+
+    def update_rate_limit(self, user_id: int) -> None:
+        self.request_limiter[user_id] = datetime.now()
+
+    def get_cached_image(
+        self, prompt: str, width: int, height: int, steps: int
+    ) -> Optional[Image.Image]:
+        cache_key = f"{prompt}_{width}_{height}_{steps}"
+        return self.request_cache.get(cache_key)
+
+    def cache_image(
+        self, prompt: str, width: int, height: int, steps: int, image: Image.Image
+    ) -> None:
+        cache_key = f"{prompt}_{width}_{height}_{steps}"
+        self.request_cache[cache_key] = image
 
 
 class ImageCommands:

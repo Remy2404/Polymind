@@ -6,18 +6,19 @@ Provides categorized model lists and easy switching between AI models.
 import os
 import sys
 import logging
-from typing import List
+from typing import List, Dict, Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
+# Add project root to path
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 from src.services.model_handlers.simple_api_manager import (
     SuperSimpleAPIManager,
 )
+from src.services.model_handlers.model_configs import ModelConfigurations
 from src.services.user_data_manager import UserDataManager
-from src.handlers.support_tool_call import ToolCallSupportDetector
 from src.handlers.commands.callback_data_mapper import callback_mapper
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,76 @@ class ModelCommands:
     ):
         self.api_manager = api_manager
         self.user_data_manager = user_data_manager
-        self.tool_call_detector = ToolCallSupportDetector(api_manager)
+        self._tool_call_models = None
+
+    def _reset_tool_call_cache(self):
+        """Reset the cached tool call models to force recalculation."""
+        self._tool_call_models = None
+
+    def _get_tool_call_supported_models(self) -> Dict[str, Dict]:
+        """
+        Get all models that support tool calling.
+        Returns:
+            Dictionary mapping model IDs to their configurations
+        """
+        if self._tool_call_models is not None:
+            return self._tool_call_models
+        all_models = self.api_manager.get_all_models()
+        tool_call_models = {}
+        for model_id, config in all_models.items():
+            if config is None:
+                continue
+            if self._supports_tool_calling(model_id, config):
+                tool_call_models[model_id] = config
+        self._tool_call_models = tool_call_models
+        return tool_call_models
+
+    def _supports_tool_calling(self, model_id: str, config) -> bool:
+        """
+        Determine if a model supports tool calling based on supported_parameters.
+        """
+        if config is None:
+            return False
+        try:
+            model_configs = ModelConfigurations.get_all_models()
+            if model_id in model_configs:
+                model_config = model_configs[model_id]
+                if (
+                    hasattr(model_config, "supported_parameters")
+                    and model_config.supported_parameters
+                ):
+                    return "tools" in model_config.supported_parameters
+        except Exception as e:
+            logger.debug(f"Could not check supported_parameters for {model_id}: {e}")
+        try:
+            supported_params = getattr(config, "supported_parameters", [])
+            if supported_params:
+                return "tools" in supported_params
+        except Exception as e:
+            logger.debug(
+                f"Could not access supported_parameters directly for {model_id}: {e}"
+            )
+        if hasattr(config, "provider"):
+            if (
+                hasattr(config.provider, "value")
+                and config.provider.value == "deepseek"
+            ):
+                return True
+        return False
+
+    def _get_tool_call_statistics(self) -> Dict[str, int]:
+        """Get statistics about tool-call supported models."""
+        tool_call_models = self._get_tool_call_supported_models()
+        all_models = self.api_manager.get_all_models()
+        return {
+            "total_models": len(all_models),
+            "tool_call_models": len(tool_call_models),
+            "percentage": (
+                round((len(tool_call_models) / len(all_models)) * 100, 1)
+                if all_models
+                else 0
+            ),
+        }
 
     async def switchmodel_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -64,7 +134,7 @@ class ModelCommands:
             keyboard.append(category_buttons)
         tool_call_count = 0
         try:
-            tool_call_stats = self.tool_call_detector.get_tool_call_statistics()
+            tool_call_stats = self._get_tool_call_statistics()
             tool_call_count = tool_call_stats.get("tool_call_models", 0)
         except Exception:
             pass
@@ -186,7 +256,7 @@ class ModelCommands:
 
     async def _show_tool_call_models(self, query) -> None:
         """Show only models that support tool calling"""
-        tool_call_models = self.tool_call_detector.get_tool_call_supported_models()
+        tool_call_models = self._get_tool_call_supported_models()
         if not tool_call_models:
             await query.edit_message_text(
                 "❌ No tool-calling models found in current configuration.",
@@ -226,7 +296,7 @@ class ModelCommands:
             ]
         )
         reply_markup = InlineKeyboardMarkup(keyboard)
-        stats = self.tool_call_detector.get_tool_call_statistics()
+        stats = self._get_tool_call_statistics()
         message = (
             f"🛠️ **Tool-Calling Models Only**\n\n"
             f"📋 Models with tool/function calling support:\n"
@@ -362,7 +432,7 @@ class ModelCommands:
         )
         tool_call_count = 0
         try:
-            tool_call_stats = self.tool_call_detector.get_tool_call_statistics()
+            tool_call_stats = self._get_tool_call_statistics()
             tool_call_count = tool_call_stats.get("tool_call_models", 0)
         except Exception:
             pass
