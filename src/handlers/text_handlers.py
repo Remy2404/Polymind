@@ -8,7 +8,7 @@ from src.utils.log.telegramlog import telegram_logger
 from src.services.gemini_api import GeminiAPI
 from src.services.user_data_manager import UserDataManager
 import asyncio
-from .message_context_handler import MessageContextHandler
+from src.utils.message_utils import extract_reply_context
 from .response_formatter import ResponseFormatter
 from src.services.memory_context.memory_manager import MemoryManager
 from src.services.memory_context.model_history_manager import ModelHistoryManager
@@ -49,7 +49,7 @@ class TextHandler:
         self.memory_manager.short_term_limit = 15
         self.memory_manager.token_limit = 64000  # Increased for longer context support
         self.model_history_manager = ModelHistoryManager(self.memory_manager)
-        self.context_handler = MessageContextHandler()
+
         self.response_formatter = ResponseFormatter()
         self.prompt_formatter = PromptFormatter()
         self.conversation_manager = ConversationManager(
@@ -124,7 +124,7 @@ class TextHandler:
             if update.effective_chat.type in ["group", "supergroup"]:
                 message_text = enhanced_message_text
                 self.logger.info("Using enhanced group message for processing")
-        quoted_text, quoted_message_id = self.context_handler.extract_reply_context(
+        quoted_text, quoted_message_id = extract_reply_context(
             message
         )
         conversation_id = f"user_{user_id}"

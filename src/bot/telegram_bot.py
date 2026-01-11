@@ -114,7 +114,7 @@ class TelegramBot:
                 self.db, self.client = get_database(max_retries=2, retry_interval=3.0)
                 if self.db is None:
                     raise ConnectionError("Database connection returned None")
-                self.logger.info("✅ Connected to MongoDB successfully")
+                self.logger.info(" Connected to MongoDB successfully")
                 try:
                     collections = self.db.list_collection_names()
                     self.logger.info(
@@ -131,12 +131,12 @@ class TelegramBot:
                 if attempt < max_retries - 1:
                     if is_timeout:
                         self.logger.warning(
-                            f"⏰ Database connection timeout on attempt {attempt + 1}/{max_retries}. "
+                            f" Database connection timeout on attempt {attempt + 1}/{max_retries}. "
                             f"This is common with MongoDB Atlas. Retrying in {retry_delay:.1f}s..."
                         )
                     else:
                         self.logger.warning(
-                            f"🔄 Database connection attempt {attempt + 1}/{max_retries} failed: {str(e)[:150]}... "
+                            f" Database connection attempt {attempt + 1}/{max_retries} failed: {str(e)[:150]}... "
                             f"Retrying in {retry_delay:.1f}s..."
                         )
                     time.sleep(retry_delay)
@@ -150,12 +150,12 @@ class TelegramBot:
                         )
                     else:
                         self.logger.error(
-                            f"❌ All database connection attempts failed: {e}"
+                            f" All database connection attempts failed: {e}"
                         )
                     self.db = None
                     self.client = None
                     self.logger.warning(
-                        "🚨 Bot starting in degraded mode without database persistence"
+                        " Bot starting in degraded mode without database persistence"
                     )
 
     def _init_services(self):
@@ -184,7 +184,7 @@ class TelegramBot:
 
     def _init_utility_classes(self):
         """Initialize utility classes for message handling."""
-        from src.handlers.message_context_handler import MessageContextHandler
+
         from src.handlers.response_formatter import ResponseFormatter
         from src.services.media.image_processor import ImageProcessor
         from src.services.media.voice_processor import VoiceProcessor
@@ -193,13 +193,13 @@ class TelegramBot:
 
         self.user_data_manager = UserDataManager(self.db)
         self.telegram_logger = telegram_logger
-        self.context_handler = MessageContextHandler()
+
         self.response_formatter = ResponseFormatter()
         self.image_processor = ImageProcessor(self.gemini_api)
         self.voice_processor = VoiceProcessor()
         self.prompt_formatter = PromptFormatter()
         self.preferences_manager = UserPreferencesManager(self.user_data_manager)
-        self.application.bot_data["context_handler"] = self.context_handler
+
         self.application.bot_data["response_formatter"] = self.response_formatter
         self.application.bot_data["image_processor"] = self.image_processor
         self.application.bot_data["voice_processor"] = self.voice_processor
@@ -238,7 +238,7 @@ class TelegramBot:
             openrouter_api=self.openrouter_api,
             command_handlers=self.command_handler,
         )
-        self.message_handlers.context_handler = self.context_handler
+
         self.message_handlers.response_formatter = self.response_formatter
         self.message_handlers.voice_processor = self.voice_processor
         self.message_handlers.preferences_manager = self.preferences_manager

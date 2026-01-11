@@ -13,7 +13,7 @@ from src.services.multimodal_processor import TelegramMultimodalProcessor
 from src.handlers.text_handlers import TextHandler
 # from src.services.ai_command_router import AICommandRouter
 from src.utils.docgen.document_processor import DocumentProcessor
-from src.handlers.message_context_handler import MessageContextHandler
+from src.utils.message_utils import extract_reply_context, format_prompt_with_quote
 from src.handlers.response_formatter import ResponseFormatter
 from src.services.media.voice_processor import (
     VoiceProcessor,
@@ -51,7 +51,7 @@ class MessageHandlers:
         self.multimodal_processor = TelegramMultimodalProcessor(gemini_api)
         self.deepseek_api = deepseek_api
         self.openrouter_api = openrouter_api
-        self.context_handler = MessageContextHandler()
+
         self.response_formatter = ResponseFormatter()
         self.document_processor = DocumentProcessor(gemini_api)
         self.ai_command_router = None
@@ -520,7 +520,7 @@ class MessageHandlers:
         user_id = update.effective_user.id
         conversation_id = f"user_{user_id}"
         self.telegram_logger.log_message("Received voice message", user_id)
-        quoted_text, quoted_message_id = self.context_handler.extract_reply_context(
+        quoted_text, quoted_message_id = extract_reply_context(
             update.message
         )
         try:
@@ -662,7 +662,7 @@ class MessageHandlers:
             )
             prompt = text
             if quoted_text:
-                prompt = self.context_handler.format_prompt_with_quote(
+                prompt = format_prompt_with_quote(
                     text, quoted_text
                 )
             user_settings = await self.user_data_manager.get_user_settings(str(user_id))
