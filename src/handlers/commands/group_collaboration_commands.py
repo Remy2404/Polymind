@@ -20,8 +20,6 @@ class GroupCollaborationCommands:
         self.user_data_manager = user_data_manager
         self.telegram_logger = telegram_logger
         self.logger = logging.getLogger(__name__)
-        self.active_group_sessions = {}
-        self.group_permissions = {}
 
     async def start_group_session_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE

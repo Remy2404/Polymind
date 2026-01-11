@@ -42,25 +42,12 @@ class MessageHandlers:
 
     async def _handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming text messages."""
-        # This function acts as the Router
         try:
-            if not update.message and not update.callback_query:
+            if not update.message:
                 return
 
-            if update.callback_query:
-                 await update.callback_query.answer()
-                 # Logic for callback query if specialized
-            
-            # Simple text handler instantiation or usage
-            # TextHandler is already passed in init, let's use it or instantiate fresh akin to original
-            text_handler_instance = TextHandler(
-                self.gemini_api,
-                self.user_data_manager,
-                openrouter_api=self.openrouter_api,
-                deepseek_api=self.deepseek_api,
-            )
-            # Route to it
-            await text_handler_instance.handle_text_message(update, context)
+            # Use injected text_handler
+            await self.text_handler.handle_text_message(update, context)
             
             # Update stats
             user_id = update.effective_user.id
@@ -91,13 +78,9 @@ class MessageHandlers:
             processing_msg = await update.message.reply_text("🖼️ Processing your image...")
             await MediaHelpers.send_appropriate_chat_action(update, context, True, "photo")
             
-            # Delegate to TextHandler's ConversationLogic
-            text_handler = TextHandler(
-                self.gemini_api, self.user_data_manager, self.openrouter_api, self.deepseek_api
-            )
             preferred_model = await self.user_data_manager.get_user_preference(user_id, "preferred_model")
 
-            await text_handler.conversation_logic.handle_media_analysis(
+            await self.text_handler.conversation_logic.handle_media_analysis(
                 update, context, processing_msg, media_files, media_type, 
                 update.message.caption or "Analyze this image",
                 user_id, preferred_model
@@ -106,12 +89,7 @@ class MessageHandlers:
     async def _handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle voice messages via VoiceLogic."""
         # Ensure conversation manager access
-        if hasattr(self.text_handler, "conversation_manager"):
-            cm = self.text_handler.conversation_manager
-        else:
-             # Fallback creation
-             th = TextHandler(self.gemini_api, self.user_data_manager)
-             cm = th.conversation_manager
+        cm = getattr(self.text_handler, "conversation_manager", None)
              
         await self.voice_logic.handle_voice_message(update, context, cm)
 
@@ -132,12 +110,9 @@ class MessageHandlers:
         has_media, media_files, media_type = await MediaHelpers.extract_media_files(update, context)
         if has_media:
              processing_msg = await update.message.reply_text("Processing document...")
-             text_handler = TextHandler(
-                self.gemini_api, self.user_data_manager, self.openrouter_api, self.deepseek_api
-             )
              preferred_model = await self.user_data_manager.get_user_preference(user_id, "preferred_model")
              
-             await text_handler.conversation_logic.handle_media_analysis(
+             await self.text_handler.conversation_logic.handle_media_analysis(
                  update, context, processing_msg, media_files, media_type,
                  update.message.caption or "Analyze this document",
                  user_id, preferred_model
