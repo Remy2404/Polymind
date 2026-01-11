@@ -40,19 +40,15 @@ RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -m appuser && 
     chown -R appuser:appuser /home/appuser
 
 # Install runtime dependencies, Node.js, and fonts in one layer with caching
+# Install runtime dependencies, Node.js, and MCP packages
 RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache \
     --mount=type=cache,target=/var/lib/apt/lists,id=apt-lists \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-      ffmpeg curl ca-certificates \
-      fonts-liberation \
-      fonts-dejavu \
-      fonts-dejavu-core \
-      fonts-dejavu-extra && \
+      ffmpeg curl ca-certificates && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     npm install -g \
-      @mermaid-js/mermaid-cli \
       @smithery/cli \
       @upstash/context7-mcp \
       @modelcontextprotocol/server-sequential-thinking \
