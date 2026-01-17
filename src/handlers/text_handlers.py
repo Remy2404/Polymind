@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 from src.utils.log.telegramlog import telegram_logger
-from src.services.gemini_api import GeminiAPI
+from src.api.llm.gemini_api import GeminiAPI
 from src.services.user_data_manager import UserDataManager
 import asyncio
 from .message_context_handler import MessageContextHandler
@@ -18,7 +18,6 @@ from src.services.model_handlers.model_configs import ModelConfigurations
 from src.services.memory_context.conversation_manager import ConversationManager
 from .text_processing.media_analyzer import MediaAnalyzer
 from .text_processing.utilities import MediaUtilities
-# from src.services.ai_command_router import EnhancedIntentDetector
 from src.services.mcp_bot_integration import (
     generate_mcp_response,
     is_model_mcp_compatible,

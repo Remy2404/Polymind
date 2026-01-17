@@ -7,7 +7,7 @@ Integrated with the new GeminiAPI
 import logging
 import io
 from typing import Optional, List, Dict, Any, Union
-from src.services.gemini_api import (
+from src.api.llm.gemini_api import (
     GeminiAPI,
     ProcessingResult,
 )

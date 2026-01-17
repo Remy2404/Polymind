@@ -197,11 +197,11 @@ class VoiceProcessor:
 
         def _do_transcribe():
             try:
-                self.logger.info("🔍 STANDARD TRANSCRIPTION:")
-                self.logger.info(f"  → Input language: {language}")
-                self.logger.info(f"  → Processed lang_code: {lang_code}")
-                self.logger.info(f"  → Audio file: {audio_file_path}")
-                self.logger.info(f"  → Model size: {model_size}")
+                self.logger.info("STANDARD TRANSCRIPTION:")
+                self.logger.info(f"  Input language: {language}")
+                self.logger.info(f"  Processed lang_code: {lang_code}")
+                self.logger.info(f"  Audio file: {audio_file_path}")
+                self.logger.info(f"  Model size: {model_size}")
                 segments, info = model.transcribe(
                     audio_file_path,
                     language=lang_code if lang_code != "auto" else None,
@@ -214,13 +214,13 @@ class VoiceProcessor:
                 self.logger.info(
                     f"  → Result - Detected: {info.language}, Confidence: {info.language_probability:.3f}"
                 )
-                self.logger.info("🎯 FINAL STANDARD TRANSCRIPTION RESULT:")
-                self.logger.info(f"  → Final language: {info.language}")
+                self.logger.info("FINAL STANDARD TRANSCRIPTION RESULT:")
+                self.logger.info(f"  Final language: {info.language}")
                 self.logger.info(
-                    f"  → Final confidence: {info.language_probability:.3f}"
+                    f"  Final confidence: {info.language_probability:.3f}"
                 )
-                self.logger.info(f"  → Final text length: {len(text)} chars")
-                self.logger.info(f"  → Segments count: {len(segments_list)}")
+                self.logger.info(f"  Final text length: {len(text)} chars")
+                self.logger.info(f"  Segments count: {len(segments_list)}")
                 return (
                     text,
                     info.language,
@@ -376,36 +376,36 @@ class VoiceProcessor:
         Get the best transcription by trying different model sizes
         English only for space optimization
         """
-        self.logger.info(f"🎯 Getting best transcription for language: {language}")
+        self.logger.info(f"Getting best transcription for language: {language}")
         best_result = ("", language, {"confidence": 0.0, "engine": "faster_whisper"})
         model_sizes = ["base", "tiny"]
         for model_size in model_sizes:
             try:
-                self.logger.info(f"🧪 Trying model size: {model_size}")
+                self.logger.info(f"Trying model size: {model_size}")
                 result = await self._transcribe_faster_whisper(
                     audio_file_path, language=language, model_size=model_size
                 )
                 text, detected_lang, metadata = result
                 confidence = metadata.get("confidence", 0.0)
-                self.logger.info(f"📊 Model {model_size} result:")
-                self.logger.info(f"  → Text length: {len(text)} chars")
-                self.logger.info(f"  → Detected language: {detected_lang}")
-                self.logger.info(f"  → Confidence: {confidence:.3f}")
+                self.logger.info(f"Model {model_size} result:")
+                self.logger.info(f"  Text length: {len(text)} chars")
+                self.logger.info(f"  Detected language: {detected_lang}")
+                self.logger.info(f"  Confidence: {confidence:.3f}")
                 if text.strip() and confidence >= confidence_threshold:
                     self.logger.info(
-                        f"✅ Model {model_size} met confidence threshold ({confidence:.3f} >= {confidence_threshold})"
+                        f"Model {model_size} met confidence threshold ({confidence:.3f} >= {confidence_threshold})"
                     )
                     return text, detected_lang, metadata
                 if confidence > best_result[2]["confidence"]:
                     best_result = (text, detected_lang, metadata)
                     self.logger.info(
-                        f"📈 New best result with model {model_size}: confidence {confidence:.3f}"
+                        f"New best result with model {model_size}: confidence {confidence:.3f}"
                     )
             except Exception as e:
-                self.logger.warning(f"⚠️ Model size {model_size} failed: {e}")
+                self.logger.warning(f"Model size {model_size} failed: {e}")
                 continue
         final_confidence = best_result[2].get("confidence", 0.0)
-        self.logger.info(f"🏁 Returning best result: confidence {final_confidence:.3f}")
+        self.logger.info(f"Returning best result: confidence {final_confidence:.3f}")
         return best_result
 
     async def _cleanup_files(self, *file_paths) -> None:

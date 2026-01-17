@@ -12,7 +12,7 @@ from telegram.ext import (
     Application,
 )
 from src.services.user_data_manager import UserDataManager
-from src.services.gemini_api import GeminiAPI
+from src.api.llm.gemini_api import GeminiAPI
 from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
 from src.utils.log.telegramlog import TelegramLogger as telegram_logger
 import logging

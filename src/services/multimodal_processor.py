@@ -8,7 +8,7 @@ import io
 import logging
 from typing import List, Dict, Any, Optional
 from telegram import Message, PhotoSize, Document, Audio, Video, Voice
-from src.services.gemini_api import (
+from src.api.llm.gemini_api import (
     GeminiAPI,
     MediaInput,
     MediaType,

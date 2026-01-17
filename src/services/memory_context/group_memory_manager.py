@@ -111,7 +111,7 @@ class GroupMemoryManager:
         )
         self.notification_queue = deque()
         self._load_group_data()
-        logger.info("🧠 Group Memory Manager initialized with advanced intelligence")
+        logger.info("Group Memory Manager initialized with advanced intelligence")
 
     async def initialize_group_context(
         self, group_id: int, group_title: str, participants: List[int]
@@ -139,7 +139,7 @@ class GroupMemoryManager:
                     expertise_map=defaultdict(list),
                 )
                 self.group_contexts[group_id] = context
-                logger.info(f"🏗️ Initialized new group context for {group_title}")
+                logger.info(f"Initialized new group context for {group_title}")
             else:
                 context = self.group_contexts[group_id]
                 context.active_participants = list(
@@ -149,7 +149,7 @@ class GroupMemoryManager:
             await self._save_group_data()
             return self.group_contexts[group_id]
         except Exception as e:
-            logger.error(f"❌ Error initializing group context: {e}")
+            logger.error(f"Error initializing group context: {e}")
             raise
 
     async def add_group_message(
@@ -163,7 +163,7 @@ class GroupMemoryManager:
         """Add message to group memory with intelligent processing"""
         try:
             if group_id not in self.group_contexts:
-                logger.warning(f"⚠️ Group {group_id} not initialized")
+                logger.warning(f"Group {group_id} not initialized")
                 return {}
             context = self.group_contexts[group_id]
             timestamp = datetime.now()
@@ -187,7 +187,7 @@ class GroupMemoryManager:
             await self._save_group_data()
             return enhanced_message
         except Exception as e:
-            logger.error(f"❌ Error adding group message: {e}")
+            logger.error(f"Error adding group message: {e}")
             return {}
 
     async def get_group_context(
@@ -224,7 +224,7 @@ class GroupMemoryManager:
             }
             return enhanced_context
         except Exception as e:
-            logger.error(f"❌ Error getting group context: {e}")
+            logger.error(f"Error getting group context: {e}")
             return {"context": [], "summary": "Error retrieving context"}
 
     async def create_conversation_thread(
@@ -248,10 +248,10 @@ class GroupMemoryManager:
                 self.group_contexts[group_id].current_discussion_thread = thread_id
                 self.group_contexts[group_id].conversation_topic = topic
             await self._save_group_data()
-            logger.info(f"🧵 Created new conversation thread: {topic}")
+            logger.info(f"Created new conversation thread: {topic}")
             return thread_id
         except Exception as e:
-            logger.error(f"❌ Error creating conversation thread: {e}")
+            logger.error(f"Error creating conversation thread: {e}")
             return ""
 
     async def switch_conversation_thread(self, group_id: int, thread_id: str) -> bool:
@@ -265,11 +265,11 @@ class GroupMemoryManager:
                 context.current_discussion_thread = thread_id
                 context.conversation_topic = self.conversation_threads[thread_id].topic
                 await self._save_group_data()
-                logger.info(f"🔄 Switched to thread: {thread_id}")
+                logger.info(f"Switched to thread: {thread_id}")
                 return True
             return False
         except Exception as e:
-            logger.error(f"❌ Error switching thread: {e}")
+            logger.error(f"Error switching thread: {e}")
             return False
 
     async def get_group_summary(
@@ -325,7 +325,7 @@ class GroupMemoryManager:
             }
             return summary
         except Exception as e:
-            logger.error(f"❌ Error generating group summary: {e}")
+            logger.error(f"Error generating group summary: {e}")
             return {}
 
     async def add_decision(
@@ -343,11 +343,11 @@ class GroupMemoryManager:
                 }
                 context.key_decisions.append(decision_record)
                 await self._save_group_data()
-                logger.info(f"📝 Recorded group decision: {decision}")
+                logger.info(f"Recorded group decision: {decision}")
                 return True
             return False
         except Exception as e:
-            logger.error(f"❌ Error adding decision: {e}")
+            logger.error(f"Error adding decision: {e}")
             return False
 
     async def add_action_item(
@@ -372,11 +372,11 @@ class GroupMemoryManager:
                 context.action_items.append(action_item)
                 await self._queue_action_notification(group_id, action_item)
                 await self._save_group_data()
-                logger.info(f"✅ Added action item: {action}")
+                logger.info(f"Added action item: {action}")
                 return True
             return False
         except Exception as e:
-            logger.error(f"❌ Error adding action item: {e}")
+            logger.error(f"Error adding action item: {e}")
             return False
 
     async def _analyze_sentiment(self, message: str) -> str:
@@ -635,9 +635,9 @@ class GroupMemoryManager:
                     analytics_data.pop("_id", None)
                     analytics_data.pop("group_id", None)
                     self.group_analytics[group_id] = analytics_data
-            logger.info("📁 Loaded group data from MongoDB")
+            logger.info("Loaded group data from MongoDB")
         except Exception as e:
-            logger.error(f"❌ Error loading group data: {e}")
+            logger.error(f"Error loading group data: {e}")
 
     async def _save_group_data(self):
         """Save group data to MongoDB"""
@@ -696,9 +696,9 @@ class GroupMemoryManager:
                         {"$set": {"group_id": group_id, **analytics_data_copy}},
                         upsert=True,
                     )
-            logger.debug("💾 Saved group data to MongoDB")
+            logger.debug("Saved group data to MongoDB")
         except Exception as e:
-            logger.error(f"❌ Error saving group data: {e}")
+            logger.error(f"Error saving group data: {e}")
 
     async def cleanup_old_data(self, days_old: int = 30):
         """Clean up old conversation data from MongoDB"""
@@ -710,7 +710,7 @@ class GroupMemoryManager:
                     {"last_active": {"$lt": cutoff_iso}}
                 )
                 logger.info(
-                    f"🧹 Removed {result.deleted_count} old conversation threads from MongoDB"
+                    f"Removed {result.deleted_count} old conversation threads from MongoDB"
                 )
             threads_to_remove = []
             for thread_id, thread in self.conversation_threads.items():
@@ -726,10 +726,10 @@ class GroupMemoryManager:
                 self.notification_queue.popleft()
             await self._save_group_data()
             logger.info(
-                f"🧹 Cleaned up {len(threads_to_remove)} old conversation threads from memory"
+                f"Cleaned up {len(threads_to_remove)} old conversation threads from memory"
             )
         except Exception as e:
-            logger.error(f"❌ Error during cleanup: {e}")
+            logger.error(f"Error during cleanup: {e}")
 
     def _ensure_indexes(self):
         """Ensure database indexes are created for better performance"""

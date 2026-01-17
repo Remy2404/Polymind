@@ -11,7 +11,6 @@ from telegram.constants import ChatAction
 from telegram.ext import MessageHandler, filters, ContextTypes
 from src.services.multimodal_processor import TelegramMultimodalProcessor
 from src.handlers.text_handlers import TextHandler
-# from src.services.ai_command_router import AICommandRouter
 from src.utils.docgen.document_processor import DocumentProcessor
 from src.handlers.message_context_handler import MessageContextHandler
 from src.handlers.response_formatter import ResponseFormatter

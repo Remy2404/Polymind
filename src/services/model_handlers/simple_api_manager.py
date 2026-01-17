@@ -18,9 +18,9 @@ import logging
 from typing import Dict, Optional, List, Any
 from enum import Enum
 from dataclasses import dataclass
-from src.services.gemini_api import GeminiAPI
-from src.services.openrouter_api import OpenRouterAPI
-from src.services.DeepSeek_R1_Distill_Llama_70B import DeepSeekLLM
+from src.api.llm.gemini_api import GeminiAPI
+from src.api.llm.openrouter_api import OpenRouterAPI
+from src.api.llm.deepseek_api import DeepSeekLLM
 
 logger = logging.getLogger(__name__)
 

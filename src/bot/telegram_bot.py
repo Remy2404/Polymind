@@ -11,11 +11,11 @@ from telegram.ext import (
 from cachetools import TTLCache, LRUCache
 from src.database.connection import get_database, close_database_connection
 from src.services.user_data_manager import UserDataManager
-from src.services.gemini_api import GeminiAPI
-from src.services.openrouter_api import OpenRouterAPI
+from src.api.llm.gemini_api import GeminiAPI
+from src.api.llm.openrouter_api import OpenRouterAPI
 from src.handlers.command_handlers import CommandHandlers
 from src.handlers.text_handlers import TextHandler
-from src.services.DeepSeek_R1_Distill_Llama_70B import DeepSeekLLM
+from src.api.llm.deepseek_api import DeepSeekLLM
 from src.handlers.message_handlers import MessageHandlers
 from src.utils.log.telegramlog import telegram_logger
 from src.services.reminder_manager import ReminderManager

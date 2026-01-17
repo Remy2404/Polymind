@@ -3,9 +3,9 @@ from typing import Optional, Tuple
 import re
 import traceback
 from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
-from src.services.gemini_api import GeminiAPI
-from src.services.openrouter_api import OpenRouterAPI
-from src.services.DeepSeek_R1_Distill_Llama_70B import DeepSeekLLM
+from src.api.llm.gemini_api import GeminiAPI
+from src.api.llm.openrouter_api import OpenRouterAPI
+from src.api.llm.deepseek_api import DeepSeekLLM
 from .document_generator import DocumentGenerator
 
 logger = logging.getLogger(__name__)
