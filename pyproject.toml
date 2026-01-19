@@ -70,6 +70,7 @@ dependencies = [
     "mcp[cli]>=1.10.1",
     "telegram-init-data[fastapi]>=1.0.0",
     "pydantic-core>=2.27.1",
+    "openai-agents>=0.2.0",
 ]
 langchain-rag = [
     "langchain>=0.3.27",
