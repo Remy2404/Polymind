@@ -6,9 +6,9 @@ import aiofiles
 from pdfminer.high_level import extract_text
 from docx import Document
 from telegram.ext import Application
-from services.gemini_api import GeminiAPI
+from src.api.llm.gemini_api import GeminiAPI
 from src.utils.log.telegramlog import TelegramLogger
-from services.user_data_manager import UserDataManager
+from src.services.user_data_manager import UserDataManager
 from aiocache import cached, Cache
 from telegram import Update
 from telegram.ext import MessageHandler, filters

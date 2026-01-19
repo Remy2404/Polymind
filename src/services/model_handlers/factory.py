@@ -1,13 +1,13 @@
 from typing import Dict
-from services.model_handlers import ModelHandler
-from services.model_handlers.model_configs import (
+from src.services.model_handlers import ModelHandler
+from src.services.model_handlers.model_configs import (
     ModelConfigurations,
     Provider,
     ModelConfig,
 )
-from services.gemini_api import GeminiAPI
-from services.openrouter_api import OpenRouterAPI
-from services.DeepSeek_R1_Distill_Llama_70B import DeepSeekLLM
+from src.api.llm.gemini_api import GeminiAPI
+from src.api.llm.openrouter_api import OpenRouterAPI
+from src.api.llm.deepseek_api import DeepSeekLLM
 import logging
 
 logger = logging.getLogger(__name__)

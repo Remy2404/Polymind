@@ -12,7 +12,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
 from src.services.model_handlers.model_configs import ModelConfigurations
-
 logger = logging.getLogger(__name__)
 
 
@@ -159,9 +158,7 @@ class ToolCallSupportDetector:
                 display_name = getattr(config, "display_name", model_id)
                 model_line = f"   • {emoji} {display_name}"
                 if hasattr(config, "openrouter_key") and config.openrouter_key:
-                    from src.utils.security import mask_key
-
-                    model_line += f" (`{mask_key(config.openrouter_key)}`)"
+                    model_line += f" (`{config.openrouter_key}`)"
                 report_lines.append(model_line)
         report_lines.extend(
             [

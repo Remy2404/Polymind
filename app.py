@@ -6,7 +6,6 @@ from concurrent.futures import ThreadPoolExecutor
 from src.api.app_factory import create_application
 import uvicorn
 
-
 import gc
 
 gc.set_threshold(50, 5, 5)

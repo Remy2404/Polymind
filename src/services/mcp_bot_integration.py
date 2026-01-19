@@ -8,7 +8,7 @@ import os
 import logging
 from typing import Dict, List, Optional, Any
 from src.services.mcp.mcp_client import MCPManager
-from src.services.openrouter_api_with_mcp import OpenRouterAPIWithMCP
+from src.api.llm.openrouter_api_with_mcp import OpenRouterAPIWithMCP
 from src.services.rate_limiter import RateLimiter
 
 

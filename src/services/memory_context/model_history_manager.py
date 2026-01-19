@@ -1,7 +1,7 @@
 import logging
 from typing import List, Dict, Any, Optional
 from src.services.memory_context.memory_manager import MemoryManager
-from services.model_handlers.model_registry import UserModelManager, ModelRegistry
+from src.services.model_handlers.model_registry import UserModelManager, ModelRegistry
 
 logger = logging.getLogger(__name__)
 

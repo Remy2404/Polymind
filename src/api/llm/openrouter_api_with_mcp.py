@@ -18,11 +18,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional, Any, Set, Tuple
 from functools import lru_cache
-from src.services.openrouter_api import OpenRouterAPI
+from src.api.llm.openrouter_api import OpenRouterAPI
 from src.services.mcp import MCPManager
 from src.services.model_handlers.model_configs import ModelConfigurations, Provider
 from src.utils.log.telegramlog import telegram_logger
-from src.services.gemini_api import GeminiAPI
+from src.api.llm.gemini_api import GeminiAPI
 from src.services.system_message_builder import SystemMessageBuilder
 
 

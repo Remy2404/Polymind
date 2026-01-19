@@ -10,7 +10,7 @@ from PIL import Image
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Import the GeminiAPI class and dependencies
-from src.services.gemini_api import GeminiAPI
+from src.api.llm.gemini_api import GeminiAPI
 from src.services.rate_limiter import RateLimiter
 from dotenv import load_dotenv
 import google.generativeai as genai
