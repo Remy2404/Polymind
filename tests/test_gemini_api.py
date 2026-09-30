@@ -60,19 +60,19 @@ class TestGeminiAPI(unittest.TestCase):
     def test_generate_response(self):
         result = asyncio.run(self.gemini_api.generate_response("Write a haiku"))
         self.assertEqual(result, "A generated answer")
-        self.assertEqual(self.generate_calls[0]["model"], "gemini-2.5-flash")
+        self.assertEqual(self.generate_calls[0]["model"], "gemini-3.8-flash")
 
     def test_generate_content(self):
         result = asyncio.run(self.gemini_api.generate_content("Explain AI"))
         self.assertEqual(result, {"status": "success", "content": "A generated answer"})
-        self.assertEqual(self.generate_calls[0]["model"], "gemini-2.5-flash")
+        self.assertEqual(self.generate_calls[0]["model"], "gemini-3.8-flash")
 
     def test_analyze_image(self):
         result = asyncio.run(
             self.gemini_api.analyze_image(self.test_image, "Describe this image")
         )
         self.assertEqual(result, "A generated answer")
-        self.assertEqual(self.generate_calls[0]["model"], "gemini-2.5-flash")
+        self.assertEqual(self.generate_calls[0]["model"], "gemini-3.8-flash")
         parts = self.generate_calls[0]["contents"][-1].parts
         self.assertTrue(any(part.inline_data for part in parts))
 

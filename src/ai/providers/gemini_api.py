@@ -117,7 +117,7 @@ class GeminiAPI:
         # Use singleton state - no need to initialize on every request
         self.mcp_tools_loaded = self.mcp_manager._initialized
 
-        actual_model = model if model is not None else "gemini-2.5-flash"
+        actual_model = model if model is not None else "gemini-3.8-flash"
         mcp_tools = (
             await self.mcp_manager.get_all_tools() if self.mcp_tools_loaded else []
         )
@@ -253,7 +253,7 @@ class GeminiAPI:
         prompt: str,
         tools: List[Any],
         context: Optional[List[Dict]] = None,
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-3.8-flash",
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         timeout: float = 300.0,
@@ -674,7 +674,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         text_prompt: str,
         media_inputs: Optional[List[MediaInput]] = None,
         context: Optional[List[Dict]] = None,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemini-3.8-flash",
         tools: Optional[List[Union[Callable, types.Tool]]] = None,
         auto_function_calling: bool = True,
     ) -> ProcessingResult:
@@ -1008,7 +1008,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         tools: List[Union[Callable, Any]],
         context: Optional[List[Dict]] = None,
         auto_execute: bool = True,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemini-3.8-flash",
     ) -> ProcessingResult:
         """
         Generate content with tool calling capabilities
@@ -1033,7 +1033,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         self,
         prompt: str,
         media_inputs: Optional[List[MediaInput]] = None,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemini-3.8-flash",
     ):
         """Stream content generation using new SDK"""
         try:
@@ -1062,7 +1062,7 @@ Focus on providing the most helpful and accurate response possible using the ava
 
     async def create_chat_session(
         self,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemini-3.8-flash",
         tools: Optional[List[Union[Callable, Any]]] = None,
     ):
         """Create a chat session using new SDK"""
@@ -1214,7 +1214,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         contents = [types.Content(role="user", parts=contents)]
         try:
             response = await self._generate_with_retry(
-                contents, "gemini-2.5-flash", config
+                contents, "gemini-3.8-flash", config
             )
             if response and hasattr(response, "candidates") and response.candidates:
                 candidate = response.candidates[0]

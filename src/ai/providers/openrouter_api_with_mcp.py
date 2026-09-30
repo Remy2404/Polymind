@@ -301,7 +301,7 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
     ) -> Optional[str]:
         """Handle requests routed to Gemini API."""
         self.logger.info(f"Using Gemini API for model {model}")
-        actual_model = "gemini-2.5-flash" if model == "gemini" else model
+        actual_model = "gemini-3.8-flash" if model == "gemini" else model
 
         return await self.gemini_api.generate_response_with_mcp_tools(
             prompt=prompt,

@@ -253,7 +253,7 @@ async def generate_ai_response_stream(
                 # If the primary model is Gemini and it failed, try to fallback to DeepSeek or OpenRouter
                 if model_name in [
                     "gemini",
-                    "gemini-2.5-flash",
+                    "gemini-3.8-flash",
                     "gemini/gemini-2.0-flash-exp",
                 ]:
                     logger.info("Gemini failed, attempting fallback to DeepSeek...")
