@@ -41,7 +41,7 @@ build-and-run.ps1
 .vercel
 .cursorrules
 .cursor
-test_*
+/test_*
 
 temp_zola/
 

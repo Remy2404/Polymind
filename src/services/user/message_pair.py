@@ -1,7 +1,6 @@
 """
 Message pair operations for web app memory context.
 """
-import logging
 from datetime import datetime
 from typing import Dict, Any, Union, Optional
 

@@ -24,8 +24,6 @@ except Exception:
     _MSGSPEC_AVAILABLE = False
 router = APIRouter(route_class=MsgSpecRoute, default_response_class=MsgSpecJSONResponse)
 logger = logging.getLogger(__name__)
-rate_limits: dict[str, tuple[int, float]] = {}
-_BOT_INSTANCE = None
 
 
 class WebhookException(Exception):
@@ -49,11 +47,11 @@ def normalize_token(token: str) -> str:
         return token
 
 
-def get_telegram_bot():
-    global _BOT_INSTANCE
-    if _BOT_INSTANCE is None:
+def get_telegram_bot(request: Request):
+    bot = getattr(request.app.state, "bot", None)
+    if bot is None:
         raise RuntimeError("Bot instance not initialized")
-    return _BOT_INSTANCE
+    return bot
 
 
 def _get_update_type(u: dict) -> str:
@@ -81,7 +79,9 @@ async def _process_update_with_retry(bot, update_data, log):
         try:
             await bot.process_update(update_data)
             return
-        except (asyncio.TimeoutError, asyncio.CancelledError) as e:
+        except asyncio.CancelledError:
+            raise
+        except asyncio.TimeoutError as e:
             if attempt < max_retries - 1:
                 await asyncio.sleep(base_delay * (2**attempt))
             else:
@@ -119,6 +119,7 @@ async def webhook_handler(
         except ValueError:
             threshold = 500
         if threshold > 0:
+            rate_limits = request.app.state.webhook_rate_limits
             cnt, window = rate_limits.get(client_ip, (0, now))
             if now - window > 60:
                 cnt, window = 0, now
@@ -138,7 +139,7 @@ async def webhook_handler(
 
                     body = _stdlib_json.loads(raw.decode("utf-8"))
         except Exception as e:
-            raise WebhookException(400, f"Invalid body: {e}")
+            raise WebhookException(400, "Invalid body") from e
         update_id = body.get("update_id", "unknown")
         log.info(f"Received update {update_id}, raw size = {len(raw)} bytes")
         background_tasks.add_task(_process_update_with_retry, bot, body, log)
@@ -156,5 +157,5 @@ async def webhook_handler(
     except Exception as e:
         log.error(f"Unexpected error: {e}", exc_info=True)
         return MsgSpecJSONResponse(
-            {"status": "error", "detail": str(e), "request_id": rid}, status_code=500
+            {"status": "error", "detail": "Internal server error", "request_id": rid}, status_code=500
         )

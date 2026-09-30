@@ -8,11 +8,11 @@ import logging
 from telegram import Update
 from telegram.ext import MessageHandler, filters, ContextTypes
 
-from src.services.multimodal_processor import TelegramMultimodalProcessor
-from src.utils.docgen.document_processor import DocumentProcessor
+from src.media.multimodal_processor import TelegramMultimodalProcessor
+from src.media.documents.document_processor import DocumentProcessor
 from src.handlers.message_context_handler import MessageContextHandler
 from src.handlers.response_formatter import ResponseFormatter
-from src.services.model_handlers.model_configs import ModelConfigurations, Provider
+from src.ai.models.model_configs import ModelConfigurations, Provider
 
 from src.handlers.message.model_helpers import ModelHelpersMixin
 from src.handlers.message.text_handler import TextMessageHandlerMixin

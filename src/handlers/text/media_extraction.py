@@ -4,7 +4,6 @@ Media extraction functionality for text handlers.
 import io
 import os
 import asyncio
-import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from src.handlers.text_processing.utilities import MediaUtilities

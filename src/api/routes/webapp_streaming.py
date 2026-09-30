@@ -7,18 +7,20 @@ import logging
 from typing import Optional, AsyncIterator, List
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from src.api.routes.webapp import get_current_user, UserInfo, get_services
-from src.services.model_handlers.factory import ModelHandlerFactory
+from src.api.auth import get_current_user
+from src.api.schemas.webapp import UserInfo
+from src.api.dependencies import get_services, get_sessions_collection
+from src.ai.models.factory import ModelHandlerFactory
 from src.services.user_preferences_manager import UserPreferencesManager
-from src.services.mcp_bot_integration import (
+from src.integrations.mcp.bot_integration import (
     generate_mcp_response,
     is_model_mcp_compatible,
 )
-from src.services.model_handlers import ImageAttachment
+from src.ai.models import ImageAttachment
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webapp", tags=["Telegram Mini Apps - Streaming"])
@@ -192,7 +194,7 @@ async def generate_ai_response_stream(
         image_attachments = convert_attachments_to_image_objects(attachments)
 
         # Check if model supports attachments (only Gemini models support vision)
-        from src.services.model_handlers.model_configs import (
+        from src.ai.models.model_configs import (
             ModelConfigurations,
             Provider,
         )
@@ -387,6 +389,7 @@ async def generate_ai_response_stream(
 
 @router.post("/chat/stream")
 async def stream_chat_message(
+    request: Request,
     message_data: StreamChatMessage, current_user: UserInfo = Depends(get_current_user)
 ):
     """
@@ -399,7 +402,7 @@ async def stream_chat_message(
         - done: {"type": "done", "timestamp": 123456}
         - error: {"type": "error", "error": "message"}
     """
-    services = get_services()
+    services = get_services(request)
     user_id = current_user.id
 
     try:
@@ -464,259 +467,14 @@ async def stream_chat_message(
         )
 
     except Exception as e:
-        logger.error(f"Stream chat error for user {user_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to start stream: {str(e)}")
+        logger.error("Stream chat failed for user %s: %s", user_id, type(e).__name__, stack_info=True)
+        raise HTTPException(status_code=500, detail="Failed to start stream") from e
 
-
-class ChatSession(BaseModel):
-    """Chat session information."""
-
-    id: str
-    title: Optional[str] = None
-    model: str
-    created_at: float
-    updated_at: float
-    message_count: int
-
-
-@router.post("/chats")
-async def create_chat_session(
-    title: Optional[str] = None,
-    model: Optional[str] = None,
-    current_user: UserInfo = Depends(get_current_user),
-):
-    """
-    Create a new chat session with database persistence.
-
-    Returns:
-        Created chat session info
-    """
-    import uuid
-    from src.database.connection import get_database
-
-    user_id = current_user.id
-
-    try:
-        # Generate chat ID
-        chat_id = str(uuid.uuid4())
-
-        # Get default model if not specified
-        if not model:
-            prefs_manager = UserPreferencesManager()
-            user_prefs = prefs_manager.get_user_preferences(user_id)
-            model = user_prefs.get("preferred_model", "gemini/gemini-2.0-flash-exp")
-
-        # Store chat session in database
-        db, client = get_database()
-        if db is not None:
-            chat_sessions = db.chat_sessions
-            now = datetime.now()
-
-            session_doc = {
-                "session_id": chat_id,
-                "user_id": user_id,
-                "title": title or "New Chat",
-                "model": model,
-                "created_at": now,
-                "updated_at": now,
-                "message_count": 0,
-                "messages": [],
-            }
-
-            chat_sessions.insert_one(session_doc)
-            logger.info(f"Created chat session {chat_id} for user {user_id}")
-
-        return {
-            "id": chat_id,
-            "title": title or "New Chat",
-            "model": model,
-            "created_at": datetime.now().timestamp(),
-            "updated_at": datetime.now().timestamp(),
-            "message_count": 0,
-        }
-
-    except Exception as e:
-        logger.error(f"Chat creation error for user {user_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to create chat: {str(e)}")
-
-
-@router.get("/chats")
-async def list_chat_sessions(
-    current_user: UserInfo = Depends(get_current_user), limit: int = 50, offset: int = 0
-):
-    """
-    List user's chat sessions with database persistence.
-
-    Returns:
-        List of chat sessions ordered by most recent
-    """
-    from src.database.connection import get_database
-
-    user_id = current_user.id
-
-    try:
-        db, client = get_database()
-        if db is None:
-            logger.warning("Database not available, returning empty list")
-            return []
-
-        chat_sessions = db.chat_sessions
-
-        # Query user's chat sessions
-        cursor = (
-            chat_sessions.find({"user_id": user_id})
-            .sort("updated_at", -1)
-            .skip(offset)
-            .limit(limit)
-        )
-
-        sessions = []
-        for session_doc in cursor:
-            sessions.append(
-                {
-                    "id": session_doc["session_id"],
-                    "title": session_doc.get("title", "New Chat"),
-                    "model": session_doc.get("model", "gemini/gemini-2.0-flash-exp"),
-                    "created_at": (
-                        session_doc["created_at"].timestamp()
-                        if isinstance(session_doc["created_at"], datetime)
-                        else session_doc["created_at"]
-                    ),
-                    "updated_at": (
-                        session_doc["updated_at"].timestamp()
-                        if isinstance(session_doc["updated_at"], datetime)
-                        else session_doc["updated_at"]
-                    ),
-                    "message_count": session_doc.get("message_count", 0),
-                }
-            )
-
-        logger.info(f"Retrieved {len(sessions)} chat sessions for user {user_id}")
-        return sessions
-
-    except Exception as e:
-        logger.error(
-            f"Error listing chat sessions for user {user_id}: {e}", exc_info=True
-        )
-        raise HTTPException(status_code=500, detail=f"Failed to list chats: {str(e)}")
-
-
-@router.delete("/chats/{chat_id:path}")
-async def delete_chat_session(
-    chat_id: str, current_user: UserInfo = Depends(get_current_user)
-):
-    """
-    Delete a chat session and all its messages.
-    Supports:
-    1. UUID-based sessions (new format in chat_sessions)
-    2. Cache_key format (user_{user_id}_model_{model} in conversations) - ALLOWS SLASHES IN PATH
-    3. Hashed session IDs (MD5 hash of cache_key)
-
-    Returns:
-        Success message
-    """
-    from src.database.connection import get_database
-    from urllib.parse import unquote
-
-    # Decode URL-encoded characters (e.g., %3A -> :, %2F -> /)
-    chat_id = unquote(chat_id)
-
-    user_id = current_user.id
-    deleted = False
-
-    try:
-        db, client = get_database()
-        if db is None:
-            logger.warning("Database not available")
-            raise HTTPException(status_code=503, detail="Database service unavailable")
-
-        # Try deleting from new format (chat_sessions collection with session_id)
-        chat_sessions = db.chat_sessions
-        result = chat_sessions.delete_one(
-            {
-                "session_id": chat_id,
-                "user_id": user_id,  # Ensure user can only delete their own chats
-            }
-        )
-
-        if result.deleted_count > 0:
-            deleted = True
-            logger.info(f"Deleted new format chat session {chat_id} for user {user_id}")
-        else:
-            # Try deleting from old format (conversations collection)
-            conversations = db.conversations
-
-            logger.info(f"Attempting to delete chat_id: '{chat_id}' for user {user_id}")
-            logger.info(
-                f"chat_id starts with user_{user_id}_model_: {chat_id.startswith(f'user_{user_id}_model_')}"
-            )
-
-            # Case 1: chat_id is the cache_key directly (e.g., user_806762900_model_gemini)
-            if chat_id.startswith(f"user_{user_id}_model_"):
-                logger.info(f"Searching for cache_key: '{chat_id}'")
-                result = conversations.delete_one({"cache_key": chat_id})
-                logger.info(f"Delete result: deleted_count={result.deleted_count}")
-
-                if result.deleted_count > 0:
-                    deleted = True
-                    logger.info(
-                        f"Deleted old format conversation {chat_id} for user {user_id}"
-                    )
-                else:
-                    logger.warning(
-                        f"Cache_key '{chat_id}' not found in conversations collection"
-                    )
-            else:
-                # Case 2: chat_id is a hashed session ID - look up the original cache_key
-                # Need to build the session mapping to look up hashed IDs
-                import hashlib
-
-                # Try to find a conversation whose cache_key hashes to this chat_id
-                user_prefix = f"user_{user_id}_model_"
-                all_conversations = list(
-                    conversations.find({"cache_key": {"$regex": f"^{user_prefix}"}})
-                )
-
-                for conv in all_conversations:
-                    cache_key = conv.get("cache_key", "")
-                    session_id_hash = hashlib.md5(cache_key.encode()).hexdigest()
-
-                    if session_id_hash == chat_id:
-                        # Found it! Delete this conversation
-                        result = conversations.delete_one({"cache_key": cache_key})
-
-                        if result.deleted_count > 0:
-                            deleted = True
-                            logger.info(
-                                f"Deleted hashed session {chat_id} (cache_key: {cache_key}) for user {user_id}"
-                            )
-                            break
-
-                if not deleted:
-                    logger.warning(
-                        f"Chat ID {chat_id} not found in any format for user {user_id}"
-                    )
-
-        if not deleted:
-            logger.warning(f"Chat session {chat_id} not found for user {user_id}")
-            raise HTTPException(
-                status_code=404, detail="Chat session not found or access denied"
-            )
-
-        return {"status": "success", "message": "Chat deleted successfully"}
-
-    except HTTPException:
-        raise  # Re-raise HTTP exceptions
-    except Exception as e:
-        logger.error(
-            f"Error deleting chat session {chat_id} for user {user_id}: {e}",
-            exc_info=True,
-        )
-        raise HTTPException(status_code=500, detail=f"Failed to delete chat: {str(e)}")
 
 
 @router.get("/chats/{chat_id}/messages")
 async def get_chat_messages(
+    request: Request,
     chat_id: str,
     current_user: UserInfo = Depends(get_current_user),
     limit: int = 100,
@@ -728,17 +486,10 @@ async def get_chat_messages(
     Returns:
         List of messages from the chat session
     """
-    from src.database.connection import get_database
-
-    user_id = current_user.id
+    user_id = str(current_user.id)
 
     try:
-        db, client = get_database()
-        if db is None:
-            logger.warning("Database not available")
-            raise HTTPException(status_code=503, detail="Database service unavailable")
-
-        chat_sessions = db.chat_sessions
+        chat_sessions = get_sessions_collection(request)
 
         # Get chat session and verify ownership
         session_doc = chat_sessions.find_one(
@@ -784,6 +535,4 @@ async def get_chat_messages(
             f"Error getting messages from chat session {chat_id} for user {user_id}: {e}",
             exc_info=True,
         )
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get chat messages: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Failed to get chat messages") from e

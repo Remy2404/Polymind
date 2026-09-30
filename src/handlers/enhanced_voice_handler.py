@@ -5,7 +5,7 @@ Voice message handler with Faster-Whisper support
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
-from src.services.media.voice_processor import create_voice_processor, SpeechEngine
+from src.media.processors.voice_processor import create_voice_processor, SpeechEngine
 
 logger = logging.getLogger(__name__)
 voice_processor = None
@@ -140,7 +140,7 @@ async def handle_voice_settings_command(
         settings_msg += f"**Recommended for English:** {info['recommended_engines']['english'].title()}\\n"
         settings_msg += f"**Recommended for Multilingual:** {info['recommended_engines']['multilingual'].title()}\\n"
         settings_msg += "\\n"
-        from src.services.media.voice_config import voice_stats
+        from src.media.processors.voice_config import voice_stats
 
         stats = voice_stats.get_stats()
         if stats["total_processed"] > 0:

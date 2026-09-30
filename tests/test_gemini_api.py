@@ -1,49 +1,41 @@
-import sys
-import os
 import asyncio
 import unittest
-import logging
 from io import BytesIO
 from PIL import Image
+from types import SimpleNamespace
+from unittest.mock import patch
 
-# Add the project root to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-# Import the GeminiAPI class and dependencies
-from src.api.llm.gemini_api import GeminiAPI
+from src.ai.providers.gemini_api import GeminiAPI
 from src.services.rate_limiter import RateLimiter
-from dotenv import load_dotenv
-import google.generativeai as genai
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Load environment variables
-load_dotenv()
 
 
 class TestGeminiAPI(unittest.TestCase):
     """Test case for the GeminiAPI class."""
 
     def setUp(self):
-        """Set up test fixtures, if any."""
-        # Configure Gemini with API key
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            self.skipTest("GEMINI_API_KEY environment variable not set")
-
-        genai.configure(api_key=api_key)
-        # Create a mock vision model and rate limiter
-        self.vision_model = genai.GenerativeModel("gemini-2.0-flash")
+        """Use the real provider adapter with a deterministic SDK client."""
+        self.vision_model = object()
         self.rate_limiter = RateLimiter(requests_per_minute=20)
+        self.generate_calls = []
 
-        # Create a GeminiAPI instance
-        self.gemini_api = GeminiAPI(
-            vision_model=self.vision_model, rate_limiter=self.rate_limiter
-        )
+        def generate_content(**kwargs):
+            self.generate_calls.append(kwargs)
+            return SimpleNamespace(
+                candidates=[
+                    SimpleNamespace(
+                        content=SimpleNamespace(parts=[SimpleNamespace(text="A generated answer")]),
+                        function_calls=[],
+                    )
+                ]
+            )
 
-        # Create a small test image
+        fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+        with patch("src.ai.providers.gemini_api.genai.Client", return_value=fake_client):
+            self.gemini_api = GeminiAPI(
+                vision_model=self.vision_model,
+                rate_limiter=self.rate_limiter,
+                api_key="test-key",
+            )
         self.test_image = self._create_test_image()
 
     def _create_test_image(self):
@@ -57,11 +49,7 @@ class TestGeminiAPI(unittest.TestCase):
         """Tear down test fixtures, if any."""
         # Clean up the API object
         if hasattr(self, "gemini_api"):
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(self.gemini_api.close())
-            else:
-                loop.run_until_complete(self.gemini_api.close())
+            asyncio.run(self.gemini_api.close())
 
     def test_gemini_api_initialization(self):
         """Test that the GeminiAPI initializes correctly."""
@@ -70,62 +58,28 @@ class TestGeminiAPI(unittest.TestCase):
         self.assertIsNotNone(self.gemini_api.rate_limiter)
 
     def test_generate_response(self):
-        """Test the generate_response method."""
-
-        async def _test():
-            prompt = "Write a short haiku about coding."
-            response = await self.gemini_api.generate_response(prompt)
-
-            # Verify we got a non-empty response
-            self.assertIsNotNone(response)
-            self.assertTrue(len(response) > 0)
-            logger.info(f"Generate response result: {response}")
-
-            return response
-
-        # Run the async test
-        loop = asyncio.get_event_loop()
-        result = loop.run_until_complete(_test())
-        print(f"\nGenerated Response: {result}")
+        result = asyncio.run(self.gemini_api.generate_response("Write a haiku"))
+        self.assertEqual(result, "A generated answer")
+        self.assertEqual(self.generate_calls[0]["model"], "gemini-2.5-flash")
 
     def test_generate_content(self):
-        """Test the generate_content method."""
-
-        async def _test():
-            prompt = "Explain what artificial intelligence is in one paragraph."
-            response = await self.gemini_api.generate_content(prompt)
-
-            # Verify we got a successful response
-            self.assertIsNotNone(response)
-            self.assertEqual(response.get("status"), "success")
-            self.assertIsNotNone(response.get("content"))
-            logger.info(f"Generate content result: {response}")
-
-            return response.get("content")
-
-        # Run the async test
-        loop = asyncio.get_event_loop()
-        result = loop.run_until_complete(_test())
-        print(f"\nGenerated Content: {result}")
+        result = asyncio.run(self.gemini_api.generate_content("Explain AI"))
+        self.assertEqual(result, {"status": "success", "content": "A generated answer"})
+        self.assertEqual(self.generate_calls[0]["model"], "gemini-2.5-flash")
 
     def test_analyze_image(self):
-        """Test the analyze_image method."""
+        result = asyncio.run(
+            self.gemini_api.analyze_image(self.test_image, "Describe this image")
+        )
+        self.assertEqual(result, "A generated answer")
+        self.assertEqual(self.generate_calls[0]["model"], "gemini-2.5-flash")
+        parts = self.generate_calls[0]["contents"][-1].parts
+        self.assertTrue(any(part.inline_data for part in parts))
 
-        async def _test():
-            prompt = "Describe what you see in this image."
-            response = await self.gemini_api.analyze_image(self.test_image, prompt)
-
-            # Verify we got a non-empty response
-            self.assertIsNotNone(response)
-            self.assertTrue(len(response) > 0)
-            logger.info(f"Image analysis result: {response}")
-
-            return response
-
-        # Run the async test
-        loop = asyncio.get_event_loop()
-        result = loop.run_until_complete(_test())
-        print(f"\nImage Analysis: {result}")
+    def test_analyze_image_rejects_invalid_data_before_provider_call(self):
+        result = asyncio.run(self.gemini_api.analyze_image(b"invalid", "Describe this"))
+        self.assertEqual(result, "Image analysis unavailable. Invalid image.")
+        self.assertEqual(self.generate_calls, [])
 
     def test_call_with_circuit_breaker(self):
         """Test the circuit breaker functionality."""
@@ -156,8 +110,7 @@ class TestGeminiAPI(unittest.TestCase):
             return True
 
         # Run the async test
-        loop = asyncio.get_event_loop()
-        result = loop.run_until_complete(_test())
+        result = asyncio.run(_test())
         self.assertTrue(result)
 
 

@@ -7,11 +7,11 @@ Integrated with the new GeminiAPI
 import logging
 import io
 from typing import Optional, List, Dict, Any, Union
-from src.api.llm.gemini_api import (
+from src.ai.providers.gemini_api import (
     GeminiAPI,
     ProcessingResult,
 )
-from src.services.gemini_utils import create_document_input
+from src.media.gemini_inputs import create_document_input
 
 
 class DocumentProcessor:

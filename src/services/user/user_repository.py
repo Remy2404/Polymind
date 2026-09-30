@@ -2,8 +2,7 @@
 Base user repository for core CRUD operations.
 """
 import logging
-from datetime import datetime
-from typing import Dict, Any, Union, Optional
+from typing import Dict, Any, Union
 
 
 class UserRepository:

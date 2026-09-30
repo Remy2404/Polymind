@@ -2,10 +2,8 @@
 Text conversation handling functionality.
 """
 import asyncio
-import logging
-from src.services.model_handlers.factory import ModelHandlerFactory
-from src.services.model_handlers.model_configs import ModelConfigurations
-from src.services.mcp_bot_integration import generate_mcp_response, is_model_mcp_compatible
+from src.ai.models.factory import ModelHandlerFactory
+from src.integrations.mcp.bot_integration import generate_mcp_response, is_model_mcp_compatible
 from src.utils.log.telegramlog import telegram_logger
 
 

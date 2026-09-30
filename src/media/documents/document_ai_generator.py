@@ -2,10 +2,10 @@ import logging
 from typing import Optional, Tuple
 import re
 import traceback
-from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
-from src.api.llm.gemini_api import GeminiAPI
-from src.api.llm.openrouter_api import OpenRouterAPI
-from src.api.llm.deepseek_api import DeepSeekLLM
+from src.ai.models.simple_api_manager import SuperSimpleAPIManager
+from src.ai.providers.gemini_api import GeminiAPI
+from src.ai.providers.openrouter_api import OpenRouterAPI
+from src.ai.providers.deepseek_api import DeepSeekLLM
 from .document_generator import DocumentGenerator
 
 logger = logging.getLogger(__name__)

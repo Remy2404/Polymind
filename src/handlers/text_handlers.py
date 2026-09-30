@@ -8,13 +8,13 @@ import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from src.api.llm.gemini_api import GeminiAPI
+from src.ai.providers.gemini_api import GeminiAPI
 from src.services.user_data_manager import UserDataManager
 from src.handlers.message_context_handler import MessageContextHandler
 from src.handlers.response_formatter import ResponseFormatter
 from src.services.memory_context.memory_manager import MemoryManager
 from src.services.memory_context.model_history_manager import ModelHistoryManager
-from src.services.model_handlers.prompt_formatter import PromptFormatter
+from src.ai.models.prompt_formatter import PromptFormatter
 from src.services.memory_context.conversation_manager import ConversationManager
 from src.handlers.text_processing.media_analyzer import MediaAnalyzer
 from src.handlers.document_sender import DocumentSender
@@ -189,11 +189,8 @@ class TextHandler(MediaExtractionMixin, TextConversationMixin, ResponseUtilities
             if media_files:
                 thinking_message = await context.bot.send_message(chat_id=chat_id, text="Processing multiple files...")
                 try:
-                    from src.services.user_preferences_manager import UserPreferencesManager
-                    from src.services.media.multi_file_processor import MultiFileProcessor
+                    from src.media.processors.multi_file_processor import MultiFileProcessor
 
-                    preferences_manager = UserPreferencesManager(self.user_data_manager)
-                    preferred_model = await preferences_manager.get_user_model_preference(user_id)
                     multi_processor = MultiFileProcessor(self.gemini_api)
                     result = await multi_processor.process_multiple_files(media_files, caption or "Analyze these files")
 
@@ -224,7 +221,7 @@ class TextHandler(MediaExtractionMixin, TextConversationMixin, ResponseUtilities
     ):
         """Handle analysis of media files."""
         if len(media_files) > 1:
-            from src.services.media.multi_file_processor import MultiFileProcessor
+            from src.media.processors.multi_file_processor import MultiFileProcessor
             multi_processor = MultiFileProcessor(self.gemini_api)
             result = await multi_processor.process_multiple_files(media_files, message_text or "Analyze these files")
 

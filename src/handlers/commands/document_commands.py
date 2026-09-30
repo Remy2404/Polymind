@@ -3,18 +3,13 @@ AI Document generation command handlers.
 Contains AI document generation, format selection, and callback handling.
 """
 
-import sys
-import os
 
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
 import logging
 import io
-from src.services.model_handlers.model_configs import ModelConfigurations
+from src.ai.models.model_configs import ModelConfigurations
 
 
 class DocumentCommands:
@@ -28,7 +23,7 @@ class DocumentCommands:
         if api_manager:
             self.api_manager = api_manager
         else:
-            from src.services.model_handlers.simple_api_manager import (
+            from src.ai.models.simple_api_manager import (
                 SuperSimpleAPIManager,
             )
 
@@ -221,7 +216,7 @@ class DocumentCommands:
                 )
             return
         try:
-            from src.utils.docgen.document_ai_generator import AIDocumentGenerator
+            from src.media.documents.document_ai_generator import AIDocumentGenerator
 
             ai_doc_generator = AIDocumentGenerator(api_manager=self.api_manager)
             document_bytes, title = await ai_doc_generator.generate_ai_document(

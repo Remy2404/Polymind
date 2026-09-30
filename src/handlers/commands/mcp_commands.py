@@ -6,7 +6,7 @@ This module provides MCP-related commands for the Telegram bot.
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
-from src.services.mcp_bot_integration import mcp_integration
+from src.integrations.mcp.bot_integration import mcp_integration
 
 
 class MCPCommands:

@@ -3,8 +3,6 @@ Document message handling.
 """
 import os
 import io
-import traceback
-import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
@@ -89,7 +87,6 @@ class DocumentMessageHandlerMixin:
     async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle document with full processing (legacy method)."""
         user_id = update.effective_user.id
-        conversation_id = f"user_{user_id}"
         self.telegram_logger.log_message("Processing document", user_id)
 
         try:

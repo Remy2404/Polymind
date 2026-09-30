@@ -3,33 +3,25 @@ import logging
 import time
 import asyncio
 from typing import Dict, List, Optional
-from dotenv import load_dotenv
 from openai import AsyncOpenAI, AuthenticationError, RateLimitError, APIError
 from src.services.rate_limiter import RateLimiter, rate_limit
 from src.utils.log.telegramlog import telegram_logger
-from src.services.model_handlers.model_configs import (
+from src.ai.models.model_configs import (
     ModelConfigurations,
     Provider,
 )
 from src.services.system_message_builder import SystemMessageBuilder
 
-load_dotenv()
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-if not OPENROUTER_API_KEY:
-    telegram_logger.log_error(
-        "OPENROUTER_API_KEY not found in environment variables.", 0
-    )
-
-
 class OpenRouterAPI:
-    def __init__(self, rate_limiter: RateLimiter):
+    def __init__(self, rate_limiter: RateLimiter, api_key: Optional[str] = None):
         self.rate_limiter = rate_limiter
         self.logger = logging.getLogger(__name__)
         telegram_logger.log_message("Initializing OpenRouter API", 0)
-        if not OPENROUTER_API_KEY:
+        resolved_api_key = api_key or os.getenv("OPENROUTER_API_KEY")
+        if not resolved_api_key:
             raise ValueError("OPENROUTER_API_KEY not found or empty")
         self.client = AsyncOpenAI(
-            api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1"
+            api_key=resolved_api_key, base_url="https://openrouter.ai/api/v1"
         )
         self._load_openrouter_models_from_config()
         self.api_failures = 0

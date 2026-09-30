@@ -3,13 +3,8 @@ Group Commands Handler
 Handles all group-specific commands for the Polymind Telegram bot.
 """
 
-import sys
-import os
 import logging
 
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
 from telegram import Update
 from telegram.ext import ContextTypes
 

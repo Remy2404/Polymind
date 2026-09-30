@@ -4,12 +4,9 @@ User Data Manager - Facade class combining all user management functionality.
 This is the main entry point for user data management, providing backwards
 compatibility while using modular components internally.
 """
-import sys
-import os
 import logging
-from typing import Dict, List, Any, Union, Optional
+from typing import Dict, Any
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.services.user.user_repository import UserRepository
 from src.services.user.user_settings import UserSettingsMixin

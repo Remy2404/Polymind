@@ -1,7 +1,6 @@
 """
 User preferences management.
 """
-import logging
 from typing import Union, Any
 
 

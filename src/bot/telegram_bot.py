@@ -3,6 +3,7 @@ import logging
 import time
 import aiohttp
 import traceback
+from contextlib import AsyncExitStack
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -11,20 +12,19 @@ from telegram.ext import (
 from cachetools import TTLCache, LRUCache
 from src.database.connection import get_database, close_database_connection
 from src.services.user_data_manager import UserDataManager
-from src.api.llm.gemini_api import GeminiAPI
-from src.api.llm.openrouter_api import OpenRouterAPI
+from src.ai.providers.gemini_api import GeminiAPI
+from src.ai.providers.openrouter_api import OpenRouterAPI
 from src.handlers.command_handlers import CommandHandlers
 from src.handlers.text_handlers import TextHandler
-from src.api.llm.deepseek_api import DeepSeekLLM
+from src.ai.providers.deepseek_api import DeepSeekLLM
 from src.handlers.message_handlers import MessageHandlers
 from src.utils.log.telegramlog import telegram_logger
 from src.services.reminder_manager import ReminderManager
 from src.utils.lang.language_manager import LanguageManager
 from src.services.rate_limiter import RateLimiter
 from src.services.flux_lora_img import flux_lora_image_generator
-from src.utils.docgen.document_processor import DocumentProcessor
+from src.media.documents.document_processor import DocumentProcessor
 from src.services.group_chat.integration import GroupChatIntegration
-from src.services.mcp_bot_integration import initialize_mcp_for_bot
 
 logger = logging.getLogger(__name__)
 
@@ -186,9 +186,9 @@ class TelegramBot:
         """Initialize utility classes for message handling."""
         from src.handlers.message_context_handler import MessageContextHandler
         from src.handlers.response_formatter import ResponseFormatter
-        from src.services.media.image_processor import ImageProcessor
-        from src.services.media.voice_processor import VoiceProcessor
-        from src.services.model_handlers.prompt_formatter import PromptFormatter
+        from src.media.processors.image_processor import ImageProcessor
+        from src.media.processors.voice_processor import VoiceProcessor
+        from src.ai.models.prompt_formatter import PromptFormatter
         from src.services.user_preferences_manager import UserPreferencesManager
 
         self.user_data_manager = UserDataManager(self.db)
@@ -259,11 +259,14 @@ class TelegramBot:
         return getattr(self, "message_handlers", None)
 
     async def shutdown(self):
-        """Properly clean up resources on shutdown."""
-        if self.session and not self.session.closed:
-            await self.session.close()
-        close_database_connection(self.client)
-        logger.info("Shutdown complete. Database connection closed.")
+        """Close resources owned by this bot instance."""
+        async with AsyncExitStack() as resources:
+            resources.callback(close_database_connection, self.client)
+            resources.push_async_callback(self.openrouter_api.close)
+            resources.push_async_callback(self.gemini_api.close)
+            if self.session and not self.session.closed:
+                resources.push_async_callback(self.session.close)
+        logger.info("Bot resources closed")
 
     def _setup_handlers(self):
         """Register handlers with the application."""
@@ -324,7 +327,6 @@ class TelegramBot:
 
     async def setup_webhook(self):
         """Set up webhook with proper update processing."""
-        await initialize_mcp_for_bot()
         webhook_path = f"/webhook/{self.token}"
         webhook_url = f"{os.getenv('WEBHOOK_URL')}{webhook_path}"
         await self.application.bot.delete_webhook(drop_pending_updates=False)
@@ -338,17 +340,10 @@ class TelegramBot:
             ],
             "max_connections": 500,
         }
-        self.logger.info(f"Setting webhook to: {webhook_url}")
-        if not self.application.running:
-            await self.application.initialize()
-            await self.application.start()
+        self.logger.info("Setting Telegram webhook")
         await self.application.bot.set_webhook(**webhook_config)
         webhook_info = await self.application.bot.get_webhook_info()
-        self.logger.info(f"Webhook status: {webhook_info}")
-        if not self.application.running:
-            await self.application.start()
-        else:
-            self.logger.info("Application is already running. Skipping start.")
+        self.logger.info("Webhook configured: pending updates=%s", webhook_info.pending_update_count)
 
     async def process_update(self, update_data):
         """Process updates with task management."""

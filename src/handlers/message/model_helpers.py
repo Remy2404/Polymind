@@ -1,9 +1,8 @@
 """
 Model helper functions and utilities.
 """
-import logging
 from typing import Optional
-from src.services.model_handlers.model_configs import ModelConfigurations, Provider, ModelConfig
+from src.ai.models.model_configs import ModelConfigurations, Provider, ModelConfig
 
 
 class ModelHelpersMixin:

@@ -1,12 +1,11 @@
 """
 Voice message handling.
 """
-import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 from src.handlers.text_handlers import TextHandler
-from src.services.media.voice_processor import VoiceProcessor, SpeechEngine, create_voice_processor
+from src.media.processors.voice_processor import VoiceProcessor, SpeechEngine, create_voice_processor
 from src.services.memory_context.conversation_manager import ConversationManager
 
 

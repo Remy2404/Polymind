@@ -10,13 +10,7 @@ from .user_profile_manager import UserProfileManager
 from .persistence_manager import PersistenceManager
 from .semantic_search_manager import SemanticSearchManager
 from .group_memory_operations import GroupMemoryOperations
-import sys
-import os
-
-sys.path.append(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
-from database.connection import get_database
+from src.database.connection import get_database
 
 logger = logging.getLogger(__name__)
 

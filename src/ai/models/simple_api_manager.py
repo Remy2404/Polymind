@@ -18,9 +18,9 @@ import logging
 from typing import Dict, Optional, List, Any
 from enum import Enum
 from dataclasses import dataclass
-from src.api.llm.gemini_api import GeminiAPI
-from src.api.llm.openrouter_api import OpenRouterAPI
-from src.api.llm.deepseek_api import DeepSeekLLM
+from src.ai.providers.gemini_api import GeminiAPI
+from src.ai.providers.openrouter_api import OpenRouterAPI
+from src.ai.providers.deepseek_api import DeepSeekLLM
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ class SuperSimpleAPIManager:
 
     def _setup_models(self):
         """ Configure all your models here - Easy to add new ones!"""
-        from src.services.model_handlers.model_configs import (
+        from src.ai.models.model_configs import (
             ModelConfigurations,
             Provider,
         )
@@ -222,7 +222,7 @@ class SuperSimpleAPIManager:
 
     def _determine_optimal_tokens(self, prompt: str, model_config: ModelConfig) -> int:
         """Determine optimal max_tokens based on prompt and model capabilities"""
-        from src.services.model_handlers.model_configs import ModelConfigurations
+        from src.ai.models.model_configs import ModelConfigurations
         
         model_configs = ModelConfigurations.get_all_models()
         full_config = model_configs.get(model_config.model_id)

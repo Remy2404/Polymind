@@ -1,7 +1,6 @@
 """
 User settings management.
 """
-import logging
 from typing import Dict, Any, Union
 
 

@@ -7,18 +7,11 @@ from google import genai
 from google.genai import types
 from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable
 from src.services.rate_limiter import RateLimiter
-from src.services.mcp import MCPManager
-from src.services.model_handlers.model_configs import ModelConfigurations
+from src.integrations.mcp import MCPManager
+from src.ai.models.model_configs import ModelConfigurations
 from src.services.types import MediaType, MediaInput, ToolCall, ProcessingResult
-from src.services.media_processor import MediaProcessor
+from src.media.media_processor import MediaProcessor
 from src.utils.log.telegramlog import telegram_logger
-from dotenv import load_dotenv
-
-load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    logging.error("GEMINI_API_KEY not found in environment variables.")
-    raise ValueError("GEMINI_API_KEY is required")
 
 
 class GeminiAPI:
@@ -32,7 +25,11 @@ class GeminiAPI:
         rate_limiter: RateLimiter,
         mcp_config_path: str = "mcp.json",
         vision_model=None,
+        api_key: Optional[str] = None,
     ):
+        resolved_api_key = api_key or os.getenv("GEMINI_API_KEY")
+        if not resolved_api_key:
+            raise ValueError("GEMINI_API_KEY is required")
         self.logger = logging.getLogger(__name__)
         self.rate_limiter = rate_limiter
         self.media_processor = MediaProcessor()
@@ -42,7 +39,7 @@ class GeminiAPI:
         self._tool_unsupported_models = set()
         # Store vision_model for backward compatibility (not used in new SDK)
         self.vision_model = vision_model
-        self.client = genai.Client(api_key=GEMINI_API_KEY)
+        self.client = genai.Client(api_key=resolved_api_key)
         self.generation_config = types.GenerateContentConfig(
             temperature=0.7,
             top_p=0.95,
@@ -1255,7 +1252,7 @@ Focus on providing the most helpful and accurate response possible using the ava
             return "✨ Gemini"
 
         # Get model configuration for display name
-        from src.services.model_handlers.model_configs import ModelConfigurations
+        from src.ai.models.model_configs import ModelConfigurations
 
         model_config = ModelConfigurations.get_all_models().get(model)
         if model_config:
@@ -1267,14 +1264,25 @@ Focus on providing the most helpful and accurate response possible using the ava
         self, image_data: bytes, prompt: str, context: Optional[List[Dict]] = None
     ) -> Optional[str]:
         """Analyze an image with a text prompt for backward compatibility."""
-        try:
-            from src.services.media.image_processor import ImageProcessor
+        if not self.media_processor.validate_image(image_data):
+            return "Image analysis unavailable. Invalid image."
 
-            image_processor = ImageProcessor()
-            return await image_processor.analyze_image(image_data, prompt)
+        try:
+            result = await self.process_multimodal_input(
+                text_prompt=prompt,
+                media_inputs=[
+                    MediaInput(
+                        type=MediaType.IMAGE,
+                        data=image_data,
+                        mime_type=self.media_processor.get_image_mime_type(image_data),
+                    )
+                ],
+                context=context,
+            )
+            return result.content if result.success and result.content else "Image analysis unavailable."
         except Exception as e:
-            self.logger.error(f"Image analysis failed: {e}")
-            return f"Error analyzing image: {str(e)}"
+            self.logger.error("Image analysis failed: %s", type(e).__name__)
+            return "Image analysis unavailable."
 
     async def call_with_circuit_breaker(
         self, api_name: str, func: Callable, *args, **kwargs

@@ -2,8 +2,6 @@
 User personal information management.
 """
 import re
-import logging
-from datetime import datetime
 from typing import Dict, Any, Union, Optional
 
 

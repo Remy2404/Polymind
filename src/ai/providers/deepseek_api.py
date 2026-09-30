@@ -207,7 +207,7 @@ class DeepSeekLLM:
             return "🧠 DeepSeek"
 
         # Get model configuration for display name
-        from src.services.model_handlers.model_configs import ModelConfigurations
+        from src.ai.models.model_configs import ModelConfigurations
 
         model_config = ModelConfigurations.get_all_models().get(model)
         if model_config:

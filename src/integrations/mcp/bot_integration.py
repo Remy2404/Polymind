@@ -7,8 +7,8 @@ enabling automatic tool calling and server management.
 import os
 import logging
 from typing import Dict, List, Optional, Any
-from src.services.mcp.mcp_client import MCPManager
-from src.api.llm.openrouter_api_with_mcp import OpenRouterAPIWithMCP
+from src.integrations.mcp.manager import MCPManager
+from src.ai.providers.openrouter_api_with_mcp import OpenRouterAPIWithMCP
 from src.services.rate_limiter import RateLimiter
 
 
@@ -137,7 +137,7 @@ class MCPBotIntegration:
         """
         if not model:
             return False
-        from src.services.model_handlers.model_configs import ModelConfigurations
+        from src.ai.models.model_configs import ModelConfigurations
 
         return ModelConfigurations.model_supports_tool_calls(model)
 
@@ -177,7 +177,7 @@ class MCPBotIntegration:
             )
             
             if max_tokens is None:
-                from src.services.model_handlers.model_configs import ModelConfigurations
+                from src.ai.models.model_configs import ModelConfigurations
                 model_config = ModelConfigurations.get_all_models().get(model)
                 max_tokens = model_config.max_tokens if model_config else 128000
             

@@ -4,14 +4,11 @@ This module provides functionality to identify which AI models support tool call
 and provides utilities for filtering and displaying tool-call capable models.
 """
 
-import sys
 import logging
 from typing import Dict, Optional
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
-from src.services.model_handlers.model_configs import ModelConfigurations
+from src.ai.models.simple_api_manager import SuperSimpleAPIManager
+from src.ai.models.model_configs import ModelConfigurations
 logger = logging.getLogger(__name__)
 
 

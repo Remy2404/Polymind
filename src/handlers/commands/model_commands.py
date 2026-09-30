@@ -3,17 +3,12 @@ Model switching and listing commands for the Telegram bot.
 Provides categorized model lists and easy switching between AI models.
 """
 
-import os
-import sys
 import logging
 from typing import List
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
-from src.services.model_handlers.simple_api_manager import (
+from src.ai.models.simple_api_manager import (
     SuperSimpleAPIManager,
 )
 from src.services.user_data_manager import UserDataManager

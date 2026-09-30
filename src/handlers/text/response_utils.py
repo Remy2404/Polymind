@@ -2,7 +2,6 @@
 Response formatting and utility functions for text handlers.
 """
 import re
-import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction

@@ -8,13 +8,13 @@ import io
 import logging
 from typing import List, Dict, Any, Optional
 from telegram import Message, PhotoSize, Document, Audio, Video, Voice
-from src.api.llm.gemini_api import (
+from src.ai.providers.gemini_api import (
     GeminiAPI,
     MediaInput,
     MediaType,
     ProcessingResult,
 )
-from src.services.gemini_utils import create_image_input, create_document_input
+from src.media.gemini_inputs import create_image_input, create_document_input
 
 
 class TelegramMultimodalProcessor:

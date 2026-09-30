@@ -8,7 +8,7 @@ import os
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 import asyncio
-from services.gemini_api import GeminiAPI
+from src.ai.providers.gemini_api import GeminiAPI
 import mimetypes
 import re
 

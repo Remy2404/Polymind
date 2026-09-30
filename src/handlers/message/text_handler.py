@@ -1,7 +1,6 @@
 """
 Text message handling.
 """
-import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from src.handlers.text_handlers import TextHandler

@@ -1,13 +1,10 @@
 import os
 import time
 import logging
-import asyncio
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-import src.api.routes.webhook as webhook_module
-import src.api.routes.webapp as webapp_module
 from src.api.routes import health, webhook, webapp
 
 try:
@@ -21,127 +18,34 @@ from src.api.middleware.request_tracking import RequestTrackingMiddleware
 from src.api.middleware.rate_limiting import RateLimitMiddleware
 from src.bot.telegram_bot import TelegramBot
 from starlette.middleware.cors import CORSMiddleware
-from src.services.mcp_bot_integration import initialize_mcp_for_bot
-from src.database.connection import close_database_connection
+from src.integrations.mcp.bot_integration import initialize_mcp_for_bot, mcp_integration
 
 logger = logging.getLogger(__name__)
 
 
-def get_telegram_bot_dependency(bot):
-    """Creates a dependency that provides access to the TelegramBot instance."""
-
-    def _get_bot():
-        return bot
-
-    return _get_bot
-
-
 @asynccontextmanager
 async def lifespan_context(app: FastAPI, bot: TelegramBot):
-    """
-    Lifespan context manager for the FastAPI application.
-    Handles startup and shutdown of the TelegramBot with proper error handling.
-    """
-    logger.info("Starting application with enhanced monitoring...")
+    """Own the Telegram polling and application lifecycle on the ASGI event loop."""
     app.state.start_time = time.time()
-
-    try:
-        # Initialize MCP for webapp (like Telegram bot)
-        logger.info("Initializing MCP integration for webapp...")
+    async with AsyncExitStack() as resources:
+        resources.push_async_callback(mcp_integration.cleanup)
+        resources.push_async_callback(bot.shutdown)
         await initialize_mcp_for_bot()
-
         await bot.application.initialize()
+        resources.push_async_callback(bot.application.shutdown)
         await bot.application.start()
+        resources.push_async_callback(bot.application.stop)
         if os.getenv("WEBHOOK_URL"):
             await bot.setup_webhook()
-            raw_token = getattr(bot, "token", None)
-            if raw_token:
-                from urllib.parse import quote
-
-                url_encoded_token = quote(raw_token, safe="")
-                bot.logger.info(
-                    f"Webhook endpoints registered at /webhook/{raw_token} and /webhook/{url_encoded_token}"
-                )
-            else:
-                bot.logger.warning(
-                    "WEBHOOK_URL is set but bot.token is not available; webhook endpoints may not be registered."
-                )
         else:
-            from threading import Thread
-
-            def _polling():
-                try:
-                    bot.application.run_polling()
-                except asyncio.CancelledError:
-                    logger.info("Polling thread cancelled during shutdown")
-                except Exception as e:
-                    logger.error(f"Error in polling thread: {e}")
-
-            polling_thread = Thread(target=_polling, daemon=True)
-            polling_thread.start()
-            bot.logger.info(
-                "Polling fallback started; bot will process updates via polling."
-            )
-        logger.info("Application started successfully")
+            await bot.application.updater.start_polling()
+            resources.push_async_callback(bot.application.updater.stop)
         yield
-    except Exception as e:
-        logger.error(f"Error during application startup: {e}", exc_info=True)
-        raise
-    finally:
-        logger.info("Shutting down application...")
-        shutdown_timeout = 10  # 10 seconds timeout for shutdown
-        try:
-            # Attempt graceful shutdown with timeout
-            try:
-                await asyncio.wait_for(bot.application.stop(), timeout=shutdown_timeout)
-                logger.info("Application stop completed")
-            except asyncio.TimeoutError:
-                logger.warning(
-                    f"Application stop did not complete within {shutdown_timeout} seconds"
-                )
-            except asyncio.CancelledError:
-                logger.debug(
-                    "Shutdown interrupted by cancellation (normal during container shutdown)"
-                )
-            except Exception as e:
-                logger.warning(f"Error stopping application: {e}")
-
-            try:
-                await asyncio.wait_for(
-                    bot.application.shutdown(), timeout=shutdown_timeout
-                )
-                logger.info("Application shutdown completed successfully")
-            except asyncio.TimeoutError:
-                logger.warning(
-                    f"Application shutdown did not complete within {shutdown_timeout} seconds"
-                )
-            except asyncio.CancelledError:
-                logger.debug(
-                    "Shutdown interrupted by cancellation (normal during container shutdown)"
-                )
-            except Exception as e:
-                logger.warning(f"Error during shutdown: {e}")
-
-            # Close MongoDB connection to prevent background thread errors
-            try:
-                if hasattr(bot, "client") and bot.client is not None:
-                    close_database_connection(bot.client)
-                    logger.info("MongoDB connection closed successfully")
-            except Exception as e:
-                logger.warning(f"Error closing MongoDB connection: {e}")
-
-        except asyncio.CancelledError:
-            # Suppress CancelledError during shutdown - this is normal
-            logger.debug("Application shutdown cancelled (normal)")
-        except Exception as e:
-            logger.error(
-                f"Unexpected error during application shutdown: {e}", exc_info=True
-            )
 
 
-def create_application():
-    os.environ["DEV_SERVER"] = "uvicorn"
-    bot = TelegramBot()
+def create_application(bot: TelegramBot | None = None) -> FastAPI:
+    if bot is None:
+        bot = TelegramBot()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -168,8 +72,6 @@ def create_application():
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    webhook_module._BOT_INSTANCE = bot
-    webapp_module.set_bot_instance(bot)
 
     @app.exception_handler(webhook.WebhookException)
     async def webhook_exception_handler(
@@ -202,4 +104,5 @@ def create_application():
         }
 
     app.state.bot = bot
+    app.state.webhook_rate_limits = {}
     return app

@@ -3,12 +3,7 @@ Image generation command handlers.
 Contains advanced image generation and Together AI image generation commands.
 """
 
-import sys
-import os
 
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
@@ -53,7 +48,7 @@ class ImageCommands:
             chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO
         )
         try:
-            from services.together_ai_img import together_ai_image_generator
+            from src.services.together_ai_img import together_ai_image_generator
 
             image = await together_ai_image_generator.generate_image(
                 prompt=prompt, num_steps=4, width=1024, height=1024

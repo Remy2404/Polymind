@@ -84,3 +84,6 @@ langchain-rag = [
 dev = [
     "pytest-cov>=7.0.0",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

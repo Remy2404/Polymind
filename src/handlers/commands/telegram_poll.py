@@ -3,18 +3,13 @@ AI-Powered Poll Creation Command Handler
 Generates and sends Telegram polls based on user prompts using AI models.
 """
 
-import sys
-import os
 import logging
 from typing import Dict, Any, Optional
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
-from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
+from src.ai.models.simple_api_manager import SuperSimpleAPIManager
 from src.services.user_data_manager import UserDataManager
 from src.utils.log.telegramlog import TelegramLogger
 

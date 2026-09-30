@@ -4,7 +4,7 @@ This module provides reusable components for creating system messages across dif
 """
 
 from typing import Optional, List, Dict, Any, Callable
-from src.services.model_handlers.model_configs import ModelConfigurations
+from src.ai.models.model_configs import ModelConfigurations
 
 
 class SystemMessageBuilder:

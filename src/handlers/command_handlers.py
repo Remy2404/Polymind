@@ -1,7 +1,4 @@
-import sys
-import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from telegram import (
     Update,
 )
@@ -12,8 +9,8 @@ from telegram.ext import (
     Application,
 )
 from src.services.user_data_manager import UserDataManager
-from src.api.llm.gemini_api import GeminiAPI
-from src.services.model_handlers.simple_api_manager import SuperSimpleAPIManager
+from src.ai.providers.gemini_api import GeminiAPI
+from src.ai.models.simple_api_manager import SuperSimpleAPIManager
 from src.utils.log.telegramlog import TelegramLogger as telegram_logger
 import logging
 from src.services.flux_lora_img import (

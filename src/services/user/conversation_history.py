@@ -2,7 +2,6 @@
 Conversation history management.
 """
 import time
-import logging
 from datetime import datetime
 from typing import Dict, List, Any, Union
 
