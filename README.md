@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/remy2404-polymind-badge.png)](https://mseep.ai/app/remy2404-polymind)
+
 # 🤖 Polymind Bot
 
 A powerful, multi-modal Telegram bot leveraging cutting-edge AI technologies including Gemini, DeepSeek, OpenRouter, and 50+ AI models for comprehensive conversational assistance, media processing, and collaborative features with MCP (Model Context Protocol) integration.
