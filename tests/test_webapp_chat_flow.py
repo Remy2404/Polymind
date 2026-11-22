@@ -1,10 +1,13 @@
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
+import pytest
 
 from src.api.app_factory import create_application
 from src.api.auth import get_current_user
+from src.api.routes import webapp_streaming
 from src.api.schemas.webapp import UserInfo
 from src.api.webapp import message_routes
 
@@ -167,3 +170,47 @@ def test_chat_provider_failure_does_not_expose_internal_details(monkeypatch):
     assert response.json() == {"detail": "Failed to generate response"}
     assert sessions.inserts == 0
     assert sessions.updates == 0
+
+
+@pytest.mark.parametrize(
+    ("requested_model", "saved_model", "expected_model"),
+    [(None, None, "gemini"), (None, "deepseek", "deepseek"), ("gemini", "deepseek", "gemini")],
+)
+def test_stream_chat_uses_default_or_selected_model(
+    monkeypatch, requested_model, saved_model, expected_model
+):
+    app = create_application(bot=SimpleNamespace(token="test-token"))
+    app.dependency_overrides[get_current_user] = lambda: UserInfo(id=7, first_name="Ada")
+
+    async def get_preference(user_id, key, default):
+        assert (user_id, key) == (7, "preferred_model")
+        return saved_model if saved_model is not None else default
+
+    preferences = AsyncMock(side_effect=get_preference)
+    monkeypatch.setattr(
+        webapp_streaming,
+        "get_services",
+        lambda request: {
+            "user_data_manager": SimpleNamespace(get_user_preference=preferences),
+        },
+    )
+
+    async def stream_response(**kwargs):
+        assert kwargs["model_name"] == expected_model
+        yield "data: ready\n\n"
+
+    monkeypatch.setattr(webapp_streaming, "generate_ai_response_stream", stream_response)
+
+    async def request():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            return await client.post(
+                "/webapp/chat/stream",
+                json={"message": "Hello", "model": requested_model, "include_context": False},
+            )
+
+    response = asyncio.run(request())
+    assert response.status_code == 200
+    assert response.text == "data: ready\n\n"
+    assert preferences.await_count == int(requested_model is None)

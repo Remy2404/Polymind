@@ -247,7 +247,10 @@ async def initialize_mcp_for_bot():
 
 async def get_mcp_tools_for_user(user_id: int) -> List[Dict[str, Any]]:
     """Get available MCP tools for a user."""
-    if await mcp_integration.is_mcp_available_for_user(user_id):
+    if (
+        mcp_integration.openrouter_with_mcp
+        and await mcp_integration.is_mcp_available_for_user(user_id)
+    ):
         return await mcp_integration.get_available_tools()
     return []
 

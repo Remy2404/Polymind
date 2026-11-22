@@ -15,6 +15,7 @@ from src.api.auth import get_current_user
 from src.api.schemas.webapp import UserInfo
 from src.api.dependencies import get_services, get_sessions_collection
 from src.ai.models.factory import ModelHandlerFactory
+from src.ai.models.model_configs import DEFAULT_GEMINI_MODEL, GEMINI_CHAT_ALIAS
 from src.services.user_preferences_manager import UserPreferencesManager
 from src.integrations.mcp.bot_integration import (
     generate_mcp_response,
@@ -252,8 +253,8 @@ async def generate_ai_response_stream(
 
                 # If the primary model is Gemini and it failed, try to fallback to DeepSeek or OpenRouter
                 if model_name in [
-                    "gemini",
-                    "gemini-3.8-flash",
+                    GEMINI_CHAT_ALIAS,
+                    DEFAULT_GEMINI_MODEL,
                     "gemini/gemini-2.0-flash-exp",
                 ]:
                     logger.info("Gemini failed, attempting fallback to DeepSeek...")
@@ -409,11 +410,8 @@ async def stream_chat_message(
         # Determine model FIRST before retrieving context
         model_name = message_data.model
         if not model_name:
-            prefs_manager = UserPreferencesManager()
-            user_prefs = prefs_manager.get_user_preferences(user_id)
-            model_name = user_prefs.get(
-                "preferred_model", "gemini/gemini-2.0-flash-exp"
-            )
+            prefs_manager = UserPreferencesManager(services["user_data_manager"])
+            model_name = await prefs_manager.get_user_model_preference(user_id)
 
         # Validate model_name (basic check only - let ModelHandlerFactory handle validation)
         if (
@@ -421,7 +419,7 @@ async def stream_chat_message(
             or not isinstance(model_name, str)
             or model_name.strip() == ""
         ):
-            model_name = "gemini/gemini-2.0-flash-exp"
+            model_name = GEMINI_CHAT_ALIAS
             logger.warning(
                 f"Invalid model_name for user {user_id}, using default: {model_name}"
             )

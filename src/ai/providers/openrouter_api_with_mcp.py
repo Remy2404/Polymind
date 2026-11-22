@@ -20,7 +20,12 @@ from typing import Dict, List, Optional, Any, Set, Tuple
 from functools import lru_cache
 from src.ai.providers.openrouter_api import OpenRouterAPI
 from src.integrations.mcp import MCPManager
-from src.ai.models.model_configs import ModelConfigurations, Provider
+from src.ai.models.model_configs import (
+    DEFAULT_GEMINI_MODEL,
+    GEMINI_CHAT_ALIAS,
+    ModelConfigurations,
+    Provider,
+)
 from src.utils.log.telegramlog import telegram_logger
 from src.ai.providers.gemini_api import GeminiAPI
 from src.services.system_message_builder import SystemMessageBuilder
@@ -301,7 +306,7 @@ class OpenRouterAPIWithMCP(OpenRouterAPI):
     ) -> Optional[str]:
         """Handle requests routed to Gemini API."""
         self.logger.info(f"Using Gemini API for model {model}")
-        actual_model = "gemini-3.8-flash" if model == "gemini" else model
+        actual_model = DEFAULT_GEMINI_MODEL if model == GEMINI_CHAT_ALIAS else model
 
         return await self.gemini_api.generate_response_with_mcp_tools(
             prompt=prompt,

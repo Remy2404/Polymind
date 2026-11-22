@@ -2,21 +2,37 @@ import logging
 import asyncio
 import io
 import os
-from typing import Optional, List, Dict, Any, Union, Callable
+from typing import Optional, List, Dict, Any, Union, Callable, Sequence
+import aiohttp
+import httpx
 from google import genai
-from google.genai import types
+from google.genai import errors as genai_errors, types
 from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable
 from src.services.rate_limiter import RateLimiter
 from src.integrations.mcp import MCPManager
-from src.ai.models.model_configs import ModelConfigurations
+from src.ai.models.model_configs import (
+    DEFAULT_GEMINI_MODEL,
+    GEMINI_CHAT_FALLBACK_MODEL,
+    GEMINI_CHAT_OUTPUT_TOKENS,
+    GEMINI_HYDROGEN_MODEL,
+    GEMINI_MODEL_DISPLAY_NAMES,
+    ModelConfigurations,
+)
 from src.services.types import MediaType, MediaInput, ToolCall, ProcessingResult
 from src.media.media_processor import MediaProcessor
 from src.utils.log.telegramlog import telegram_logger
 
 
+HYDROGEN_SYNC_OUTPUT_LIMIT = 65_536
+CHAT_PRIMARY_TIMEOUT_SECONDS = 10.0
+CHAT_FALLBACK_TIMEOUT_SECONDS = 25.0
+CHAT_TOOL_FOLLOWUP_TIMEOUT_SECONDS = 25.0
+CHAT_FAILOVER_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+
+
 class GeminiAPI:
     """
-    Modern Gemini 2.5 Flash API client with multimodal and tool calling support
+    Gemini API client with multimodal and tool calling support.
     Uses the latest Google Gen AI SDK for enhanced capabilities
     """
 
@@ -48,7 +64,7 @@ class GeminiAPI:
         )
         self.context_recent_limit = 18
         self.logger.info(
-            "Gemini 2.5 Flash API initialized with Google Gen AI SDK and MCP support"
+            "Gemini API initialized with Google Gen AI SDK and MCP support"
         )
 
     async def initialize_mcp_tools(self) -> bool:
@@ -117,20 +133,11 @@ class GeminiAPI:
         # Use singleton state - no need to initialize on every request
         self.mcp_tools_loaded = self.mcp_manager._initialized
 
-        actual_model = model if model is not None else "gemini-3.8-flash"
+        actual_model = model if model is not None else DEFAULT_GEMINI_MODEL
         mcp_tools = (
             await self.mcp_manager.get_all_tools() if self.mcp_tools_loaded else []
         )
-        gemini_tools = []
-        for tool in mcp_tools:
-            try:
-                gemini_tool = self._convert_mcp_tool_to_gemini(tool)
-                if gemini_tool:
-                    gemini_tools.append(gemini_tool)
-            except Exception as e:
-                self.logger.warning(
-                    f"Failed to convert MCP tool {tool.get('function', {}).get('name', 'unknown')}: {e}"
-                )
+        gemini_tools = self._convert_mcp_tools(mcp_tools)
         if gemini_tools:
             self.logger.info(
                 f"Using {len(gemini_tools)} MCP tools for Gemini generation"
@@ -154,6 +161,13 @@ class GeminiAPI:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+
+    def _convert_mcp_tools(self, tools: Sequence[Dict[str, Any]]) -> List[types.Tool]:
+        return [
+            declaration
+            for tool in tools
+            if (declaration := self._convert_mcp_tool_to_gemini(tool)) is not None
+        ]
 
     def _convert_mcp_tool_to_gemini(self, mcp_tool: Dict[str, Any]) -> Optional[Any]:
         """
@@ -253,7 +267,7 @@ class GeminiAPI:
         prompt: str,
         tools: List[Any],
         context: Optional[List[Dict]] = None,
-        model: str = "gemini-3.8-flash",
+        model: str = DEFAULT_GEMINI_MODEL,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         timeout: float = 300.0,
@@ -273,8 +287,6 @@ class GeminiAPI:
         """
         try:
             await self.rate_limiter.acquire()
-            system_message = self._build_system_message(model, context, tools)
-            content_parts = [system_message, prompt]
             config = types.GenerateContentConfig(
                 temperature=temperature,
                 top_p=self.generation_config.top_p,
@@ -283,85 +295,57 @@ class GeminiAPI:
                 or self.generation_config.max_output_tokens,
                 tools=tools,
             )
-            contents = self._build_conversation_context(context, content_parts)
-            response = await self._generate_with_retry(contents, model, config)
-            if (
-                not response
-                or not hasattr(response, "candidates")
-                or not response.candidates
-            ):
-                return None
-            candidate = response.candidates[0]
-
-            # Check if the response contains function calls
-            has_function_calls = False
-            if (
-                hasattr(candidate, "content")
-                and candidate.content
-                and hasattr(candidate.content, "parts")
-            ):
-                for part in candidate.content.parts:
-                    if hasattr(part, "function_call") and part.function_call:
-                        has_function_calls = True
-                        function_call = part.function_call
-                        self.logger.info(
-                            f"Gemini requested tool call: {function_call.name}"
-                        )
-                        tool_result = await self._execute_mcp_tool(function_call)
-                        if tool_result:
-                            # Add the tool call and result to conversation for follow-up
-                            contents.append(candidate.content)
-                            contents.append(
-                                types.Content(
-                                    role="user",
-                                    parts=[
-                                        types.Part.from_text(
-                                            text=f"Tool result: {tool_result}"
-                                        )
-                                    ],
-                                )
-                            )
-                            # Small delay before final generation to avoid overwhelming the API
-                            await asyncio.sleep(1.0)
-                            final_config = types.GenerateContentConfig(
-                                temperature=temperature,
-                                top_p=self.generation_config.top_p,
-                                top_k=self.generation_config.top_k,
-                                max_output_tokens=max_tokens
-                                or self.generation_config.max_output_tokens,
-                            )
-                            final_response = await self._generate_with_retry(
-                                contents, model, final_config
-                            )
-                            if (
-                                final_response
-                                and hasattr(final_response, "candidates")
-                                and final_response.candidates
-                            ):
-                                return self._extract_response_text(
-                                    final_response.candidates[0]
-                                )
-                            else:
-                                self.logger.warning("No final response after tool call")
-                                return None
-                        else:
-                            self.logger.warning(
-                                f"Tool execution failed for {function_call.name}"
-                            )
-                            return None
-
-            # If no function calls, extract text from the current response
-            if not has_function_calls:
-                return self._extract_response_text(candidate)
-
-            # If we get here, something went wrong with tool call processing
-            self.logger.warning(
-                "Tool call processing completed but no response generated"
+            contents = self._build_conversation_context(
+                context, [self._build_system_message(model, context, tools), prompt]
             )
-            return None
+            response = await self._generate_with_retry(contents, model, config)
+            candidate = self._first_candidate(response)
+            if candidate is None:
+                return None
+            if await self._append_mcp_tool_result(candidate, contents):
+                final_config = config.model_copy(update={"tools": None})
+                response = await self._generate_with_retry(contents, model, final_config)
+                candidate = self._first_candidate(response)
+            return self._extract_response_text(candidate)
         except Exception as e:
             self.logger.error(f"Error in _generate_with_tools: {e}")
             return None
+
+    @staticmethod
+    def _first_candidate(response: types.GenerateContentResponse) -> Optional[types.Candidate]:
+        candidates = getattr(response, "candidates", None)
+        return candidates[0] if candidates else None
+
+    async def _append_mcp_tool_result(
+        self, candidate: types.Candidate, contents: List[types.Content]
+    ) -> bool:
+        content = candidate.content
+        if not content or not content.parts:
+            return False
+        function_call = next(
+            (part.function_call for part in content.parts if part.function_call), None
+        )
+        if not function_call or not function_call.name:
+            return False
+
+        self.logger.info("Gemini requested tool call: %s", function_call.name)
+        tool_result = await self._execute_mcp_tool(function_call)
+        if not tool_result:
+            raise RuntimeError(f"MCP tool {function_call.name} did not return a result")
+        contents.extend(
+            [
+                content,
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_function_response(
+                            name=function_call.name, response={"result": tool_result}
+                        )
+                    ],
+                ),
+            ]
+        )
+        return True
 
     async def _execute_mcp_tool(self, function_call: Any) -> Optional[str]:
         """
@@ -674,7 +658,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         text_prompt: str,
         media_inputs: Optional[List[MediaInput]] = None,
         context: Optional[List[Dict]] = None,
-        model_name: str = "gemini-3.8-flash",
+        model_name: str = DEFAULT_GEMINI_MODEL,
         tools: Optional[List[Union[Callable, types.Tool]]] = None,
         auto_function_calling: bool = True,
     ) -> ProcessingResult:
@@ -945,10 +929,32 @@ Focus on providing the most helpful and accurate response possible using the ava
             "and detailed responses based on all provided content."
         )
 
+    @staticmethod
+    def _generation_config_for_model(
+        model: str, config: types.GenerateContentConfig
+    ) -> types.GenerateContentConfig:
+        if model != GEMINI_HYDROGEN_MODEL:
+            return config
+
+        max_tokens = config.max_output_tokens
+        if max_tokens is not None:
+            max_tokens = min(max_tokens, HYDROGEN_SYNC_OUTPUT_LIMIT)
+
+        return config.model_copy(
+            update={
+                "max_output_tokens": max_tokens,
+                "temperature": None,
+                "top_p": None,
+                "top_k": None,
+            }
+        )
+
     async def _generate_with_retry(
-        self, contents: List[Any], model_name: str, config: Any, max_retries: int = 3
+        self, contents: List[Any], model_name: str, config: types.GenerateContentConfig,
+        max_retries: int = 3,
     ) -> Any:
         """Generate content with retry logic using new SDK"""
+        config = self._generation_config_for_model(model_name, config)
         last_error = None
         service_unavailable_count = 0
 
@@ -1008,7 +1014,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         tools: List[Union[Callable, Any]],
         context: Optional[List[Dict]] = None,
         auto_execute: bool = True,
-        model_name: str = "gemini-3.8-flash",
+        model_name: str = DEFAULT_GEMINI_MODEL,
     ) -> ProcessingResult:
         """
         Generate content with tool calling capabilities
@@ -1033,7 +1039,7 @@ Focus on providing the most helpful and accurate response possible using the ava
         self,
         prompt: str,
         media_inputs: Optional[List[MediaInput]] = None,
-        model_name: str = "gemini-3.8-flash",
+        model_name: str = DEFAULT_GEMINI_MODEL,
     ):
         """Stream content generation using new SDK"""
         try:
@@ -1062,7 +1068,7 @@ Focus on providing the most helpful and accurate response possible using the ava
 
     async def create_chat_session(
         self,
-        model_name: str = "gemini-3.8-flash",
+        model_name: str = DEFAULT_GEMINI_MODEL,
         tools: Optional[List[Union[Callable, Any]]] = None,
     ):
         """Create a chat session using new SDK"""
@@ -1098,6 +1104,104 @@ Focus on providing the most helpful and accurate response possible using the ava
             self.logger.error(f"Error in generate_content: {e}")
             return {"status": "error", "content": f"Error: {str(e)}", "error": str(e)}
 
+    async def generate_chat_response(
+        self,
+        prompt: str,
+        context: Optional[List[Dict]] = None,
+        quoted_message: Optional[str] = None,
+        mcp_tools: Sequence[Dict[str, Any]] = (),
+    ) -> tuple[Optional[str], str]:
+        """Generate an interactive reply and report the model that answered."""
+        tools = self._convert_mcp_tools(mcp_tools)
+        config = self.generation_config.model_copy(
+            update={
+                "tools": tools or None,
+                "max_output_tokens": GEMINI_CHAT_OUTPUT_TOKENS,
+                "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
+            }
+        )
+        if tools:
+            await self.rate_limiter.acquire()
+            contents = self._build_conversation_context(
+                context, [self._build_system_message(DEFAULT_GEMINI_MODEL, context, tools), prompt]
+            )
+        else:
+            parts = self._build_text_parts(prompt, context, quoted_message)
+            contents = [types.Content(role="user", parts=parts)]
+
+        response, model = await self._start_chat_generation(contents, config)
+        candidate = self._first_candidate(response)
+        if tools and candidate is not None and await self._append_mcp_tool_result(
+            candidate, contents
+        ):
+            followup_config = config.model_copy(update={"tools": None})
+            response = await self._generate_chat_attempt(
+                contents, followup_config, model, CHAT_TOOL_FOLLOWUP_TIMEOUT_SECONDS
+            )
+            candidate = self._first_candidate(response)
+        return self._extract_response_text(candidate), model
+
+    async def _start_chat_generation(
+        self, contents: List[types.Content], config: types.GenerateContentConfig
+    ) -> tuple[types.GenerateContentResponse, str]:
+        try:
+            response = await self._generate_chat_attempt(
+                contents, config, DEFAULT_GEMINI_MODEL, CHAT_PRIMARY_TIMEOUT_SECONDS
+            )
+        except genai_errors.APIError as error:
+            if error.code not in CHAT_FAILOVER_STATUS_CODES:
+                raise
+            failure = f"HTTP {error.code}"
+        except (TimeoutError, httpx.TransportError, aiohttp.ClientConnectionError) as error:
+            failure = type(error).__name__
+        else:
+            return response, DEFAULT_GEMINI_MODEL
+
+        self.logger.warning(
+            "Gemini chat model %s failed (%s), trying %s",
+            DEFAULT_GEMINI_MODEL, failure, GEMINI_CHAT_FALLBACK_MODEL,
+        )
+        response = await self._generate_chat_attempt(
+            contents, config, GEMINI_CHAT_FALLBACK_MODEL, CHAT_FALLBACK_TIMEOUT_SECONDS
+        )
+        return response, GEMINI_CHAT_FALLBACK_MODEL
+
+    async def _generate_chat_attempt(
+        self, contents: List[types.Content], config: types.GenerateContentConfig,
+        model: str, timeout: float,
+    ) -> types.GenerateContentResponse:
+        config = self._generation_config_for_model(model, config).model_copy(
+            update={
+                "http_options": types.HttpOptions(
+                    timeout=round(timeout * 1000),
+                    retry_options=types.HttpRetryOptions(attempts=1),
+                )
+            }
+        )
+        request_contents: list[types.ContentUnion] = list(contents)
+        async with asyncio.timeout(timeout):
+            return await self.client.aio.models.generate_content(
+                model=model, contents=request_contents, config=config
+            )
+
+    @staticmethod
+    def _build_text_parts(
+        prompt: str, context: Optional[List[Dict]], quoted_message: Optional[str]
+    ) -> List[types.Part]:
+        parts = []
+        if context:
+            history = [
+                f"{message['role'].title()}: {message['content']}"
+                for message in context[-5:]
+                if message.get("role") in {"user", "assistant"} and message.get("content")
+            ]
+            if history:
+                parts.append(types.Part.from_text(text="Context:\n" + "\n".join(history)))
+        if quoted_message:
+            parts.append(types.Part.from_text(text=f"Replying to: {quoted_message}"))
+        parts.append(types.Part.from_text(text=prompt))
+        return parts
+
     async def generate_response(
         self,
         prompt: str,
@@ -1132,31 +1236,7 @@ Focus on providing the most helpful and accurate response possible using the ava
             max_output_tokens=max_tokens,
         )
 
-        content_parts = [prompt]
-
-        # Add quoted message context if provided
-        if quoted_message:
-            content_parts.insert(0, f"Replying to: {quoted_message}")
-
-        # Handle context
-        if context:
-            context_parts = []
-            for msg in context[-5:]:
-                if msg.get("role") in ["user", "assistant"]:
-                    content = msg.get("content", "")
-                    if content:
-                        context_parts.append(f"{msg['role'].title()}: {content}")
-            if context_parts:
-                context_text = "\n".join(context_parts)
-                content_parts.insert(0, f"Context:\n{context_text}")
-
-        # Convert content parts to Gemini format
-        contents = []
-        for part in content_parts:
-            if isinstance(part, str):
-                contents.append(types.Part.from_text(text=part))
-            else:
-                contents.append(part)
+        contents = self._build_text_parts(prompt, context, quoted_message)
 
         # Handle image attachments
         if attachments:
@@ -1211,10 +1291,10 @@ Focus on providing the most helpful and accurate response possible using the ava
                 f"Reordered content: {len(image_parts)} image parts, {len(text_parts)} text parts"
             )
 
-        contents = [types.Content(role="user", parts=contents)]
+        text_contents = [types.Content(role="user", parts=contents)]
         try:
             response = await self._generate_with_retry(
-                contents, "gemini-3.8-flash", config
+                text_contents, DEFAULT_GEMINI_MODEL, config
             )
             if response and hasattr(response, "candidates") and response.candidates:
                 candidate = response.candidates[0]
@@ -1242,14 +1322,22 @@ Focus on providing the most helpful and accurate response possible using the ava
 
     async def close(self):
         """Clean up resources and close MCP connections."""
+        try:
+            if self.mcp_tools_loaded:
+                await self.mcp_manager.disconnect_all()
+        finally:
+            try:
+                await self.client.aio.aclose()
+            finally:
+                self.client.close()
         self.logger.info("Gemini API client closed")
-        if self.mcp_tools_loaded:
-            await self.mcp_manager.disconnect_all()
 
     def get_model_indicator(self, model: str = None) -> str:
         """Get the model indicator emoji and name for Gemini models."""
         if not model:
             return "✨ Gemini"
+        if model in GEMINI_MODEL_DISPLAY_NAMES:
+            return f"✨ {GEMINI_MODEL_DISPLAY_NAMES[model]}"
 
         # Get model configuration for display name
         from src.ai.models.model_configs import ModelConfigurations

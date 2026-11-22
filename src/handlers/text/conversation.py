@@ -3,12 +3,20 @@ Text conversation handling functionality.
 """
 import asyncio
 from src.ai.models.factory import ModelHandlerFactory
-from src.integrations.mcp.bot_integration import generate_mcp_response, is_model_mcp_compatible
+from src.ai.models.model_configs import GEMINI_CHAT_ALIAS
+from src.ai.providers.gemini_api import GeminiAPI
+from src.integrations.mcp.bot_integration import (
+    generate_mcp_response,
+    get_mcp_tools_for_user,
+    is_model_mcp_compatible,
+)
 from src.utils.log.telegramlog import telegram_logger
 
 
 class TextConversationMixin:
     """Mixin providing text conversation handling functionality."""
+
+    gemini_api: GeminiAPI
 
     async def _handle_text_conversation(
         self, update, context, thinking_message, message_text,
@@ -30,15 +38,14 @@ class TextConversationMixin:
                 enhanced_prompt = self.prompt_formatter.add_context(enhanced_prompt, "context", formatted_context)
 
         # Apply response guidelines
+        model_handler = ModelHandlerFactory.get_model_handler(
+            preferred_model,
+            gemini_api=self.gemini_api,
+            openrouter_api=self.openrouter_api,
+            deepseek_api=self.deepseek_api,
+        )
         enhanced_prompt_with_guidelines = await self.prompt_formatter.apply_response_guidelines(
-            enhanced_prompt,
-            ModelHandlerFactory.get_model_handler(
-                preferred_model,
-                gemini_api=self.gemini_api,
-                openrouter_api=self.openrouter_api,
-                deepseek_api=self.deepseek_api,
-            ),
-            context,
+            enhanced_prompt, model_handler, context
         )
 
         # Determine timeout based on query complexity
@@ -66,22 +73,15 @@ class TextConversationMixin:
                 )
                 return
 
-            # Send formatted response
-            actual_model_handler = ModelHandlerFactory.get_model_handler(
-                actual_model_used,
-                gemini_api=self.gemini_api,
-                openrouter_api=self.openrouter_api,
-                deepseek_api=self.deepseek_api,
-            )
             await self._send_formatted_response(
                 update, context, message, response,
-                actual_model_handler.get_model_indicator(actual_model_used),
+                model_handler.get_model_indicator(actual_model_used),
                 quoted_text, quoted_message_id,
             )
 
             # Save to conversation history
             if response:
-                await self._save_conversation(user_id, message_text, response, quoted_text, actual_model_used)
+                await self._save_conversation(user_id, message_text, response, quoted_text, preferred_model)
                 telegram_logger.log_message("Text response sent successfully", user_id)
 
         except asyncio.TimeoutError:
@@ -132,8 +132,24 @@ class TextConversationMixin:
     async def _generate_response(
         self, prompt: str, history_context: list, quoted_text: str,
         preferred_model: str, user_id: int, timeout: float
-    ) -> tuple[str, str]:
+    ) -> tuple[str | None, str]:
         """Generate AI response using MCP or standard model."""
+        async with asyncio.timeout(timeout):
+            if preferred_model == GEMINI_CHAT_ALIAS:
+                return await self.gemini_api.generate_chat_response(
+                    prompt,
+                    context=history_context,
+                    quoted_message=quoted_text,
+                    mcp_tools=await get_mcp_tools_for_user(user_id),
+                )
+            return await self._generate_mcp_or_standard_response(
+                prompt, history_context, quoted_text, preferred_model, user_id
+            )
+
+    async def _generate_mcp_or_standard_response(
+        self, prompt: str, history_context: list, quoted_text: str,
+        preferred_model: str, user_id: int
+    ) -> tuple[str | None, str]:
         if is_model_mcp_compatible(preferred_model):
             mcp_response = await generate_mcp_response(
                 prompt=prompt, user_id=user_id, model=preferred_model,
@@ -149,11 +165,8 @@ class TextConversationMixin:
             openrouter_api=self.openrouter_api,
             deepseek_api=self.deepseek_api,
         )
-        response = await asyncio.wait_for(
-            model_handler.generate_response(
-                prompt, history_context, quoted_message=quoted_text, model=preferred_model
-            ),
-            timeout=timeout
+        response = await model_handler.generate_response(
+            prompt, history_context, quoted_message=quoted_text, model=preferred_model
         )
         return response, preferred_model
 

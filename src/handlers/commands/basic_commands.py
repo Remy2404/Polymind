@@ -3,6 +3,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import logging
 
+from src.ai.models.model_configs import DEFAULT_GEMINI_MODEL, GEMINI_MODEL_DISPLAY_NAMES
+
 
 class BasicCommands:
     def __init__(self, user_data_manager, telegram_logger):
@@ -17,7 +19,8 @@ class BasicCommands:
             return
         user_id = update.effective_user.id
         welcome_message = (
-            "👋 Welcome to DeepGem! I'm your AI assistant powered by Gemini-2.0-flash & Deepseek-R1 .\n\n"
+            "👋 Welcome to DeepGem! I'm your AI assistant powered by "
+            f"{GEMINI_MODEL_DISPLAY_NAMES[DEFAULT_GEMINI_MODEL]} and DeepSeek R1.\n\n"
             "I can help you with:\n"
             "🤖 General conversations\n"
             "📝 Code assistance\n"

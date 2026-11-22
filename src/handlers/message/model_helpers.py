@@ -2,7 +2,13 @@
 Model helper functions and utilities.
 """
 from typing import Optional
-from src.ai.models.model_configs import ModelConfigurations, Provider, ModelConfig
+from src.ai.models.model_configs import (
+    DEFAULT_GEMINI_MODEL,
+    GEMINI_MODEL_DISPLAY_NAMES,
+    ModelConfigurations,
+    Provider,
+    ModelConfig,
+)
 
 
 class ModelHelpersMixin:
@@ -85,7 +91,8 @@ class ModelHelpersMixin:
                     f"**{model_config.display_name}** doesn't support {capability_name}.\n\n"
                     f"To process {capability_name}, please switch to a vision-capable model:\n"
                     f"Use `/switchmodel` command\n"
-                    f"Recommended: **Gemini 2.5 Flash** (supports images & documents)"
+                    f"Recommended: **{GEMINI_MODEL_DISPLAY_NAMES[DEFAULT_GEMINI_MODEL]}** "
+                    "(supports images & documents)"
                 )
                 return False, preferred_model, error_message
 

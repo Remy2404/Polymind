@@ -3,7 +3,7 @@ import unittest
 from io import BytesIO
 from PIL import Image
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from src.ai.providers.gemini_api import GeminiAPI
 from src.services.rate_limiter import RateLimiter
@@ -29,7 +29,11 @@ class TestGeminiAPI(unittest.TestCase):
                 ]
             )
 
-        fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+        fake_client = SimpleNamespace(
+            models=SimpleNamespace(generate_content=generate_content),
+            aio=SimpleNamespace(aclose=AsyncMock()),
+            close=Mock(),
+        )
         with patch("src.ai.providers.gemini_api.genai.Client", return_value=fake_client):
             self.gemini_api = GeminiAPI(
                 vision_model=self.vision_model,
@@ -60,19 +64,30 @@ class TestGeminiAPI(unittest.TestCase):
     def test_generate_response(self):
         result = asyncio.run(self.gemini_api.generate_response("Write a haiku"))
         self.assertEqual(result, "A generated answer")
-        self.assertEqual(self.generate_calls[0]["model"], "gemini-3.8-flash")
+        self.assertEqual(self.generate_calls[0]["model"], "gemini-4-hydrogen")
+
+    def test_hydrogen_limits_sampling_and_preserves_smaller_token_caps(self):
+        asyncio.run(self.gemini_api.generate_response("Hello", temperature=0.2))
+        asyncio.run(self.gemini_api.generate_response("Hello", max_tokens=2048))
+
+        default_config, custom_config = (call["config"] for call in self.generate_calls)
+        self.assertEqual(default_config.max_output_tokens, 65_536)
+        self.assertIsNone(default_config.temperature)
+        self.assertIsNone(default_config.top_p)
+        self.assertIsNone(default_config.top_k)
+        self.assertEqual(custom_config.max_output_tokens, 2048)
 
     def test_generate_content(self):
         result = asyncio.run(self.gemini_api.generate_content("Explain AI"))
         self.assertEqual(result, {"status": "success", "content": "A generated answer"})
-        self.assertEqual(self.generate_calls[0]["model"], "gemini-3.8-flash")
+        self.assertEqual(self.generate_calls[0]["model"], "gemini-4-hydrogen")
 
     def test_analyze_image(self):
         result = asyncio.run(
             self.gemini_api.analyze_image(self.test_image, "Describe this image")
         )
         self.assertEqual(result, "A generated answer")
-        self.assertEqual(self.generate_calls[0]["model"], "gemini-3.8-flash")
+        self.assertEqual(self.generate_calls[0]["model"], "gemini-4-hydrogen")
         parts = self.generate_calls[0]["contents"][-1].parts
         self.assertTrue(any(part.inline_data for part in parts))
 

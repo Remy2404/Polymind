@@ -15,7 +15,7 @@ class TextMessageHandlerMixin:
         """Handle incoming text messages."""
         try:
             if update.message is None and update.callback_query is None:
-                self.logger.error("Received update with no message or callback query")
+                self.logger.error("Received update with no message or callback query.")
                 return
 
             if update.callback_query:

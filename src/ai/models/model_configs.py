@@ -10,6 +10,17 @@ from typing import Dict, Optional, Any, List
 from enum import Enum
 
 
+GEMINI_CHAT_ALIAS = "gemini"
+GEMINI_HYDROGEN_MODEL = "gemini-4-hydrogen"
+DEFAULT_GEMINI_MODEL = GEMINI_HYDROGEN_MODEL
+GEMINI_CHAT_FALLBACK_MODEL = "gemini-3.5-flash-lite"
+GEMINI_MODEL_DISPLAY_NAMES = {
+    GEMINI_HYDROGEN_MODEL: "Gemini 4 Hydrogen",
+    GEMINI_CHAT_FALLBACK_MODEL: "Gemini 3.5 Flash-Lite",
+}
+GEMINI_CHAT_OUTPUT_TOKENS = 32_768
+
+
 class Provider(Enum):
     """Supported API providers."""
 
@@ -221,8 +232,8 @@ class ModelConfigurations:
     def _get_hardcoded_models() -> Dict[str, ModelConfig]:
         """Fallback hardcoded models when JSON loading fails."""
         gemini_config = ModelConfig(
-            model_id="gemini",
-            display_name="Gemini 2.5 Flash",
+            model_id=GEMINI_CHAT_ALIAS,
+            display_name=GEMINI_MODEL_DISPLAY_NAMES[DEFAULT_GEMINI_MODEL],
             provider=Provider.GEMINI,
             indicator_emoji="✨",
             system_message="You are Gemini, a helpful AI assistant created by Google. Be concise, helpful, and accurate.",
@@ -236,7 +247,7 @@ class ModelConfigurations:
             ],
             description="Google's latest multimodal AI model with advanced tool calling capabilities",
             type="multimodal",
-            max_tokens=32768,
+            max_tokens=GEMINI_CHAT_OUTPUT_TOKENS,
             capabilities=[
                 "supports_images",
                 "supports_documents",
@@ -246,7 +257,7 @@ class ModelConfigurations:
             ],
         )
         return {
-            "gemini": gemini_config,
+            GEMINI_CHAT_ALIAS: gemini_config,
             "deepseek": ModelConfig(
                 model_id="deepseek",
                 display_name="DeepSeek R1",
