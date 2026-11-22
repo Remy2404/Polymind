@@ -38,7 +38,7 @@ dependencies = [
     "pypdf2==3.0.1",
     "pyphen==0.17.2",
     "python-dateutil==2.9.0.post0",
-    "python-docx==1.1.2",
+    "python-docx==1.2.0",
     "python-dotenv==1.0.1",
     "python-multipart==0.0.18",
     "python-telegram-bot==22.1",
